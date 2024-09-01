@@ -20,11 +20,11 @@ def search_tidal_track(client, track_name, artist_name, album_name, duration, re
     track_name, artist_name, album_name = map(format_string, [track_name, artist_name, album_name])
 
     try:
-        results = client.search(f'{track_name} {artist_name}', "CH", type="TRACKS", limit=15)
+        results = client.search(f'{track_name} {artist_name}', "CH", type="TRACKS", limit=10)
     except Exception as e:
         if '429' in str(e) and retry_count < 5:  # 429 is a rate limit error
-            backoff_time = (2 ** retry_count) + random.uniform(0, 1)  # Exponential backoff with jitter
-            logger.warning(f"Rate limit hit, retrying in {backoff_time:.2f} seconds...")
+            backoff_time = (1.25 ** retry_count) + random.uniform(0, 0.3)  # Exponential backoff with jitter
+            logger.debug(f"Rate limit hit, retrying in {backoff_time:.2f} seconds...")
             time.sleep(backoff_time)
             return search_tidal_track(client, track_name, artist_name, album_name, duration, retry_count + 1)
         else:
@@ -81,11 +81,17 @@ def download_tracks_from_file(file_path: Path):
         if result.stderr:
             logger.warning(result.stderr)
     except subprocess.CalledProcessError as e:
-        logger.error(f"Download failed with error: {e.stderr}")
+        # Probable 429 error (rate limit)
+        if '429' in e.stderr:
+            logger.error(f"Download failed ({file_path.name}) with error 429. Retrying in 5 seconds...")
+            logger.warning(
+                "You might be running too many workers at the same time. Try reducing the number of workers.")
+            time.sleep(5)
+            download_tracks_from_file(file_path)
     except Exception as e:
         logger.error(f"Unexpected error: {e}")
     else:
-        logger.success("Download completed successfully!")
+        logger.success(f"Download completed successfully ({file_path.name})")
 
 
 def process_and_download_tracks_concurrently(tidal_urls, workers=3):

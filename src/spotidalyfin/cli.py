@@ -5,7 +5,7 @@ from loguru import logger
 
 from constants import DOWNLOAD_PATH, TIDAL_CLIENT_ID, TIDAL_CLIENT_SECRET, SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET
 from spotify_manager import get_spotify_client, get_playlist_tracks, get_liked_songs
-from src.spotidalyfin.file_manager import organize_track
+from src.spotidalyfin.file_manager import organize_track, check_downloaded_tracks
 from src.spotidalyfin.jellyfin_manager import search_jellyfin
 from src.spotidalyfin.utils import setup_logger
 from tidal_manager import get_tidal_client, search_tidal_track, process_and_download_tracks_concurrently
@@ -50,14 +50,15 @@ def process_tracks(tracks):
             logger.success(f"Track already exists (Jellyfin)")
 
     if tidal_urls:
-        process_and_download_tracks_concurrently(tidal_urls)
+        process_and_download_tracks_concurrently(tidal_urls, workers=3)
+        check_downloaded_tracks(tidal_urls)
         organize_downloaded_tracks()
 
 
 def organize_downloaded_tracks():
     logger.info(f"Organizing tracks in {DOWNLOAD_PATH}")
-    for track_path in DOWNLOAD_PATH.glob("*"):
-        if track_path.is_file() and "m4a" in track_path.suffix:
+    for track_path in DOWNLOAD_PATH.glob("*.m4a"):
+        if track_path.is_file():
             organize_track(track_path)
             logger.info(f"Organized: {track_path.name}")
 

@@ -2,9 +2,10 @@
 import shutil
 from pathlib import Path
 
+from loguru import logger
 from minim.audio import Audio
 
-from src.spotidalyfin.constants import FINAL_PATH
+from src.spotidalyfin.constants import FINAL_PATH, DOWNLOAD_PATH
 
 
 def format_file_path(metadata):
@@ -61,3 +62,13 @@ def organize_track(file_path: Path):
     new_path.parent.mkdir(parents=True, exist_ok=True)
 
     shutil.move(file_path, new_path)
+
+
+def check_downloaded_tracks(tidal_urls):
+    amount = len(tidal_urls)
+    downloaded = len(list(DOWNLOAD_PATH.glob("*.m4a")))
+
+    if amount == downloaded:
+        logger.success(f"All {amount} tracks downloaded successfully!")
+    else:
+        logger.warning(f"Only {downloaded} out of {amount} tracks downloaded successfully.")
