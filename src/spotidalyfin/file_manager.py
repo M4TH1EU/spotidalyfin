@@ -4,51 +4,47 @@ from pathlib import Path
 
 from minim.audio import Audio
 
+from src.spotidalyfin.constants import FINAL_PATH
+
 
 def format_file_path(metadata):
-    def if2(val1, val2):
-        return val1 if val1 else val2
+    def get_num(value, length=2):
+        """Convert value to a zero-padded number string of specified length."""
+        return str(value).zfill(length)
 
-    def gt(val1, val2):
-        return val1 > val2
-
-    def num(value, digits):
-        return f"{value:0{digits}d}"
-
-    albumartist = metadata.get('albumartist', '')
+    # Extract necessary metadata
+    album_artist = metadata.get('albumartist') or metadata.get('artist')
     artist = metadata.get('artist', '')
     album = metadata.get('album', '')
-    totaldiscs = metadata.get('totaldiscs', 1)
-    discnumber = metadata.get('discnumber', 1)
-    tracknumber = metadata.get('tracknumber', None)
+    total_discs = int(metadata.get('totaldiscs', 1))
+    disc_number = int(metadata.get('discnumber', 1))
+    track_number = metadata.get('tracknumber', 0)
     title = metadata.get('title', '')
     multiartist = metadata.get('_multiartist', False)
 
-    result = Path(if2(albumartist, artist))
-    if albumartist:
-        result /= album
+    # Build path components
+    path = f"{album_artist}/"
 
-    if gt(totaldiscs, 1):
-        result /= f"{num(discnumber, 2) if gt(totaldiscs, 9) else str(discnumber)}-"
+    if album_artist and album:
+        path += f"{album}/"
 
-    if albumartist and tracknumber:
-        if multiartist:
-            result /= f"{num(tracknumber, 2)} - {artist} - {title}"
-        else:
-            result /= f"{num(tracknumber, 2)} - {title}"
-    else:
-        result /= title
+    if total_discs > 1:
+        disc_part = f"{get_num(disc_number)}-" if total_discs > 9 else f"{disc_number}-"
+        path += disc_part
 
-    return result
+    if album_artist and track_number:
+        path += f"{get_num(track_number)} "
+
+    if multiartist and artist:
+        path += f"{artist} - "
+
+    path += f"{title}"
+
+    return path
 
 
-def organize_track(download_path, final_path):
-    files = list(Path(download_path).glob("*"))
-    if len(files) != 1:
-        print("  Error: More than one file in the download folder.")
-        return
-
-    audio_data = Audio(files[0])
+def organize_track(file_path: Path):
+    audio_data = Audio(file_path)
     metadata = {
         "albumartist": audio_data.album_artist,
         "artist": audio_data.artist,
@@ -60,8 +56,8 @@ def organize_track(download_path, final_path):
         "_multiartist": False,
     }
 
-    file_path = format_file_path(metadata).with_suffix(".m4a")
-    new_path = Path(final_path) / file_path
+    formatted_path = format_file_path(metadata) + file_path.suffix  # Author/Album/00 Track title
+    new_path = Path(FINAL_PATH) / formatted_path
     new_path.parent.mkdir(parents=True, exist_ok=True)
 
-    shutil.move(files[0], new_path)
+    shutil.move(file_path, new_path)
