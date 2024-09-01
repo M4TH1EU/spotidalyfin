@@ -8,6 +8,7 @@ from constants import DOWNLOAD_PATH, TIDAL_CLIENT_ID, TIDAL_CLIENT_SECRET, SPOTI
 from spotify_manager import get_spotify_client, get_playlist_tracks, get_liked_songs
 from src.spotidalyfin.file_manager import organize_track
 from src.spotidalyfin.jellyfin_manager import search_jellyfin
+from src.spotidalyfin.utils import setup_logger
 from tidal_manager import get_tidal_client, search_tidal_track, save_tidal_urls_to_file, download_tracks_from_file
 
 
@@ -48,10 +49,11 @@ def process_tracks(tracks):
 
     if tidal_urls:
         file_path = DOWNLOAD_PATH / "tidal_urls.txt"
-        split_file_paths = save_tidal_urls_to_file(tidal_urls, file_path)
+        split_count = 5
+        split_file_paths = save_tidal_urls_to_file(tidal_urls, file_path, split_count)
 
         # Run download processes concurrently
-        with ProcessPoolExecutor(max_workers=3) as executor:
+        with ProcessPoolExecutor(max_workers=split_count) as executor:
             futures = [executor.submit(download_tracks_from_file, file_path) for file_path in split_file_paths]
             for future in futures:
                 try:
@@ -81,7 +83,7 @@ def download_playlists_from_file(file_path):
 
 
 if __name__ == '__main__':
-    # setup_logger()
+    setup_logger()
 
     parser = argparse.ArgumentParser(description="Download music from Spotify and Tidal.")
     parser.add_argument("--liked", action="store_true", help="Download liked songs from Spotify")

@@ -40,9 +40,9 @@ def search_tidal_track(client, track_name, artist_name, album_name, duration, re
     return None
 
 
-def save_tidal_urls_to_file(tidal_urls: list, base_file_path: Path):
+def save_tidal_urls_to_file(tidal_urls: list, base_file_path: Path, split_count=3):
     # Split tidal URLs into three roughly equal parts
-    split_urls = [tidal_urls[i::3] for i in range(3)]
+    split_urls = [tidal_urls[i::split_count] for i in range(split_count)]
     file_paths = []
 
     for i, urls in enumerate(split_urls):
