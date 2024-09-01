@@ -1,13 +1,19 @@
 import json
 import os
+import re
 import sys
 import time
+from io import StringIO
 
 import requests
 import tidal_dl_ng.cli as tidal_dl_ng
 from minim import spotify, tidal
+from minim.audio import Audio
 
 import const
+
+DOWNLOAD_PATH = "/home/mathieu/Téléchargements/notnoice/Tracks"
+FINAL_PATH = "/home/mathieu/Téléchargements/noice"
 
 if getattr(sys, 'frozen', False):
     application_path = sys._MEIPASS
@@ -16,6 +22,25 @@ else:
 
 spotify_tidal_table = {}
 
+
+class Capturing(list):
+    def __enter__(self):
+        self._stdout = sys.stdout
+        self._stderr = sys.stderr
+        sys.stdout = self._stringio = StringIO()
+        sys.stderr = self._stringio = StringIO()
+        return self
+
+    def __exit__(self, *args):
+        self.extend(self._stringio.getvalue().splitlines())
+        del self._stringio  # free up some memory
+        sys.stdout = self._stdout
+        sys.stderr = self._stderr
+
+
+def slugify(value):
+    value = re.sub(r'[^\w_. -]', '_', value)
+    return value
 
 def get_playlist_tracks(playlist_id):
     results = client_spotify.get_playlist_items(playlist_id, limit=50)
@@ -71,12 +96,12 @@ def get_formatted_str(string, removes=None):
     return string
 
 
-def get_tidal_track_id(track_name, artist_name, album_name, spotify_id, duration, query=None):
+def get_tidal_track_id(track_name, artist_name, album_name, spotify_id, duration, query=None) -> list:
     try:
         if spotify_id in spotify_tidal_table:
             if not spotify_tidal_table[spotify_id]:
                 return None
-            return spotify_tidal_table[spotify_id]
+            return [spotify_tidal_table[spotify_id], track_name, artist_name, album_name]
         else:
             time.sleep(1.5)  # avoid 429 rate limit errors
             track_name = get_formatted_str(track_name)
@@ -89,9 +114,9 @@ def get_tidal_track_id(track_name, artist_name, album_name, spotify_id, duration
             for track in results['tracks']:
                 track = track['resource']
 
-                tidal_track_name = get_formatted_str(track['title'])
-                tidal_artist_name = get_formatted_str(track['artists'][0]['name'])
-                tidal_album_name = get_formatted_str(track['album']['title'])
+                tidal_track_name: str = get_formatted_str(track['title'])
+                tidal_artist_name: str = get_formatted_str(track['artists'][0]['name'])
+                tidal_album_name: str = get_formatted_str(track['album']['title'])
                 tidal_album_name_list = list(tidal_artist_name.replace(" ", ""))
                 duration_diff = abs(duration - track['duration'])
 
@@ -112,16 +137,16 @@ def get_tidal_track_id(track_name, artist_name, album_name, spotify_id, duration
 
                 if match_criteria >= 3:
                     write_spotify_tidal_table(spotify_id, track['id'])
-                    return track['id']
+                    return [track['id'], track['title'], track['artists'][0]['name'], track['album']['title']]
 
         retry = get_tidal_track_id(track_name, artist_name, album_name, spotify_id, duration,
                                    query=f"{artist_name} {track_name}")
         if retry:
-            write_spotify_tidal_table(spotify_id, retry)
+            write_spotify_tidal_table(spotify_id, retry[0])
             return retry
 
         write_spotify_tidal_table(spotify_id, "")
-        return None
+        return []
     except RuntimeError:
         print("Tidal API error, waiting 3 seconds...")
         time.sleep(3)
@@ -148,9 +173,88 @@ def write_spotify_tidal_table(spotify_id, tidal_id):
 def download_track_from_tidal(uri: str):
     sys.argv = ["tidal-dl-ng", "dl", uri]
     try:
-        tidal_dl_ng.app()
+        with Capturing() as output:
+            tidal_dl_ng.app()
+
+        if "is unavailable" in output:
+            time.sleep(1)
+            tidal_dl_ng.app()
+
+            if "is unavailable" in output:
+                print("  Download failed.")
+                return
+
     except SystemExit:
         pass
+
+    print("  Downloaded!")
+
+
+def format_file_path(metadata):
+    def if2(val1, val2):
+        return val1 if val1 else val2
+
+    def gt(val1, val2):
+        return val1 > val2
+
+    def num(value, digits):
+        return f"{value:0{digits}d}"
+
+    albumartist = metadata.get('albumartist', '')
+    artist = metadata.get('artist', '')
+    album = metadata.get('album', '')
+    totaldiscs = metadata.get('totaldiscs', 1)
+    discnumber = metadata.get('discnumber', 1)
+    tracknumber = metadata.get('tracknumber', None)
+    title = metadata.get('title', '')
+    multiartist = metadata.get('_multiartist', False)
+
+    # Equivalent logic to the given script
+    result = if2(albumartist, artist) + "/"
+
+    if albumartist:
+        result += album + "/"
+
+    if gt(totaldiscs, 1):
+        result += (num(discnumber, 2) if gt(totaldiscs, 9) else str(discnumber)) + "-"
+
+    if albumartist and tracknumber:
+        result += num(tracknumber, 2) + " "
+
+    if multiartist:
+        result += artist + " - "
+
+    result += title
+
+    return result
+
+
+def organise_track(track_name, artist_name, album_name):
+    # get the only file in the download folder
+    files = os.listdir(DOWNLOAD_PATH)
+    if len(files) != 1:
+        print("  Error: More than one file in the download folder.")
+
+    # get the file path
+    audio_data = Audio(DOWNLOAD_PATH + "/" + files[0])
+    metadata = {
+        "albumartist": audio_data.album_artist,
+        "artist": audio_data.artist,
+        "album": audio_data.album,
+        "title": audio_data.title,
+        "totaldiscs": audio_data.disc_count,
+        "discnumber": audio_data.disc_number,
+        "tracknumber": audio_data.track_number,
+        "_multiartist": False,
+    }
+    file_path = format_file_path(metadata)  # 'Nassi/La vie est belle/01 La vie est belle'
+
+    old_path = DOWNLOAD_PATH + "/" + files[0]
+    new_path = FINAL_PATH + "/" + file_path + ".m4a"
+
+    # move file
+    os.system(f"mkdir -p '{os.path.dirname(new_path)}'")
+    os.system(f"mv '{old_path}' '{new_path}'")
 
 
 if __name__ == '__main__':
@@ -161,7 +265,7 @@ if __name__ == '__main__':
 
     minim_config = "~/minim.cfg"
     my_minim_config = os.path.join(application_path, "config-minim.cfg")
-    os.system(f"cp {my_minim_config} {minim_config}")
+    # os.system(f"cp {my_minim_config} {minim_config}")
 
     create_spotify_tidal_table()
     spotify_tidal_table = read_spotify_tidal_table()
@@ -171,7 +275,7 @@ if __name__ == '__main__':
     client_spotify = spotify.WebAPI(client_id=const.SPOTIFY_CLIENT_ID, client_secret=const.SPOTIFY_CLIENT_SECRET,
                                     flow="pkce", scopes=scopes, web_framework="http.server")
 
-    liked_songs = get_liked_songs()
+    # liked_songs = get_liked_songs()
 
     spotify_playlists = client_spotify.get_user_playlists("mathieu.broillet", limit=50)
     spotify_playlists_to_save = [
@@ -215,12 +319,13 @@ if __name__ == '__main__':
                 jellyfin_track = search_jellyfin(trackname, artistname, albumname)
                 if jellyfin_track is None:
                     print(f"MISSING: {trackname} - {artistname} ({albumname})")
-                    tidal_id = get_tidal_track_id(trackname, artistname, albumname, trackid, duration)
-                    if tidal_id is None:
+                    tidal_request = get_tidal_track_id(trackname, artistname, albumname, trackid, duration)
+                    if tidal_request is None:
                         print(f"  Not found on Tidal...")
                     else:
-                        print(f"  Found on Tidal! Downloading... ({tidal_id})")
-                        download_track_from_tidal(f"https://tidal.com/browse/track/{tidal_id}")
+                        print(f"  Found on Tidal! Downloading... ({tidal_request[0]})")
+                        download_track_from_tidal(f"https://tidal.com/browse/track/{tidal_request[0]}")
+                        organise_track(tidal_request[1], tidal_request[2], tidal_request[3])
 
                 print("")
 

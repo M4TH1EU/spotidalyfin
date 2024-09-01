@@ -4,7 +4,7 @@
   "lyrics_file": false,
   "video_download": false,
   "download_delay": false,
-  "download_base_path": "/run/media/mathieu/MUSIC",
+  "download_base_path": "/home/mathieu/Téléchargements/notnoice",
   "quality_audio": "HI_RES_LOSSLESS",
   "quality_video": "360",
   "format_album": "Albums/{album_artist} - {album_title}{album_explicit}/{album_track_num}. {artist_name} - {track_title}",
