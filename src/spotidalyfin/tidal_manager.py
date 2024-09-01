@@ -2,16 +2,19 @@
 import random
 import subprocess
 import time
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 from loguru import logger
 from minim import tidal
 
+from src.spotidalyfin.constants import DOWNLOAD_PATH
 from utils import format_string
 
 
 def get_tidal_client(client_id, client_secret):
     return tidal.API(client_id=client_id, client_secret=client_secret)
+
 
 def search_tidal_track(client, track_name, artist_name, album_name, duration, retry_count=0):
     track_name, artist_name, album_name = map(format_string, [track_name, artist_name, album_name])
@@ -84,5 +87,16 @@ def download_tracks_from_file(file_path: Path):
     else:
         logger.success("Download completed successfully!")
 
-# def download_track_from_tidal(track_id: str):
-#     download_tracks_from_file(track_id)
+
+def process_and_download_tracks_concurrently(tidal_urls, workers=3):
+    file_path = DOWNLOAD_PATH / "tidal_urls.txt"
+    split_file_paths = save_tidal_urls_to_file(tidal_urls, file_path, workers)
+
+    # Run download processes concurrently using ProcessPoolExecutor
+    with ProcessPoolExecutor(max_workers=workers) as executor:
+        futures = [executor.submit(download_tracks_from_file, file_path) for file_path in split_file_paths]
+        for future in futures:
+            try:
+                future.result()  # Wait for the process to complete and catch any exceptions
+            except Exception as e:
+                logger.error(f"Error during download: {e}")

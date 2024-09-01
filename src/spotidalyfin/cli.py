@@ -1,6 +1,5 @@
 # cli.py
 import argparse
-from concurrent.futures import ProcessPoolExecutor
 
 from loguru import logger
 
@@ -9,7 +8,7 @@ from spotify_manager import get_spotify_client, get_playlist_tracks, get_liked_s
 from src.spotidalyfin.file_manager import organize_track
 from src.spotidalyfin.jellyfin_manager import search_jellyfin
 from src.spotidalyfin.utils import setup_logger
-from tidal_manager import get_tidal_client, search_tidal_track, save_tidal_urls_to_file, download_tracks_from_file
+from tidal_manager import get_tidal_client, search_tidal_track, process_and_download_tracks_concurrently
 
 
 def download_liked_songs():
@@ -17,10 +16,12 @@ def download_liked_songs():
     liked_tracks = get_liked_songs(client_spotify)
     process_tracks(liked_tracks)
 
+
 def download_playlist(playlist_id):
     client_spotify = get_spotify_client(SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET)
     playlist_tracks = get_playlist_tracks(client_spotify, playlist_id)
     process_tracks(playlist_tracks)
+
 
 def process_tracks(tracks):
     client_tidal = get_tidal_client(TIDAL_CLIENT_ID, TIDAL_CLIENT_SECRET)
@@ -33,6 +34,7 @@ def process_tracks(tracks):
         album_name = track_info['album']['name']
         duration = int(track_info['duration_ms']) / 1000
 
+        print()
         logger.info(f"Processing: {track_name} - {artist_name} ({album_name})")
 
         jellyfin_id = search_jellyfin(track_name, artist_name, album_name)
@@ -48,19 +50,7 @@ def process_tracks(tracks):
             logger.success(f"Track already exists (Jellyfin)")
 
     if tidal_urls:
-        file_path = DOWNLOAD_PATH / "tidal_urls.txt"
-        split_count = 5
-        split_file_paths = save_tidal_urls_to_file(tidal_urls, file_path, split_count)
-
-        # Run download processes concurrently
-        with ProcessPoolExecutor(max_workers=split_count) as executor:
-            futures = [executor.submit(download_tracks_from_file, file_path) for file_path in split_file_paths]
-            for future in futures:
-                try:
-                    future.result()  # Wait for the process to complete and catch any exceptions
-                except Exception as e:
-                    logger.error(f"Error during download: {e}")
-
+        process_and_download_tracks_concurrently(tidal_urls)
         organize_downloaded_tracks()
 
 
