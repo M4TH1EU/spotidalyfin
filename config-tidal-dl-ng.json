@@ -1,0 +1,20 @@
+{
+  "skip_existing": "exact",
+  "lyrics_embed": true,
+  "lyrics_file": false,
+  "video_download": false,
+  "download_delay": false,
+  "download_base_path": "/run/media/mathieu/MUSIC",
+  "quality_audio": "HI_RES_LOSSLESS",
+  "quality_video": "360",
+  "format_album": "Albums/{album_artist} - {album_title}{album_explicit}/{album_track_num}. {artist_name} - {track_title}",
+  "format_playlist": "Playlists/{playlist_name}/{artist_name} - {track_title}",
+  "format_mix": "Mix/{mix_name}/{artist_name} - {track_title}",
+  "format_track": "Tracks/{artist_name} - {track_title}{track_explicit}",
+  "format_video": "Videos/{artist_name} - {track_title}{track_explicit}",
+  "video_convert_mp4": false,
+  "path_binary_ffmpeg": "/usr/bin/ffmpeg",
+  "metadata_cover_dimension": "320",
+  "extract_flac": false,
+  "downgrade_on_hi_res": false
+}
