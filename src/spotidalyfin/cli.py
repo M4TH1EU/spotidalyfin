@@ -1,5 +1,6 @@
 # cli.py
 import argparse
+from concurrent.futures import ProcessPoolExecutor
 
 from loguru import logger
 
@@ -7,7 +8,6 @@ from constants import DOWNLOAD_PATH, TIDAL_CLIENT_ID, TIDAL_CLIENT_SECRET, SPOTI
 from spotify_manager import get_spotify_client, get_playlist_tracks, get_liked_songs
 from src.spotidalyfin.file_manager import organize_track
 from src.spotidalyfin.jellyfin_manager import search_jellyfin
-from src.spotidalyfin.utils import setup_logger
 from tidal_manager import get_tidal_client, search_tidal_track, save_tidal_urls_to_file, download_tracks_from_file
 
 
@@ -48,8 +48,17 @@ def process_tracks(tracks):
 
     if tidal_urls:
         file_path = DOWNLOAD_PATH / "tidal_urls.txt"
-        save_tidal_urls_to_file(tidal_urls, file_path)
-        download_tracks_from_file(file_path)
+        split_file_paths = save_tidal_urls_to_file(tidal_urls, file_path)
+
+        # Run download processes concurrently
+        with ProcessPoolExecutor(max_workers=3) as executor:
+            futures = [executor.submit(download_tracks_from_file, file_path) for file_path in split_file_paths]
+            for future in futures:
+                try:
+                    future.result()  # Wait for the process to complete and catch any exceptions
+                except Exception as e:
+                    logger.error(f"Error during download: {e}")
+
         organize_downloaded_tracks()
 
 
@@ -72,7 +81,7 @@ def download_playlists_from_file(file_path):
 
 
 if __name__ == '__main__':
-    setup_logger()
+    # setup_logger()
 
     parser = argparse.ArgumentParser(description="Download music from Spotify and Tidal.")
     parser.add_argument("--liked", action="store_true", help="Download liked songs from Spotify")
