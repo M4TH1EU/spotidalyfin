@@ -29,3 +29,14 @@ def setup_logger():
         format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <level>{message}</level>",
         level="INFO"
     )
+
+
+def log_not_found_tracks(not_found):
+    if not_found:
+        logger.warning("Songs that could not be matched:")
+        for track in not_found:
+            track_name = track.get('name', '')
+            artist_name = track.get('artists', [{}])[0].get('name', '')
+            album_name = track.get('album', {}).get('name', '')
+            logger.warning(f"{track_name} - {artist_name} ({album_name})")
+        print()

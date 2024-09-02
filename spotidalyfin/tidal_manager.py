@@ -10,7 +10,7 @@ from minim import tidal
 from minim.tidal import API
 from streamrip.rip import rip
 
-from spotidalyfin import tidal_matcher
+from spotidalyfin import tidal_matcher, database
 from spotidalyfin.constants import DOWNLOAD_PATH
 
 
@@ -56,6 +56,22 @@ def search_tidal_track(client: API, spotify_track: dict, retry_count: int = 0, f
             logger.error(f"Failed to search for track: {e}")
 
     return ""
+
+
+def get_tidal_url_from_cache_or_search(track_id, spotify_track, client_tidal):
+    cached_url = database.get(track_id)
+    if cached_url:
+        logger.success(f"Found track in database: {cached_url}\n")
+        return cached_url
+
+    tidal_track_id = search_tidal_track(client_tidal, spotify_track)
+    if tidal_track_id:
+        database.put(track_id, tidal_track_id)
+        logger.success(f"Found track on Tidal: {tidal_track_id}\n")
+        return tidal_track_id
+
+    logger.warning("Could not find track on Tidal\n")
+    return None
 
 
 def save_tidal_urls_to_file(tidal_urls: list, base_file_path: Path, split_count: int = 3) -> list:

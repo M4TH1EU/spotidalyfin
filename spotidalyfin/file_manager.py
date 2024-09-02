@@ -45,6 +45,20 @@ def format_file_path(metadata):
     return path
 
 
+def organize_downloaded_tracks():
+    logger.info(f"Organizing tracks in {DOWNLOAD_PATH}")
+    for track_path in DOWNLOAD_PATH.glob("*.flac"):
+        if track_path.is_file():
+            organize_track(track_path)
+            logger.debug(f"Organized: {track_path.name}")
+
+    for track_path in DOWNLOAD_PATH.glob("*.txt"):
+        if track_path.is_file():
+            track_path.unlink()
+
+    logger.success("Organized downloaded tracks.\n")
+
+
 def organize_track(file_path: Path):
     audio_data = Audio(file_path)
     metadata = {
