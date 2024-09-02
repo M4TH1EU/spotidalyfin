@@ -9,37 +9,39 @@ from minim import tidal
 from minim.tidal import API
 from streamrip.rip import rip
 
+from spotidalyfin import tidal_matcher
 from spotidalyfin.constants import DOWNLOAD_PATH
-from spotidalyfin.utils import format_string
 
 
 def get_tidal_client(client_id, client_secret):
     return tidal.API(client_id=client_id, client_secret=client_secret)
 
 
-def search_tidal_track(client: API, track_name, artist_name, album_name, duration, retry_count=0):
-    track_name, artist_name, album_name = map(format_string, [track_name, artist_name, album_name])
+def search_tidal_track(client: API, spotify_track: dict, retry_count=0):
+    matches = []
+
+    fast = False
 
     try:
-        results = client.search(f'{track_name} {artist_name}', "CH", type="TRACKS", limit=10)
+        if fast:
+            matches.extend(tidal_matcher.search_for_track(client, spotify_track))
+        else:
+            matches.extend(tidal_matcher.search_for_track_in_album(client, spotify_track))
+            if not matches:
+                matches.extend(tidal_matcher.search_for_track(client, spotify_track))
+
+        if matches:
+            best_id = tidal_matcher.get_best_quality_track(matches)
+            return best_id.get('id')
     except Exception as e:
         if '429' in str(e) and retry_count < 5:  # 429 is a rate limit error
-            backoff_time = (1.25 ** retry_count) + random.uniform(0, 0.3)  # Exponential backoff with jitter
+            backoff_time = (1.75 ** retry_count) + random.uniform(0.3, 0.7)  # Exponential backoff with jitter
             logger.debug(f"Rate limit hit, retrying in {backoff_time:.2f} seconds...")
             time.sleep(backoff_time)
-            return search_tidal_track(client, track_name, artist_name, album_name, duration, retry_count + 1)
+            return search_tidal_track(client, spotify_track, retry_count + 1)
         else:
             logger.error(f"Failed to search track: {e}")
             return None
-
-    for track in results['tracks']:
-        tidal_track = track['resource']
-        if (
-                format_string(tidal_track['title']) == track_name and
-                format_string(tidal_track['artists'][0]['name']) == artist_name and
-                abs(duration - tidal_track['duration']) < 3
-        ):
-            return tidal_track['id']
 
     return None
 

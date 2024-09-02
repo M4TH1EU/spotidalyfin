@@ -36,3 +36,11 @@ TIDAL_DL_NG_CONFIG = {
     "extract_flac": False,
     "downgrade_on_hi_res": False
 }
+
+TIDAL_QUALITY = {
+    "DOLBY_ATMOS": 0,
+    "LOW": 1,
+    "LOSSLESS": 2,
+    "HIRES_LOSSLESS": 3,
+    "HI_RES_LOSSLESS": 3
+}

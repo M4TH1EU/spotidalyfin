@@ -31,25 +31,24 @@ def download_track(track_id):
     process_tracks([track])
 
 
-def process_tracks(tracks):
+def process_tracks(spotify_tracks):
     client_tidal = get_tidal_client(TIDAL_CLIENT_ID, TIDAL_CLIENT_SECRET)
     tidal_urls = []
 
-    for track in tracks:
-        if len(tracks) > 1:
-            track = track['track']
+    for spotify_track in spotify_tracks:
+        if len(spotify_tracks) > 1:
+            spotify_track = spotify_track['track']
 
-        track_name = track['name']
-        artist_name = track['artists'][0]['name']
-        album_name = track['album']['name']
-        duration = int(track['duration_ms']) / 1000
+        track_name = spotify_track.get('name')
+        artist_name = spotify_track.get('artists')[0].get('name')
+        album_name = spotify_track.get('album').get('name')
 
         logger.info(f"Processing: {track_name} - {artist_name} ({album_name})")
 
         jellyfin_id = search_jellyfin(track_name, artist_name, album_name)
         if not jellyfin_id:
             logger.info(f"Track not found (Jellyfin)")
-            tidal_track_id = search_tidal_track(client_tidal, track_name, artist_name, album_name, duration)
+            tidal_track_id = search_tidal_track(client_tidal, spotify_track)
             if tidal_track_id:
                 tidal_urls.append(tidal_track_id)
                 logger.success("Track found on Tidal")
