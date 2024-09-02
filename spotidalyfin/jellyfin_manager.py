@@ -1,8 +1,8 @@
 # jellyfin_manager.py
 import requests
 
-from src.spotidalyfin.constants import JELLYFIN_API_KEY, JELLYFIN_URL
-from src.spotidalyfin.utils import format_string
+from spotidalyfin.constants import JELLYFIN_API_KEY, JELLYFIN_URL
+from spotidalyfin.utils import format_string
 
 
 def search_jellyfin(track_name, artist_name, album_name):
