@@ -6,8 +6,10 @@ DEBUG = False
 
 DOWNLOAD_PATH = Path("/tmp/spotidalyfin")
 FINAL_PATH = Path("~/Music/spotidalyfin").expanduser()
-APPLICATION_PATH = Path(
-    sys._MEIPASS if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS') else __file__).resolve().parent
+if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+    APPLICATION_PATH = Path(sys._MEIPASS).resolve()
+else:
+    APPLICATION_PATH = Path(__file__).resolve().parent
 
 # Credentials
 SPOTIFY_CLIENT_ID = ""
