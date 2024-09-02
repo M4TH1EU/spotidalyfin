@@ -1,8 +1,8 @@
 import random
 import time
+from datetime import datetime
 from difflib import SequenceMatcher
 
-from future.backports.datetime import datetime
 from minim.tidal import API
 
 from spotidalyfin import constants

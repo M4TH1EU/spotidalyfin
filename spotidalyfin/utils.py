@@ -4,6 +4,8 @@ import sys
 
 from loguru import logger
 
+from spotidalyfin.constants import DEBUG
+
 
 def slugify(value):
     return re.sub(r'[^\w_. -]', '_', value)
@@ -27,7 +29,7 @@ def setup_logger():
     logger.add(
         sys.stdout,
         format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <level>{message}</level>",
-        level="INFO"
+        level="DEBUG" if DEBUG else "INFO"
     )
 
 

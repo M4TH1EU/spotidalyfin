@@ -1,12 +1,14 @@
 # cli.py
 import argparse
+from pathlib import Path
 
 from loguru import logger
 
-from spotidalyfin import database
+from spotidalyfin import database, constants
 from spotidalyfin.constants import TIDAL_CLIENT_ID, TIDAL_CLIENT_SECRET, SPOTIFY_CLIENT_ID, \
     SPOTIFY_CLIENT_SECRET
-from spotidalyfin.file_manager import check_downloaded_tracks, organize_downloaded_tracks
+from spotidalyfin.file_manager import check_downloaded_tracks, organize_downloaded_tracks, check_bundled_secrets, \
+    load_secrets
 from spotidalyfin.jellyfin_manager import search_jellyfin
 from spotidalyfin.spotify_manager import get_spotify_client, get_playlist_tracks, get_liked_songs
 from spotidalyfin.tidal_manager import get_tidal_client, process_and_download_tracks_concurrently, \
@@ -84,14 +86,25 @@ def process_tracks(spotify_tracks):
 if __name__ == '__main__':
     setup_logger()
     database.initialize_database()
+    check_bundled_secrets()
 
     parser = argparse.ArgumentParser(description="Download music from Spotify and Tidal.")
     parser.add_argument("--liked", action="store_true", help="Download liked songs from Spotify")
     parser.add_argument("--playlist", type=str, help="Download a single playlist by Spotify ID or URL")
     parser.add_argument("--file", type=str, help="Download playlists listed in a text file")
     parser.add_argument("--track", type=str, help="Download a single track by Spotify ID or URL")
+    parser.add_argument("--debug", action="store_true", help="Enable debug logging")
+    parser.add_argument("--path", type=str, help="Path to download music to")
+    parser.add_argument("--secrets", type=str, help="Path to secrets file")
 
     args = parser.parse_args()
+
+    if args.debug:
+        constants.DEBUG = args.debug
+    if args.path:
+        constants.FINAL_PATH = args.path
+    if args.secrets:
+        load_secrets(Path(args.secrets))
 
     if args.liked:
         download_liked_songs()

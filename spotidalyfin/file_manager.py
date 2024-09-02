@@ -6,7 +6,8 @@ from pathlib import Path
 from loguru import logger
 from minim.audio import Audio
 
-from spotidalyfin.constants import FINAL_PATH, DOWNLOAD_PATH
+from spotidalyfin import constants
+from spotidalyfin.constants import FINAL_PATH, DOWNLOAD_PATH, DEBUG, APPLICATION_PATH
 
 
 def format_file_path(metadata):
@@ -52,9 +53,13 @@ def organize_downloaded_tracks():
             organize_track(track_path)
             logger.debug(f"Organized: {track_path.name}")
 
-    for track_path in DOWNLOAD_PATH.glob("*.txt"):
-        if track_path.is_file():
-            track_path.unlink()
+    if not DEBUG:
+        for track_path in DOWNLOAD_PATH.glob("*.txt"):
+            if track_path.is_file():
+                track_path.unlink()
+
+        # Remove artwork folder if it exists
+        (DOWNLOAD_PATH / "__artwork").unlink(missing_ok=True)
 
     logger.success("Organized downloaded tracks.\n")
 
@@ -95,3 +100,30 @@ def apply_json_config(data: dict, file_path: Path):
     with open(file_path, "w") as file:
         json.dump(data, file, indent=4)
         logger.debug(f"Config written to {file_path}")
+
+
+def check_bundled_secrets():
+    secrets = APPLICATION_PATH / "spotidalyfin.secrets"
+    if secrets.exists():
+        load_secrets(secrets)
+
+
+def load_secrets(file_path: Path):
+    secrets = {}
+    with open(file_path, 'r') as f:
+        for line in f:
+            key, value = line.strip().split("=", 1)  # Strip spaces and split on the first '='
+            secrets[key.strip()] = value.strip()
+
+    if 'SPOTIFY_CLIENT_ID' in secrets:
+        constants.SPOTIFY_CLIENT_ID = secrets['SPOTIFY_CLIENT_ID']
+    if 'SPOTIFY_CLIENT_SECRET' in secrets:
+        constants.SPOTIFY_CLIENT_SECRET = secrets['SPOTIFY_CLIENT_SECRET']
+    if 'TIDAL_CLIENT_ID' in secrets:
+        constants.TIDAL_CLIENT_ID = secrets['TIDAL_CLIENT_ID']
+    if 'TIDAL_CLIENT_SECRET' in secrets:
+        constants.TIDAL_CLIENT_SECRET = secrets['TIDAL_CLIENT_SECRET']
+    if 'JELLYFIN_URL' in secrets:
+        constants.JELLYFIN_URL = secrets['JELLYFIN_URL']
+    if 'JELLYFIN_API_KEY' in secrets:
+        constants.JELLYFIN_API_KEY = secrets

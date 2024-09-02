@@ -1,19 +1,23 @@
 # constants.py
+import sys
 from pathlib import Path
 
-DOWNLOAD_PATH = Path("/home/mathieu/Téléchargements/notnoice")
-FINAL_PATH = Path("/home/mathieu/Téléchargements/noice")
-APPLICATION_PATH = Path(__file__).parent
+DEBUG = False
+
+DOWNLOAD_PATH = Path("/tmp/spotidalyfin")
+FINAL_PATH = Path("~/Music/spotidalyfin").expanduser()
+APPLICATION_PATH = Path(
+    sys._MEIPASS if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS') else __file__).resolve().parent
 
 # Credentials
-SPOTIFY_CLIENT_ID = "ede847ad77904adead6ae2905f1b4e31"
-SPOTIFY_CLIENT_SECRET = "c020905a91d441bb955040b813684261"
+SPOTIFY_CLIENT_ID = ""
+SPOTIFY_CLIENT_SECRET = ""
 
-TIDAL_CLIENT_ID = "H3jekIIkCOpJfbwF"
-TIDAL_CLIENT_SECRET = "4g20FCbN3bfqvMaHnZmdCi9hAwPVmKWJ3tZv1kO8mR4="
+TIDAL_CLIENT_ID = ""
+TIDAL_CLIENT_SECRET = "="
 
-JELLYFIN_URL = "https://jellyfin.broillet.ch"
-JELLYFIN_API_KEY = "945a0ad8f7de4654a5a5d44bce1e8257"
+JELLYFIN_URL = ""
+JELLYFIN_API_KEY = ""
 
 TIDAL_QUALITY = {
     "DOLBY_ATMOS": 0,
