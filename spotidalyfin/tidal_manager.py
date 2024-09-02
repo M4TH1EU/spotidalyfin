@@ -10,15 +10,14 @@ from minim import tidal
 from minim.tidal import API
 from streamrip.rip import rip
 
-from spotidalyfin import tidal_matcher, database
-from spotidalyfin.constants import DOWNLOAD_PATH
+from spotidalyfin import tidal_matcher, database, constants
 
 
-def get_tidal_client(client_id: str, client_secret: str) -> API:
+def get_tidal_client() -> API:
     """
     Initialize and return a Tidal API client using provided credentials.
     """
-    return tidal.API(client_id=client_id, client_secret=client_secret)
+    return tidal.API(client_id=constants.TIDAL_CLIENT_ID, client_secret=constants.TIDAL_CLIENT_SECRET)
 
 
 def search_tidal_track(client: API, spotify_track: dict, retry_count: int = 0, fast_search: bool = False) -> str:
@@ -120,7 +119,7 @@ def download_tracks_from_file(file_path: Path, retry_count: int = 0):
     result = runner.invoke(
         rip,
         [
-            "--folder", DOWNLOAD_PATH,
+            "--folder", constants.DOWNLOAD_PATH,
             "--no-db",
             "--quality", "3",
             # "--verbose",
@@ -152,7 +151,7 @@ def process_and_download_tracks_concurrently(tidal_urls: list, workers: int = 1)
         tidal_urls (list): List of Tidal track URLs.
         workers (int): Number of concurrent workers to use for downloading.
     """
-    file_path = DOWNLOAD_PATH / "tidal_urls.txt"
+    file_path = constants.DOWNLOAD_PATH / "tidal_urls.txt"
     workers = 1  # Set to 1 due to a known issue with multiple workers.
 
     split_file_paths = save_tidal_urls_to_file(tidal_urls, file_path, workers)

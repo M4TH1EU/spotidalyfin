@@ -15,13 +15,13 @@ from spotidalyfin.utils import setup_logger, log_not_found_tracks
 
 
 def download_liked_songs():
-    client_spotify = get_spotify_client(constants.SPOTIFY_CLIENT_ID, constants.SPOTIFY_CLIENT_SECRET)
+    client_spotify = get_spotify_client()
     liked_tracks = get_liked_songs(client_spotify)
     process_tracks(liked_tracks)
 
 
 def download_playlist(playlist_id):
-    client_spotify = get_spotify_client(constants.SPOTIFY_CLIENT_ID, constants.SPOTIFY_CLIENT_SECRET)
+    client_spotify = get_spotify_client()
     playlist_tracks = get_playlist_tracks(client_spotify, playlist_id)
     process_tracks(playlist_tracks)
 
@@ -37,13 +37,13 @@ def download_playlists_from_file(file_path):
 
 
 def download_track(track_id):
-    client_spotify = get_spotify_client(constants.SPOTIFY_CLIENT_ID, constants.SPOTIFY_CLIENT_SECRET)
+    client_spotify = get_spotify_client()
     track = client_spotify.get_track(track_id)
     process_tracks([track])
 
 
 def process_tracks(spotify_tracks):
-    client_tidal = get_tidal_client(constants.TIDAL_CLIENT_ID, constants.TIDAL_CLIENT_SECRET)
+    client_tidal = get_tidal_client()
     tidal_urls = []
     not_found = []
 

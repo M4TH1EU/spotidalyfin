@@ -2,9 +2,9 @@ import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
 
-from spotidalyfin.constants import FINAL_PATH
+from spotidalyfin import constants
 
-DB_FILE = FINAL_PATH / "spotidalyfin.db"
+DB_FILE = constants.FINAL_PATH / "spotidalyfin.db"
 
 
 @contextmanager

@@ -7,7 +7,6 @@ from loguru import logger
 from minim.audio import Audio
 
 from spotidalyfin import constants
-from spotidalyfin.constants import FINAL_PATH, DOWNLOAD_PATH, DEBUG, APPLICATION_PATH
 
 
 def format_file_path(metadata):
@@ -47,19 +46,19 @@ def format_file_path(metadata):
 
 
 def organize_downloaded_tracks():
-    logger.info(f"Organizing tracks in {DOWNLOAD_PATH}")
-    for track_path in DOWNLOAD_PATH.glob("*.flac"):
+    logger.info(f"Organizing tracks in {constants.DOWNLOAD_PATH}")
+    for track_path in constants.DOWNLOAD_PATH.glob("*.flac"):
         if track_path.is_file():
             organize_track(track_path)
             logger.debug(f"Organized: {track_path.name}")
 
-    if not DEBUG:
-        for track_path in DOWNLOAD_PATH.glob("*.txt"):
+    if not constants.DEBUG:
+        for track_path in constants.DOWNLOAD_PATH.glob("*.txt"):
             if track_path.is_file():
                 track_path.unlink()
 
         # Remove artwork folder if it exists
-        (DOWNLOAD_PATH / "__artwork").unlink(missing_ok=True)
+        (constants.DOWNLOAD_PATH / "__artwork").unlink(missing_ok=True)
 
     logger.success("Organized downloaded tracks.\n")
 
@@ -78,7 +77,7 @@ def organize_track(file_path: Path):
     }
 
     formatted_path = format_file_path(metadata) + file_path.suffix  # Author/Album/00 Track title
-    new_path = Path(FINAL_PATH) / formatted_path
+    new_path = Path(constants.FINAL_PATH) / formatted_path
     new_path.parent.mkdir(parents=True, exist_ok=True)
 
     shutil.move(file_path, new_path)
@@ -86,7 +85,7 @@ def organize_track(file_path: Path):
 
 def check_downloaded_tracks(tidal_urls):
     amount = len(tidal_urls)
-    downloaded = len(list(DOWNLOAD_PATH.glob("*.flac")))
+    downloaded = len(list(constants.DOWNLOAD_PATH.glob("*.flac")))
 
     if amount == downloaded:
         logger.success(f"All {amount} tracks downloaded successfully!\n")
@@ -103,7 +102,7 @@ def apply_json_config(data: dict, file_path: Path):
 
 
 def check_bundled_secrets():
-    secrets = APPLICATION_PATH / "spotidalyfin.secrets"
+    secrets = constants.APPLICATION_PATH / "spotidalyfin.secrets"
     if secrets.exists():
         logger.debug(f"Loading secrets from {secrets}")
         load_secrets(secrets)

@@ -1,11 +1,13 @@
 # spotify_manager.py
 from minim import spotify
 
+from spotidalyfin import constants
 
-def get_spotify_client(client_id, client_secret):
+
+def get_spotify_client():
     scopes = spotify.WebAPI.get_scopes("all")
-    return spotify.WebAPI(client_id=client_id, client_secret=client_secret,
-                          flow="pkce", scopes=scopes, web_framework="http.server")
+    return spotify.WebAPI(client_id=constants.SPOTIFY_CLIENT_ID, client_secret=constants.SPOTIFY_CLIENT_SECRET,
+                          flow="pkce", scopes=scopes, web_framework=None)
 
 
 def get_playlist_tracks(client, playlist_id):
