@@ -82,7 +82,7 @@ def save_tidal_urls_to_file(tidal_urls: list, base_file_path: Path, split_count:
             for url in urls:
                 f.write(f"https://tidal.com/browse/track/{url}\n")
 
-        logger.info(f"Saved Tidal URLs to {split_file_path}")
+        logger.debug(f"Saved Tidal URLs to {split_file_path}")
 
     return file_paths
 
@@ -98,7 +98,7 @@ def download_tracks_from_file(file_path: Path, retry_count: int = 0):
     Raises:
         Exception: If download fails after the maximum number of retries.
     """
-    logger.info(f"Starting download from file: {file_path}")
+    logger.info(f"Starting download... This may take a while. (Look at filesystem for progress)")
 
     runner = CliRunner()
     result = runner.invoke(
@@ -107,7 +107,8 @@ def download_tracks_from_file(file_path: Path, retry_count: int = 0):
             "--folder", DOWNLOAD_PATH,
             "--no-db",
             "--quality", "3",
-            "--verbose",
+            # "--verbose",
+            # "--no-progress"
             "file",
             str(file_path),
         ],

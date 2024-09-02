@@ -70,9 +70,9 @@ def check_downloaded_tracks(tidal_urls):
     downloaded = len(list(DOWNLOAD_PATH.glob("*.flac")))
 
     if amount == downloaded:
-        logger.success(f"All {amount} tracks downloaded successfully!")
+        logger.success(f"All {amount} tracks downloaded successfully!\n")
     else:
-        logger.warning(f"Only {downloaded} out of {amount} tracks downloaded successfully.")
+        logger.warning(f"Only {downloaded} out of {amount} tracks downloaded successfully.\n")
 
 
 def apply_json_config(data: dict, file_path: Path):
@@ -80,4 +80,4 @@ def apply_json_config(data: dict, file_path: Path):
 
     with open(file_path, "w") as file:
         json.dump(data, file, indent=4)
-        logger.success(f"Config written to {file_path}")
+        logger.debug(f"Config written to {file_path}")
