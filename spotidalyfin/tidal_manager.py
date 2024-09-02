@@ -1,7 +1,9 @@
 # tidal_manager.py
 
 import random
+import tempfile
 import time
+import uuid
 from pathlib import Path
 
 from click.testing import CliRunner
@@ -118,7 +120,7 @@ def download_tracks_from_file(file_path: Path, retry_count: int = 0):
         logger.warning(result.output)
 
     if result.exit_code != 0:
-        if retry_count < 1:
+        if retry_count < 3:
             return download_tracks_from_file(file_path, retry_count + 1)
         else:
             logger.error("Maximum retries reached. Download failed.")
@@ -135,11 +137,20 @@ def process_and_download_tracks_concurrently(tidal_urls: list, workers: int = 1)
         tidal_urls (list): List of Tidal track URLs.
         workers (int): Number of concurrent workers to use for downloading.
     """
-    file_path = DOWNLOAD_PATH / "tidal_urls.txt"
-    workers = 1  # Set to 1 due to a known issue with multiple workers.
+    file: Path = Path(tempfile.gettempdir()) / f"tidal_urls_{uuid.uuid4()}.txt"
+    file.parent.mkdir(parents=True, exist_ok=True)
+    with open(file, "w") as f:
+        for url in tidal_urls:
+            f.write(f"https://tidal.com/browse/track/{url}\n")
 
-    split_file_paths = save_tidal_urls_to_file(tidal_urls, file_path, workers)
-    download_tracks_from_file(split_file_paths[0])
+    download_tracks_from_file(file)
+    file.unlink()
+
+    # file_path = DOWNLOAD_PATH / "tidal_urls.txt"
+    # workers = 1  # Set to 1 due to a known issue with multiple workers.
+
+    # split_file_paths = save_tidal_urls_to_file(tidal_urls, file_path, workers)
+    # download_tracks_from_file(split_file_paths[0])
 
     # Concurrent downloading using ProcessPoolExecutor (currently disabled due to issues)
     # with ProcessPoolExecutor(max_workers=workers) as executor:

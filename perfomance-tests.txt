@@ -8,6 +8,7 @@ tool :: tidaldlng
 
 tool :: streamrip
 9 tracks -> 1 worker -> 28 sec
+9 tracks -> 1 worker (queue 3) -> 26 sec
 
 
 
@@ -23,3 +24,4 @@ tool :: tidaldlng
 
 tool :: streamrip
 19 tracks -> 1 worker -> 1m 29 sec
+19 tracks -> 1 worker (queue 6) -> 1m 11 sec
