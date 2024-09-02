@@ -48,7 +48,7 @@ def search_tidal_track(client: API, spotify_track: dict, retry_count: int = 0, f
 
     except Exception as e:
         if '429' in str(e) and retry_count < 7:  # 429 indicates a rate limit error
-            backoff_time = (2 ** retry_count) + random.uniform(0.3, 0.7)  # Exponential backoff with jitter
+            backoff_time = (1.5 ** retry_count) + random.uniform(0.3, 0.7)  # Exponential backoff with jitter
             logger.debug(f"Rate limit hit, retrying in {backoff_time:.2f} seconds...")
             time.sleep(backoff_time)
             return search_tidal_track(client, spotify_track, retry_count + 1)

@@ -1,3 +1,5 @@
+import random
+import time
 from difflib import SequenceMatcher
 
 from future.backports.datetime import datetime
@@ -166,6 +168,7 @@ def search_for_track_in_album(tidal: API, spotify_track: dict) -> list:
 
         if close(t_num_tracks, s_num_tracks) and (
                 abs((t_release_date - s_release_date).days) < 2 or similar(t_album_name, s_album_name, 0.85)):
+            time.sleep(random.uniform(0.3, 0.9))
             album_tracks = tidal.get_album_items(t_album.get('id'), country_code="CH", limit=50).get('data', [])
             for track in album_tracks:
                 track = track.get('resource', {})
