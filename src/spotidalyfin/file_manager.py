@@ -1,4 +1,5 @@
 # file_manager.py
+import json
 import shutil
 from pathlib import Path
 
@@ -72,3 +73,11 @@ def check_downloaded_tracks(tidal_urls):
         logger.success(f"All {amount} tracks downloaded successfully!")
     else:
         logger.warning(f"Only {downloaded} out of {amount} tracks downloaded successfully.")
+
+
+def apply_json_config(data: dict, file_path: Path):
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with open(file_path, "w") as file:
+        json.dump(data, file, indent=4)
+        logger.success(f"Config written to {file_path}")

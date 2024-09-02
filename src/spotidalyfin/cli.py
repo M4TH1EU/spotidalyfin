@@ -3,9 +3,10 @@ import argparse
 
 from loguru import logger
 
-from constants import DOWNLOAD_PATH, TIDAL_CLIENT_ID, TIDAL_CLIENT_SECRET, SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET
+from constants import DOWNLOAD_PATH, TIDAL_CLIENT_ID, TIDAL_CLIENT_SECRET, SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET, \
+    TIDAL_DL_NG_CONFIG, TIDAL_DL_NG_PATH
 from spotify_manager import get_spotify_client, get_playlist_tracks, get_liked_songs
-from src.spotidalyfin.file_manager import organize_track, check_downloaded_tracks
+from src.spotidalyfin.file_manager import organize_track, check_downloaded_tracks, apply_json_config
 from src.spotidalyfin.jellyfin_manager import search_jellyfin
 from src.spotidalyfin.utils import setup_logger
 from tidal_manager import get_tidal_client, search_tidal_track, process_and_download_tracks_concurrently
@@ -74,6 +75,7 @@ def download_playlists_from_file(file_path):
 
 
 if __name__ == '__main__':
+    apply_json_config(TIDAL_DL_NG_CONFIG, TIDAL_DL_NG_PATH)
     setup_logger()
 
     parser = argparse.ArgumentParser(description="Download music from Spotify and Tidal.")
