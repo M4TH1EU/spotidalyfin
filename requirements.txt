@@ -2,3 +2,4 @@ git+https://github.com/bbye98/minim.git
 git+https://github.com/M4TH1EU/streamrip.git
 requests~=2.32.3
 loguru~=0.7.2
+click~=8.1.7

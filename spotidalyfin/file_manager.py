@@ -105,6 +105,7 @@ def apply_json_config(data: dict, file_path: Path):
 def check_bundled_secrets():
     secrets = APPLICATION_PATH / "spotidalyfin.secrets"
     if secrets.exists():
+        logger.debug(f"Loading secrets from {secrets}")
         load_secrets(secrets)
 
 
@@ -112,8 +113,9 @@ def load_secrets(file_path: Path):
     secrets = {}
     with open(file_path, 'r') as f:
         for line in f:
-            key, value = line.strip().split("=", 1)  # Strip spaces and split on the first '='
-            secrets[key.strip()] = value.strip()
+            if len(line) > 3:
+                key, value = line.strip().replace(" ", "").split("=", 1)  # Strip spaces and split on the first '='
+                secrets[key.strip()] = value.strip()
 
     if 'SPOTIFY_CLIENT_ID' in secrets:
         constants.SPOTIFY_CLIENT_ID = secrets['SPOTIFY_CLIENT_ID']
@@ -126,4 +128,4 @@ def load_secrets(file_path: Path):
     if 'JELLYFIN_URL' in secrets:
         constants.JELLYFIN_URL = secrets['JELLYFIN_URL']
     if 'JELLYFIN_API_KEY' in secrets:
-        constants.JELLYFIN_API_KEY = secrets
+        constants.JELLYFIN_API_KEY = secrets['JELLYFIN_API_KEY']

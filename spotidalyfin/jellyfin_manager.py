@@ -1,7 +1,7 @@
 # jellyfin_manager.py
 import requests
 
-from spotidalyfin.constants import JELLYFIN_API_KEY, JELLYFIN_URL
+from spotidalyfin import constants
 from spotidalyfin.utils import format_string
 
 
@@ -10,7 +10,7 @@ def search_jellyfin(track_name, artist_name, album_name):
     artist_name = format_string(artist_name)
     album_name = format_string(album_name)
 
-    request_url = f"{JELLYFIN_URL}/Items?api_key={JELLYFIN_API_KEY}&searchTerm={track_name}&Recursive=True&IncludeItemTypes=Audio&Limit=3"
+    request_url = f"{constants.JELLYFIN_URL}/Items?api_key={constants.JELLYFIN_API_KEY}&searchTerm={track_name}&Recursive=True&IncludeItemTypes=Audio&Limit=3"
     response = requests.get(request_url)
     data = response.json()
 
