@@ -102,10 +102,12 @@ def download_tracks_from_file(file_path: Path, retry_count=0):
     if "ERROR" in result.output:
         logger.warning("Error(s) occurred during download :")
         logger.warning(result.output)
-    if result.exit_code != 0 and retry_count < 1:
-        return download_tracks_from_file(file_path, retry_count + 1)
-    else:
-        raise Exception("Download failed.")
+
+    if result.exit_code != 0:
+        if retry_count < 1:
+            return download_tracks_from_file(file_path, retry_count + 1)
+        else:
+            raise Exception("Download failed.")
 
 
 def process_and_download_tracks_concurrently(tidal_urls, workers=None):
