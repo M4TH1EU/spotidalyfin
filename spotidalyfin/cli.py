@@ -23,6 +23,7 @@ config = {
     "out_dir": Path("~/Music/spotidalyfin").expanduser(),
     "dl_dir": Path("/tmp/spotidalyfin"),
     "secrets": APPLICATION_PATH / "spotidalyfin.secrets",
+    "streamrip": APPLICATION_PATH / "streamrip",
 }
 
 download_app = typer.Typer()
@@ -75,8 +76,12 @@ def entrypoint(command: str, action: str, **kwargs):
 
     log.debug("Connecting to Spotify, Tidal and Jellyfin...")
     spotify_manager = SpotifyManager(config.get("spotify_client_id"), config.get("spotify_client_secret"))
-    tidal_manager = TidalManager(config.get("tidal_client_id"), config.get("tidal_client_secret"), database,
-                                 config.get("tidal_country_code"))
+    tidal_manager = TidalManager(
+        config.get("tidal_client_id"),
+        config.get("tidal_client_secret"),
+        database,
+        config.get("tidal_country_code")
+    )
     jellyfin_manager = JellyfinManager(config.get("jellyfin_url"), config.get("jellyfin_api_key"))
 
     if command == "download":
@@ -151,8 +156,8 @@ def entrypoint(command: str, action: str, **kwargs):
             log.debug(f"Downloading {len(tidal_tracks_to_download)} from Tidal using Streamrip...")
             progress.add_task("Downloading from Tidal (this may take a while!). Check your DL_DIR for progress.")
 
-            download_tracks(tracks=tidal_tracks_to_download, download_path=config.get("dl_dir"),
-                            quality=config.get("tidal_quality"))
+            download_tracks(tracks=tidal_tracks_to_download, streamrip_path=config.get('streamrip'),
+                            download_path=config.get("dl_dir"), quality=config.get("tidal_quality"))
 
         # -------------------------
         # Organize downloaded files

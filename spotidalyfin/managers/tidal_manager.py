@@ -100,6 +100,7 @@ class TidalManager:
             if isrc:
                 tidal_tracks = self.search_tracks(isrc=isrc)
                 if tidal_tracks:
+                    # TODO: if similarity is 2/3 add to matches, continue searching and return best match
                     best_track = get_best_quality_track(tidal_tracks, track_name, artist_name, album_name)
                     if get_track_quality(best_track) >= quality:
                         return best_track.get('id')
@@ -216,7 +217,7 @@ def get_track_quality(track: dict) -> int:
     return qualities.get(track.get('mediaMetadata', {}).get('tags', [])[0], 0)
 
 
-def download_tracks(tracks: list[dict], download_path: Path = None, quality=3, retry_count=0):
+def download_tracks(tracks: list[dict], streamrip_path: Path, download_path: Path, quality=3, retry_count=0):
     tmp_file = (download_path / ".tmp-urls")
     tmp_file.parent.mkdir(parents=True, exist_ok=True)
 
@@ -249,7 +250,7 @@ def download_tracks(tracks: list[dict], download_path: Path = None, quality=3, r
     ]
 
     process = subprocess.Popen(
-        ["/home/mathieu/PycharmProjects/spotify-tidal-jellyfin/bin/streamrip-2.0.5-linux", *args],
+        [streamrip_path, *args],
         shell=False,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE)

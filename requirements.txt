@@ -1,5 +1,4 @@
 git+https://github.com/bbye98/minim.git
-git+https://github.com/M4TH1EU/streamrip.git
 requests~=2.32.3
 rich~=13.8.0
 typer~=0.12.5
