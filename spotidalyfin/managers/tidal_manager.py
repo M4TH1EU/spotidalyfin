@@ -1,108 +1,98 @@
-import concurrent.futures
-import random
-import subprocess
-import time
+import concurrent
 from functools import cache
 from pathlib import Path
+from typing import Optional, List, Any
 
-from minim import tidal
+import requests
+import tidalapi
+from tidalapi import Quality, media, album, Track, Album
+from tidalapi.session import SearchResults
 
+from spotidalyfin.utils.comparisons import close, weighted_word_overlap
+from spotidalyfin.utils.decorators import rate_limit
+from spotidalyfin.utils.decryption import decrypt_security_token, decrypt_file
+from spotidalyfin.utils.file_utils import extract_flac_from_mp4
+from spotidalyfin.utils.formatting import format_artists
 from spotidalyfin.utils.logger import log
-from ..db.database import Database
-from ..utils.comparisons import close, weighted_word_overlap
-from ..utils.decorators import rate_limit
-from ..utils.formatting import format_artists
+from spotidalyfin.utils.metadata import set_audio_tags, organize_audio_file
 
-QUALITY = {
+QUALITIES = {
+    "DOLBY_ATMOS": 0,
     "LOW": 1,
     "LOSSLESS": 2,
     "HIRES_LOSSLESS": 3,
-    "HI_RES_LOSSLESS": 3,
-    "DOLBY_ATMOS": 3,
+    "HI_RES_LOSSLESS": 3
 }
 
 
 class TidalManager:
 
-    def __init__(self, client_id, client_secret, database: Database = None, country_code=None):
-        self.client = tidal.API(
-            client_id=client_id,
-            client_secret=client_secret
-        )
-
-        self.database = database
-
-        if not country_code:
-            log.warning("ATTENTION: Country code not set. Defaulting to 'US'.")
-            log.warning(
-                "THIS MAY CAUSE ISSUES WITH SEARCH RESULTS AND DOWNLOADS. PLEASE SET A COUNTRY CODE IMMEDIATELY!.")
-            country_code = 'US'
-
-        self.country_code = country_code
+    def __init__(self, session_file: Path):
+        self.client = tidalapi.Session()
+        self.client.login_session_file(session_file, do_pkce=True)
+        self.client.audio_quality = Quality.hi_res_lossless
 
     @rate_limit
     @cache
-    def search(self, query, type='TRACKS', limit=5):
+    def get_track(self, track_id) -> Track:
+        return self.client.track(track_id)
+
+    @rate_limit
+    @cache
+    def get_album(self, album_id) -> Album:
+        return self.client.album(album_id)
+
+    @rate_limit
+    @cache
+    def search(self, query, models: Optional[List[Optional[Any]]] = None, limit=15) -> SearchResults:
         if len(query) > 99:
             query = query[:99]
 
-        if type == 'ALL':
-            return self.client.search(query, limit=limit, country_code=self.country_code)
+        if not models:
+            models = [media.Track]
 
-        res = self.client.search(query, limit=limit, type=type, country_code=self.country_code).get(type.lower(), {})
-        return fix_dict(res)
-
-    @rate_limit
-    @cache
-    def get_track(self, track_id):
-        return self.client.get_track(track_id, country_code=self.country_code)
+        return self.client.search(query, limit=limit, models=models)
 
     @rate_limit
     @cache
-    def get_album(self, album_id):
-        return self.client.get_album(album_id, country_code=self.country_code)
+    def get_album_tracks(self, album_id) -> list[Track]:
+        return self.client.album(album_id).tracks()
 
     @rate_limit
-    @cache
-    def get_album_tracks(self, album_id):
-        return fix_dict(self.client.get_album_items(album_id, country_code=self.country_code).get('data', []))
-
-    @rate_limit
-    def search_albums(self, album_name: str = None, artist_name: str = None, barcode=None) -> list:
+    def search_albums(self, album_name: str = None, artist_name: str = None, barcode=None) -> list[Album]:
         if barcode:
-            res = fix_dict(self.client.get_album_by_barcode_id(barcode, country_code=self.country_code).get('data', []))
+            res = self.client.get_albums_by_barcode(barcode)
             if res:
                 return res
         if album_name and artist_name:
-            res = self.search(f"{album_name} {artist_name}", type='ALBUMS')
+            res = self.search(f"{album_name} {artist_name}", models=[album.Album]).get('albums')
             if res:
                 return res
-
         return []
 
     @rate_limit
-    def search_tracks(self, track_name: str = None, artist_name: str = None, isrc: str = None) -> list:
+    def search_tracks(self, track_name: str = None, artist_name: str = None, isrc: str = None) -> list[Track]:
         if isrc:
-            res = fix_dict(self.client.get_tracks_by_isrc(isrc.upper(), country_code=self.country_code).get('data', []))
+            res = self.client.get_tracks_by_isrc(isrc.upper())
             if res:
                 return res
 
         if track_name and artist_name:
-            res = self.search(f"{track_name} {artist_name}")
+            res = self.search(f"{track_name} {artist_name}").get('tracks')
             if res:
                 return res
 
         return []
 
-    def search_track_in_album(self, album_id: str, spotify_track: dict) -> dict | None:
-        tidal_tracks = self.get_album_tracks(album_id)
-        for track in tidal_tracks:
+    def search_for_track_in_album(self, album: Album, spotify_track: dict) -> Track:
+        for track in album.tracks():
             if get_track_matching_score(track, spotify_track) >= 4:
+                # Get the real quality of the track
+                track.real_quality = track.get_stream().audio_quality
+                track.real_quality_score = QUALITIES.get(track.real_quality)
                 return track
 
-        return None
-
-    def search_spotify_track(self, spotify_track: dict, quality=3):
+    def search_spotify_track(self, spotify_track: dict, quality=3) -> Track:
         track_name = spotify_track.get('name', '')
         artist_name = format_artists(spotify_track.get('artists', [{}]), lower=False)[0]
         album_name = spotify_track.get('album', {}).get('name', '')
@@ -119,143 +109,121 @@ class TidalManager:
                     futures.append(executor.submit(self.search_tracks, isrc=isrc))
                 if album_barcode:
                     futures.append(executor.submit(self.search_albums, barcode=album_barcode))
+
                 futures.append(executor.submit(self.search_tracks, track_name=track_name, artist_name=artist_name))
 
                 results = [f.result() for f in concurrent.futures.as_completed(futures)]
 
             # Process each result
-            for tidal_tracks in results:
-                if tidal_tracks and isinstance(tidal_tracks, list):
+            for result in results:
+                if result and isinstance(result, list):
                     # Track
-                    if 'type' not in tidal_tracks[0]:
-                        best_track = get_best_match(tidal_tracks, spotify_track)
-                        if best_track.get('quality') >= quality and best_track.get('score') >= 3.5:
-                            return best_track.get('id')
+                    if isinstance(result[0], Track):
+                        best_track = get_best_match(result, spotify_track)
+                        if best_track.real_quality_score >= quality and best_track.score >= 3.5:
+                            return best_track
                         if best_track not in matches:
                             matches.append(best_track)
                     # Album
-                    elif 'type' in tidal_tracks[0] and tidal_tracks[0]['type'] == 'album':
-                        track = self.search_track_in_album(tidal_tracks[0].get('id', ''), spotify_track)
-                        if track:
-                            if get_track_quality(track) >= quality:
-                                return track.get('id')
-                            if track not in matches:
-                                matches.append(track)
+                    elif isinstance(result[0], Album):
+                        for album in result:
+                            track = self.search_for_track_in_album(album, spotify_track)
+                            if track:
+                                if track.real_quality_score >= quality:
+                                    return track
+                                if track not in matches:
+                                    matches.append(track)
 
             if matches:
-                return get_best_match(matches, spotify_track).get('id')
+                return get_best_match(matches, spotify_track)
 
             return None
 
+    def download_track(self, track: Track, download_path: Path = None, output_dir: Path = None):
+        stream_manifest = track.get_stream().get_stream_manifest()
+        download_urls = stream_manifest.get_urls()
+        suffix = "m4a" if stream_manifest.mime_type.split("/")[
+                              -1] == "mp4" else "unknown"  # TODO: get more knowledge about this
+        path_file = download_path / f"{track.id}.{suffix}"
 
-def get_best_match(tidal_tracks: list, spotify_track: dict) -> dict:
+        # TODO: check why ??
+        # if len(download_urls) == 1:
+        #     r = requests.get(download_urls[0], stream=True, timeout=10)
+        #     r.raise_for_status()
+
+        if not path_file.exists():
+            # TODO: progress bar
+            with open(path_file, "wb") as f:
+                for url in download_urls:
+                    r = requests.get(url, stream=True, timeout=10)
+                    r.raise_for_status()
+                    for chunk in r.iter_content(chunk_size=8192):
+                        f.write(chunk)
+
+            log.debug("Downloaded track.")
+
+            if stream_manifest.is_encrypted:
+                # TODO: convert Pathlib
+                key, nonce = decrypt_security_token(stream_manifest.encryption_key)
+                tmp_path_file_decrypted = str(path_file) + "_decrypted"
+                decrypt_file(str(path_file), tmp_path_file_decrypted, key, nonce)
+
+        # TODO: extract flac from mp4 option ?
+        if suffix == "m4a":
+            log.debug("Extracting flac from m4a...")
+            path_file = extract_flac_from_mp4(path_file)
+            if path_file.exists():
+                log.debug("Setting audio tags...")
+                tags = set_audio_tags(path_file, track)
+                organize_audio_file(file_path=path_file, output_dir=output_dir, metadata=tags)
+
+
+def get_best_match(tidal_tracks: list[Track], spotify_track: dict) -> Track:
     """Get the best match from a list of Tidal tracks based on a Spotify track."""
+
     matches = []
     best_quality = -1
 
     for track in tidal_tracks:
-        track['score'] = get_track_matching_score(track, spotify_track)
-        track['quality'] = get_track_quality(track)
+        track.score = get_track_matching_score(track, spotify_track)
+        track.real_quality = track.get_stream().audio_quality
+        track.real_quality_score = QUALITIES.get(track.real_quality)
 
-        if track['score'] < 3.5:
+        if track.score < 3.5:
             continue
 
-        if track['quality'] > best_quality:
-            best_quality = track['quality']
-            matches = [track]
-        elif track['quality'] == best_quality:
+        if track.real_quality_score >= best_quality:
+            best_quality = QUALITIES.get(track.real_quality)
+            matches = track
+        elif track.real_quality_score == best_quality:
             matches.append(track)
 
-    if matches:
-        return max(matches, key=lambda x: x['score'])
+    if matches and isinstance(matches, list):
+        return max(matches, key=lambda x: x.score)
+    elif matches and isinstance(matches, Track):
+        return matches
+    else:
+        return tidal_tracks[0]
 
-    return tidal_tracks[0]
 
-
-def get_track_matching_score(tidal_track: dict, spotify_track: dict) -> float:
+def get_track_matching_score(track: Track, spotify_track: dict) -> float:
     """Calculate the matching score between a Tidal track and a Spotify track."""
     score = 0  # max : 5
 
-    if close(tidal_track.get('duration', 0), spotify_track.get('duration_ms', 0) / 1000):
+    if close(track.duration, spotify_track.get('duration_ms', 0) / 1000):
         score += 1
 
-    if tidal_track.get('isrc').upper() == spotify_track.get('external_ids', {}).get('isrc', '').upper():
+    if track.isrc.upper() == spotify_track.get('external_ids', {}).get('isrc', '').upper():
         score += 0.5
 
-    if weighted_word_overlap(tidal_track.get('title', ''), spotify_track.get('name', '')) > 0.7:
+    if weighted_word_overlap(track.full_name, spotify_track.get('name', '')) > 0.7:
         score += 1
 
-    if weighted_word_overlap(tidal_track.get('album', {}).get('title', ''),
-                             spotify_track.get('album', {}).get('name', '')) > 0.35:
+    if weighted_word_overlap(track.album.name, spotify_track.get('album', {}).get('name', '')) > 0.35:
         score += 1.5
 
-    if all(artist in format_artists(tidal_track.get('artists', [])) for artist in
+    if all(artist in format_artists(track.artists) for artist in
            format_artists(spotify_track.get('artists', []))):
         score += 1
 
     return score
-
-
-def get_track_quality(track: dict, return_as_str: bool = False) -> int | str:
-    """Get the quality of a track."""
-    qualities = {
-        "DOLBY_ATMOS": 0,
-        "LOW": 1,
-        "LOSSLESS": 2,
-        "HIRES_LOSSLESS": 3,
-        "HI_RES_LOSSLESS": 3
-    }
-
-    if len(track.get('mediaMetadata', {}).get('tags', [])) == 0:
-        return "UNKNOWN" if return_as_str else 0
-
-    if return_as_str:
-        return track.get('mediaMetadata', {}).get('tags', [])[0]
-
-    return qualities.get(track.get('mediaMetadata', {}).get('tags', [])[0], 0)
-
-
-def download_tracks(tracks: list[dict], streamrip_path: Path, download_path: Path, quality=3, retry_count=0):
-    tmp_file = (download_path / ".tmp-urls")
-    tmp_file.parent.mkdir(parents=True, exist_ok=True)
-
-    with open(tmp_file, 'w') as f:
-        for track in tracks:
-            f.write(f"https://tidal.com/browse/track/{track}\n")
-
-    args = [
-        "--folder", str(download_path),
-        "--no-db",
-        "--quality", str(quality),
-        "--verbose",
-        "file", str(tmp_file),
-    ]
-
-    process = subprocess.Popen(
-        [streamrip_path, *args],
-        shell=False,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE)
-    result = process.communicate()
-
-    if process.returncode != 0:
-        if retry_count < 3:
-            wait = 2 ** retry_count + random.uniform(0.7, 2)
-            log.warning(f"An error occurred during download. Retrying in {wait} sec...")
-            time.sleep(wait)
-            return download_tracks(tracks=tracks, streamrip_path=streamrip_path, download_path=download_path,
-                                   quality=quality, retry_count=retry_count + 1)
-        else:
-            log.error("Maximum retries reached. Download failed.")
-            log.debug("Streamrip log begins below:")
-            log.debug(result[0].decode())
-            log.debug(result[1].decode())
-            log.debug("Streamrip log ends above.")
-            raise Exception(f"Download failed.")
-    else:
-        log.info("Download completed successfully")
-        tmp_file.unlink()
-
-
-def fix_dict(res: dict | list) -> list:
-    return [item['resource'] for item in res]
