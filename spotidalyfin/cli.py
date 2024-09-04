@@ -20,8 +20,8 @@ APPLICATION_PATH = Path(sys._MEIPASS).resolve() if getattr(sys, 'frozen', False)
 app = typer.Typer()
 config = {
     "debug": False,
-    "out_dir": Path("~/Music/spotidalyfin").expanduser(),
-    "dl_dir": Path("/tmp/spotidalyfin"),
+    "out-dir": Path("~/Music/spotidalyfin").expanduser(),
+    "dl-dir": Path("/tmp/spotidalyfin"),
     "secrets": APPLICATION_PATH / "spotidalyfin.secrets",
     "streamrip": APPLICATION_PATH / "streamrip",
     "quality": 3,
@@ -30,23 +30,18 @@ config = {
 download_app = typer.Typer()
 app.add_typer(download_app, name="download")
 
-download_liked_app = typer.Typer()
-download_playlist_app = typer.Typer()
-download_file_app = typer.Typer()
-download_track_app = typer.Typer()
-
 
 @app.callback()
-def main(debug: bool = config["debug"], quality: int = config['quality'], out_dir: Path = config["out_dir"],
-         dl_dir: Path = config["dl_dir"],
+def main(debug: bool = config["debug"], quality: int = config['quality'], out_dir: Path = config["out-dir"],
+         dl_dir: Path = config["dl-dir"],
          secrets: Path = config["secrets"]):
     global config
     config["debug"] = debug
     config["quality"] = quality
-    config["out_dir"] = out_dir
-    config["dl_dir"] = dl_dir
+    config["out-dir"] = out_dir
+    config["dl-dir"] = dl_dir
     config["secrets"] = secrets
-    config["db_path"] = config["out_dir"] / ".spotidalyfin.db"
+    config["db_path"] = config["out-dir"] / ".spotidalyfin.db"
     config = config | parse_secrets_file(secrets)
 
 
@@ -165,17 +160,18 @@ def entrypoint(command: str, action: str, **kwargs):
         with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"),
                       transient=True) as progress:
             log.debug(f"Downloading {len(tidal_tracks_to_download)} from Tidal using Streamrip...")
-            progress.add_task("Downloading from Tidal (this may take a while!). Check your DL_DIR for progress.")
+            progress.add_task(
+                "Downloading from Tidal (this may take a while!). Check your download folder for progress.")
 
             download_tracks(tracks=tidal_tracks_to_download, streamrip_path=config.get('streamrip'),
-                            download_path=config.get("dl_dir"), quality=config.get("quality"))
+                            download_path=config.get("dl-dir"), quality=config.get("quality"))
 
         # -------------------------
         # Organize downloaded files
         log.debug("Organizing downloaded audio files...")
-        for file in rich.progress.track(get_all_files_in_directory(config.get('dl_dir')), description="Organizing...",
+        for file in rich.progress.track(get_all_files_in_directory(config.get('dl-dir')), description="Organizing...",
                                         transient=True):
-            organize_audio_file(file, config.get("out_dir"))
+            organize_audio_file(file, config.get("out-dir"))
 
         log.info(f"Organized {len(tidal_tracks_to_download)} audio files.")
         log.info("Done!")

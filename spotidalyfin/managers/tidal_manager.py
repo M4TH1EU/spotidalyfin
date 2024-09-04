@@ -43,6 +43,9 @@ class TidalManager:
     @rate_limit
     @cache
     def search(self, query, type='TRACKS', limit=5):
+        if len(query) > 99:
+            query = query[:99]
+
         if type == 'ALL':
             return self.client.search(query, limit=limit, country_code=self.country_code)
 
