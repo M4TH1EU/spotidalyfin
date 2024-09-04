@@ -12,7 +12,7 @@ from spotidalyfin.utils.logger import log, setup_logger
 from .db.database import Database
 from .managers.jellyfin_manager import JellyfinManager
 from .managers.spotify_manager import SpotifyManager
-from .managers.tidal_manager import TidalManager, download_tracks
+from .managers.tidal_manager import TidalManager, download_tracks, get_track_quality
 
 APPLICATION_PATH = Path(sys._MEIPASS).resolve() if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS') else Path(
     __file__).resolve().parent
@@ -125,10 +125,6 @@ def entrypoint(command: str, action: str, **kwargs):
                 log.debug(f"Track {track['name']} already exists in Jellyfin")
                 continue
 
-            # Add album barcodes and some other metadata to the track
-            # TODO: maybe disable in fast mode?
-            track['album'] = spotify_manager.get_album(track['album']['id'])
-
             # Check if the track has already been matched and saved in the database
             database_res = database.get(track['id'])
             if database_res:
@@ -136,17 +132,29 @@ def entrypoint(command: str, action: str, **kwargs):
                 tidal_tracks_to_download.append(database_res)
                 continue
 
+            # Add album barcodes and some other metadata to the track
+            track['album'] = spotify_manager.get_album(track['album']['id'])
+
             # Search for the track on Tidal
             tidal_id = tidal_manager.search_spotify_track(track)
             if not tidal_id:
                 log.warning(f"Could not find track {track['name']} on Tidal")
                 continue
 
+            tidal_track = tidal_manager.get_track(tidal_id)
+            log.info("[bold]Found a match:", extra={"markup": True})
+            log.info("[green]Spotify: {} - {} - {}".format(track['name'], track['artists'][0]['name'],
+                                                           track['album']['name']), extra={"markup": True})
+            log.info("[blue] Tidal : {} - {}  - {} ({})".format(tidal_track['title'], tidal_track['artists'][0]['name'],
+                                                                tidal_track['album']['title'],
+                                                                get_track_quality(tidal_track, return_as_str=True)),
+                     extra={"markup": True})
+
             # Save the match in the database
             database.put(track['id'], tidal_id)
-
-            log.debug(f"Matched {track['name']} - {track['artists'][0]['name']} with Tidal track : {tidal_id}")
+            # Add the Tidal track to the list of tracks to download
             tidal_tracks_to_download.append(tidal_id)
+
         log.info(f"Matched {len(tidal_tracks_to_download)}/{len(spotify_tracks_to_match)} Spotify tracks with Tidal.\b")
 
         # -------------------------------------------------------

@@ -8,16 +8,16 @@ from minim import tidal
 
 from spotidalyfin.utils.logger import log
 from ..db.database import Database
-from ..utils.comparisons import similar, close
+from ..utils.comparisons import close, weighted_word_overlap
 from ..utils.decorators import rate_limit
 from ..utils.formatting import format_artists
 
 QUALITY = {
-    "DOLBY_ATMOS": 0,
     "LOW": 1,
     "LOSSLESS": 2,
     "HIRES_LOSSLESS": 3,
-    "HI_RES_LOSSLESS": 3
+    "HI_RES_LOSSLESS": 3,
+    "DOLBY_ATMOS": 3,
 }
 
 
@@ -81,11 +81,20 @@ class TidalManager:
                 return res
 
         if track_name and artist_name:
-            res = self.search(f"{track_name} {artist_name}", limit=1)
+            res = self.search(f"{track_name} {artist_name}")
             if res:
                 return res
 
         return []
+
+    @rate_limit
+    def search_track_in_album(self, album_id: str, spotify_track: dict) -> dict | None:
+        tidal_tracks = self.get_album_tracks(album_id)
+        for track in tidal_tracks:
+            if get_track_matching_score(track, spotify_track) >= 4:
+                return track
+
+        return None
 
     def search_spotify_track(self, spotify_track: dict, quality=3):
         track_name = spotify_track.get('name', '')
@@ -100,9 +109,8 @@ class TidalManager:
             if isrc:
                 tidal_tracks = self.search_tracks(isrc=isrc)
                 if tidal_tracks:
-                    # TODO: if similarity is 2/3 add to matches, continue searching and return best match
-                    best_track = get_best_quality_track(tidal_tracks, track_name, artist_name, album_name)
-                    if get_track_quality(best_track) >= quality:
+                    best_track = get_best_match(tidal_tracks, spotify_track)
+                    if best_track.get('quality') >= quality and best_track.get('score') >= 3.5:
                         return best_track.get('id')
                     else:
                         if best_track not in matches:
@@ -111,100 +119,78 @@ class TidalManager:
             if album_barcode:
                 tidal_albums = self.search_albums(barcode=album_barcode)
                 if tidal_albums:
-                    tidal_tracks = self.get_album_tracks(tidal_albums[0].get('id', ''))
-                    for track in tidal_tracks:
-                        if does_tidal_track_match_spotify_track(track, spotify_track):
-                            if get_track_quality(track) >= quality:
-                                return track.get('id')
-                            else:
-                                if track not in matches:
-                                    matches.append(track)
+                    track = self.search_track_in_album(tidal_albums[0].get('id', ''), spotify_track)
+                    if track:
+                        if get_track_quality(track) >= quality:
+                            return track.get('id')
+                        else:
+                            if track not in matches:
+                                matches.append(track)
 
             tidal_tracks = self.search_tracks(track_name=track_name, artist_name=artist_name)
-            for track in tidal_tracks:
-                if does_tidal_track_match_spotify_track(track, spotify_track):
-                    if get_track_quality(track) >= quality:
-                        return track.get('id')
-                    else:
-                        if track not in matches:
-                            matches.append(track)
+            if tidal_tracks:
+                best_track = get_best_match(tidal_tracks, spotify_track)
+                if best_track.get('quality') >= quality and best_track.get('score') >= 3.5:
+                    return best_track.get('id')
+                else:
+                    if best_track not in matches:
+                        matches.append(best_track)
 
             if matches:
-                return get_best_quality_track(matches, track_name, artist_name, album_name).get('id')
+                return get_best_match(matches, spotify_track).get('id')
 
             return None
 
 
-def does_tidal_track_match_spotify_track(tidal_track: dict, spotify_track: dict) -> bool:
-    """
-    Match a Tidal track against a Spotify track based on various criteria.
-
-    Args:
-        tidal_track (dict): Tidal track information.
-        spotify_track (dict): Spotify track information.
-
-    Returns:
-        bool: True if the tracks match based on criteria, False otherwise.
-    """
-    s = {
-        'artists': format_artists(spotify_track.get('artists', [])),
-        'album_name': spotify_track.get('album', {}).get('name', '').lower(),
-        'track_name': spotify_track.get('name', '').lower(),
-        'duration': int(spotify_track.get('duration_ms', 0) / 1000),
-        'isrc': spotify_track.get('external_ids', {}).get('isrc')
-    }
-    t = {
-        'artists': format_artists(tidal_track.get('artists', [])),
-        'album_name': tidal_track.get('album', {}).get('title', '').lower(),
-        'track_name': tidal_track.get('title', '').lower(),
-        'duration': tidal_track.get('duration', 0),
-        'isrc': tidal_track.get('isrc')
-    }
-
-    criteria = 0
-    criteria += all(artist in t['artists'] for artist in s['artists'])
-    criteria += similar(s['album_name'], t['album_name'])
-    criteria += similar(s['track_name'], t['track_name'])
-    criteria += close(s['duration'], t['duration'])
-    criteria += (s['isrc'] == t['isrc'])
-
-    return criteria >= 4
-
-
-def get_best_quality_track(tracks: list, track_name: str = None, artist_name: str = None,
-                           album_name: str = None) -> dict:
-    """Get the best quality track from a list of tracks with similarity consideration for ties."""
-
-    def compute_similarity(track_data: dict) -> float:
-        """Calculate similarity score based on track name, artist, and album."""
-        return (
-                similar(track_name, track_data.get('title', '')) +
-                similar(artist_name, format_artists(track_data.get('artists', [""]), lower=False)[0]) +
-                similar(album_name, track_data.get('album', {}).get('title', ''))
-        )
-
-    best_tracks = []
+def get_best_match(tidal_tracks: list, spotify_track: dict) -> dict:
+    """Get the best match from a list of Tidal tracks based on a Spotify track."""
+    matches = []
     best_quality = -1
 
-    for track in tracks:
-        quality = get_track_quality(track)
+    for track in tidal_tracks:
+        track['score'] = get_track_matching_score(track, spotify_track)
+        track['quality'] = get_track_quality(track)
 
-        if quality > best_quality:
-            best_quality = quality
-            best_tracks = [track]
-        elif quality == best_quality:
-            best_tracks.append(track)
+        if track['score'] < 3.5:
+            continue
 
-        if track_name and artist_name and album_name:
-            track['similarity'] = compute_similarity(track)
+        if track['quality'] > best_quality:
+            best_quality = track['quality']
+            matches = [track]
+        elif track['quality'] == best_quality:
+            matches.append(track)
 
-    if best_tracks and track_name and artist_name and album_name:
-        return max(best_tracks, key=lambda t: t['similarity'])
+    if matches:
+        return max(matches, key=lambda x: x['score'])
 
-    return best_tracks[0] if best_tracks else None
+    return tidal_tracks[0]
 
 
-def get_track_quality(track: dict) -> int:
+def get_track_matching_score(tidal_track: dict, spotify_track: dict) -> float:
+    """Calculate the matching score between a Tidal track and a Spotify track."""
+    score = 0  # max : 5
+
+    if close(tidal_track.get('duration', 0), spotify_track.get('duration_ms', 0) / 1000):
+        score += 1
+
+    if tidal_track.get('isrc').upper() == spotify_track.get('external_ids', {}).get('isrc', '').upper():
+        score += 0.5
+
+    if weighted_word_overlap(tidal_track.get('title', ''), spotify_track.get('name', '')) > 0.7:
+        score += 1
+
+    if weighted_word_overlap(tidal_track.get('album', {}).get('title', ''),
+                             spotify_track.get('album', {}).get('name', '')) > 0.35:
+        score += 1.5
+
+    if all(artist in format_artists(tidal_track.get('artists', [])) for artist in
+           format_artists(spotify_track.get('artists', []))):
+        score += 1
+
+    return score
+
+
+def get_track_quality(track: dict, return_as_str: bool = False) -> int | str:
     """Get the quality of a track."""
     qualities = {
         "DOLBY_ATMOS": 0,
@@ -213,6 +199,12 @@ def get_track_quality(track: dict) -> int:
         "HIRES_LOSSLESS": 3,
         "HI_RES_LOSSLESS": 3
     }
+
+    if len(track.get('mediaMetadata', {}).get('tags', [])) == 0:
+        return "UNKNOWN" if return_as_str else 0
+
+    if return_as_str:
+        return track.get('mediaMetadata', {}).get('tags', [])[0]
 
     return qualities.get(track.get('mediaMetadata', {}).get('tags', [])[0], 0)
 

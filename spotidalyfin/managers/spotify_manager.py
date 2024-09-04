@@ -1,5 +1,10 @@
 # spotify_manager.py
+import random
+import time
+
 from minim import spotify
+
+from spotidalyfin.utils.decorators import rate_limit
 
 
 class SpotifyManager:
@@ -12,13 +17,16 @@ class SpotifyManager:
             web_framework=None
         )
 
+    @rate_limit
     def get_playlist_tracks(self, playlist_id):
         tracks = []
         results = self.client.get_playlist_items(playlist_id, limit=50)
         tracks.extend(results.get('items'))
 
         while results.get('next'):
-            tracks.extend(self.client.get_playlist_items(playlist_id, limit=50, offset=len(tracks)).get('items', []))
+            time.sleep(random.uniform(0.1, 0.3))
+            results = self.client.get_playlist_items(playlist_id, limit=50, offset=len(tracks))
+            tracks.extend(results.get('items'))
 
         return tracks
 
@@ -28,12 +36,15 @@ class SpotifyManager:
     def get_album(self, album_id):
         return self.client.get_album(album_id)
 
+    @rate_limit
     def get_liked_songs(self):
         tracks = []
         results = self.client.get_saved_tracks(limit=50)
         tracks.extend(results.get('items'))
 
         while results.get('next'):
-            tracks.extend(self.client.get_saved_tracks(limit=50, offset=len(tracks)).get('items', []))
+            time.sleep(random.uniform(0.1, 0.3))
+            results = self.client.get_saved_tracks(limit=50, offset=len(tracks))
+            tracks.extend(results.get('items'))
 
         return tracks
