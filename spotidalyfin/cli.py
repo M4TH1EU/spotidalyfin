@@ -24,6 +24,7 @@ config = {
     "dl_dir": Path("/tmp/spotidalyfin"),
     "secrets": APPLICATION_PATH / "spotidalyfin.secrets",
     "streamrip": APPLICATION_PATH / "streamrip",
+    "quality": 3,
 }
 
 download_app = typer.Typer()
@@ -36,10 +37,12 @@ download_track_app = typer.Typer()
 
 
 @app.callback()
-def main(debug: bool = config["debug"], out_dir: Path = config["out_dir"], dl_dir: Path = config["dl_dir"],
+def main(debug: bool = config["debug"], quality: int = config['quality'], out_dir: Path = config["out_dir"],
+         dl_dir: Path = config["dl_dir"],
          secrets: Path = config["secrets"]):
     global config
     config["debug"] = debug
+    config["quality"] = quality
     config["out_dir"] = out_dir
     config["dl_dir"] = dl_dir
     config["secrets"] = secrets
@@ -165,7 +168,7 @@ def entrypoint(command: str, action: str, **kwargs):
             progress.add_task("Downloading from Tidal (this may take a while!). Check your DL_DIR for progress.")
 
             download_tracks(tracks=tidal_tracks_to_download, streamrip_path=config.get('streamrip'),
-                            download_path=config.get("dl_dir"), quality=config.get("tidal_quality"))
+                            download_path=config.get("dl_dir"), quality=config.get("quality"))
 
         # -------------------------
         # Organize downloaded files
