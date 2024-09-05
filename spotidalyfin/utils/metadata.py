@@ -25,7 +25,7 @@ def set_audio_tags(file: Path, track: Track) -> dict:
     composer = not_none(None)
     isrc = not_none(track.isrc)
     lyrics = not_none(track.lyrics)
-    cover_url = not_none(track.album.image())
+    cover_url = not_none(track.album.image(1280))
     cover_data = open_image_url(cover_url)
 
     if "flac" in file.suffix.lower():
