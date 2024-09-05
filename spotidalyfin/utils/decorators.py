@@ -4,6 +4,8 @@ from pathlib import Path
 
 from tidalapi.exceptions import TooManyRequests
 
+from spotidalyfin.utils.logger import log
+
 cache_dir = Path("~/.cache/spotidalyfin").expanduser()
 
 
@@ -14,9 +16,10 @@ def rate_limit(func):
             try:
                 return func(*args, **kwargs)
             except TooManyRequests as e:
+                log.debug(f"Rate limit exceeded, retrying in a few seconds")
                 if retry_count < 7:
                     retry_count += 1
-                    time.sleep(1.2 ** retry_count + random.uniform(0.1, 0.4))
+                    time.sleep(1.75 ** retry_count + random.uniform(0.1, 0.4))
                 else:
                     raise RuntimeError("Rate limit exceeded") from e
             except Exception as e:

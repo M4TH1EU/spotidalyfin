@@ -6,9 +6,10 @@ QUALITIES = {
     "DOLBY_ATMOS": 0,
     "LOW": 1,
     "LOSSLESS": 2,
-    "HIRES_LOSSLESS": 3,
     "HI_RES_LOSSLESS": 3
 }
+
+QUALITIES_REVERSE = {v: k for k, v in QUALITIES.items()}
 
 _config = {
     "debug": False,

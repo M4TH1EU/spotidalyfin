@@ -7,13 +7,13 @@ import cachebox
 import requests
 import tidalapi
 from rich.progress import Progress
-from tidalapi import Quality, album, Album
 from tidalapi import Track, media
+from tidalapi import album, Album
 from tidalapi.exceptions import MetadataNotAvailable
 from tidalapi.session import SearchResults
 
 from spotidalyfin import cfg
-from spotidalyfin.cfg import QUALITIES
+from spotidalyfin.cfg import QUALITIES, QUALITIES_REVERSE
 from spotidalyfin.utils.comparisons import weighted_word_overlap, close
 from spotidalyfin.utils.decorators import rate_limit
 from spotidalyfin.utils.decryption import decrypt_security_token, decrypt_file
@@ -28,7 +28,7 @@ class TidalManager:
     def __init__(self, session_file: Path):
         self.client = tidalapi.Session()
         self.client.login_session_file(session_file, do_pkce=True)
-        self.client.audio_quality = Quality.hi_res_lossless
+        self.client.audio_quality = QUALITIES_REVERSE.get(cfg.get("quality"))
 
     @cachebox.cached(cachebox.LRUCache(maxsize=256))
     @rate_limit
@@ -89,12 +89,12 @@ class TidalManager:
             if self.get_track_matching_score(track, spotify_track) >= 4:
                 return track
 
-    def search_spotify_track(self, spotify_track: dict, quality=3) -> Track:
+    def search_spotify_track(self, spotify_track: dict, quality: int) -> Track:
         """
         Search for a Spotify track on Tidal and return the best match using various search methods.
 
         :param spotify_track: Spotify track to search for
-        :param quality: Minimum quality score to consider a match
+        :param quality: Maximum wanted quality
 
         :return: Best match found on Tidal :class:`Track`
         """
@@ -124,36 +124,64 @@ class TidalManager:
                 if result and isinstance(result, list):
                     # Track
                     if isinstance(result[0], Track):
-                        best_track = self.get_best_match(result, spotify_track)
-                        if best_track.real_quality_score >= quality and best_track.score >= 3.5:
-                            return best_track
-                        if best_track not in matches:
-                            matches.append(best_track)
+                        best_track = self.get_best_match(result, spotify_track, quality)
+                        if best_track:
+                            if best_track.real_quality_score == quality and best_track.score >= 3.5:
+                                return best_track
+                            if best_track not in matches:
+                                matches.append(best_track)
                     # Album
                     elif isinstance(result[0], Album):
                         for album in result:
                             track = self.search_for_track_in_album(album, spotify_track)
                             if track:
-                                if QUALITIES.get(self.get_real_audio_quality(track)) >= quality:
-                                    return track
-                                if track not in matches:
-                                    matches.append(track)
+                                track.real_quality = self.get_real_audio_quality(track)
+                                track.real_quality_score = QUALITIES.get(track.real_quality)
+                                if track.real_quality_score <= quality:
+                                    if track.real_quality_score == quality:
+                                        return track
+
+                                    if track not in matches:
+                                        matches.append(track)
 
             if matches:
-                return self.get_best_match(matches, spotify_track)
+                best_match = self.get_best_match(matches, spotify_track, quality)
+                if best_match:
+                    return best_match
 
             return None
 
     def get_real_audio_quality(self, track: Track) -> str:
         """Get the real audio quality of a track."""
+        if cfg.get('debug'):
+            print(
+                f"{track.id} - Qly:{track.audio_quality} - Atmos:{track.is_DolbyAtmos} - Master:{track.is_Mqa} - HiRes:{track.is_HiRes} - {self.get_stream(track).get_audio_resolution()}")
+
         if track.is_DolbyAtmos:
             return "DOLBY_ATMOS"
         elif track.is_Mqa:
-            return "MQA"
-        elif track.is_HiRes:
             return "HI_RES_LOSSLESS"
+        elif track.is_HiRes:
+            if cfg.get("quality") >= 3:
+                return "HI_RES_LOSSLESS"
+            elif 'LOSSLESS' in track.media_metadata_tags:
+                return "LOSSLESS"
+            else:
+                return "LOW"
+        elif track.audio_quality == 'LOSSLESS':
+            return "LOSSLESS"
+
+        elif track.audio_quality == 'HIGH':
+            if cfg.get("quality") >= 2:
+                res = self.get_stream(track).get_audio_resolution()
+                if res[0] >= 16 and res[1] >= 44100:
+                    return "LOSSLESS"
+
+            log.warning(f"Strange audio quality for track {track.id}")
+            return "LOW"
         else:
-            return track.audio_quality
+            log.warning(f"Unknown audio quality for track {track.id}")
+            return "LOW"
 
     @cachebox.cached(cachebox.LRUCache(maxsize=64))
     @rate_limit
@@ -170,7 +198,7 @@ class TidalManager:
         except MetadataNotAvailable:
             return ""
 
-    def get_best_match(self, tidal_tracks: list[Track], spotify_track: dict) -> Track:
+    def get_best_match(self, tidal_tracks: list[Track], spotify_track: dict, quality: int) -> Track:
         """
         Get the best match from a list of Tidal tracks based on a Spotify track.
 
@@ -182,6 +210,7 @@ class TidalManager:
 
         :param tidal_tracks: List of Tidal tracks to compare :class:`list[Track]`
         :param spotify_track: Spotify track to compare :class:`dict`
+        :param quality: Maximum wanted quality :class:`int`
 
         :return: Best match found on Tidal :class:`Track`
         """
@@ -198,18 +227,20 @@ class TidalManager:
             if track.score < 3.5:
                 continue
 
-            if track.real_quality_score >= best_quality:
+            # Skip if quality is higher than the maximum allowed
+            if track.real_quality_score > quality:
+                continue
+
+            if track.real_quality_score > best_quality:
                 best_quality = QUALITIES.get(track.real_quality)
-                matches = track
+                matches = [track]
             elif track.real_quality_score == best_quality:
                 matches.append(track)
 
         if matches and isinstance(matches, list):
             return max(matches, key=lambda x: x.score)
-        elif matches and isinstance(matches, Track):
-            return matches
         else:
-            return tidal_tracks[0]
+            return None
 
     def get_track_matching_score(self, track: Track, spotify_track: dict) -> float:
         """

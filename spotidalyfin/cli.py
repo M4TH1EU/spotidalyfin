@@ -110,7 +110,7 @@ def entrypoint(command: str, action: str, **kwargs):
             track['album'] = spotify_manager.get_album(track['album']['id'])
 
             # Search for the track on Tidal
-            tidal_track = tidal_manager.search_spotify_track(track)
+            tidal_track = tidal_manager.search_spotify_track(track, cfg.get('quality'))
             if not tidal_track:
                 log.warning(f"Could not find track {track['name']} on Tidal")
                 continue
@@ -120,8 +120,9 @@ def entrypoint(command: str, action: str, **kwargs):
             log.info("[bold]Found a match:", extra={"markup": True})
             log.info("[green]Spotify: {} - {} - {}".format(track['name'], track['artists'][0]['name'],
                                                            track['album']['name']), extra={"markup": True})
-            log.info("[blue] Tidal : {} - {}  - {} ({})\n".format(tidal_track.full_name, tidal_track.artist.name,
-                                                                  tidal_track.album.name, tidal_track.real_quality),
+            log.info("[blue] Tidal : {} - {}  - {} ({} - {})\n".format(tidal_track.full_name, tidal_track.artist.name,
+                                                                       tidal_track.album.name, tidal_track.real_quality,
+                                                                       tidal_track.id),
                      extra={"markup": True})
 
             # Add the Tidal track to the list of tracks to download

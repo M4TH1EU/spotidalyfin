@@ -8,6 +8,10 @@ log = logging.getLogger("spotidalyfin")
 def setup_logger(debug: bool = False):
     log.handlers.clear()
 
+    # Prevent tidalapi from logging
+    tidalapilogger = logging.getLogger('tidalapi.request')
+    tidalapilogger.disabled = True
+
     # Prevent rich from propagating logs to root logger
     log.propagate = False
 
