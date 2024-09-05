@@ -24,6 +24,8 @@ class TidalManager:
 
     def __init__(self):
         session_file = cfg.get("config-dir") / "tidal-session-pkce.json"
+        session_file.parent.mkdir(parents=True, exist_ok=True)
+
         self.client = tidalapi.Session()
         self.client.login_session_file(session_file, do_pkce=True)
         self.client.audio_quality = QUALITIES_REVERSE.get(cfg.get("quality"))

@@ -13,11 +13,13 @@ from spotidalyfin.utils.decorators import rate_limit
 class SpotifyManager:
     def __init__(self, client_id, client_secret):
         scopes = ['playlist-read-private', 'playlist-read-collaborative', 'user-library-read']
-        token_cache = CacheFileHandler(cfg.get("config-dir") / ".spotipy-token")
+        token_file = cfg.get("config-dir") / ".spotipy-token"
+        token_file.parent.mkdir(parents=True, exist_ok=True)
+
         self.client = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id=client_id, client_secret=client_secret,
                                                                 redirect_uri="http://127.0.0.1:6969",
                                                                 scope=scopes,
-                                                                cache_handler=token_cache))
+                                                                cache_handler=CacheFileHandler(token_file)))
 
     @cachebox.cached(cachebox.LRUCache(maxsize=128))
     @rate_limit
