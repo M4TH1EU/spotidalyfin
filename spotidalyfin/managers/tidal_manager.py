@@ -2,19 +2,21 @@ import concurrent
 from pathlib import Path
 from typing import Optional, List, Any
 
+import cachebox
 import requests
 import tidalapi
 from tidalapi import Quality, media, album, Track, Album
 from tidalapi.session import SearchResults
 
 from spotidalyfin.cfg import QUALITIES
-from spotidalyfin.utils.decorators import cache_2weeks, cache_2months, cache_2days, rate_limit
+from spotidalyfin.utils.decorators import rate_limit
 from spotidalyfin.utils.decryption import decrypt_security_token, decrypt_file
 from spotidalyfin.utils.file_utils import extract_flac_from_mp4
 from spotidalyfin.utils.formatting import format_artists
 from spotidalyfin.utils.logger import log
 from spotidalyfin.utils.metadata import set_audio_tags, organize_audio_file
-from spotidalyfin.utils.tidal_track_utils import get_best_match, get_real_audio_quality, get_track_matching_score
+from spotidalyfin.utils.tidal_track_utils import get_best_match, get_real_audio_quality, get_track_matching_score, \
+    get_stream
 
 
 class TidalManager:
@@ -24,19 +26,19 @@ class TidalManager:
         self.client.login_session_file(session_file, do_pkce=True)
         self.client.audio_quality = Quality.hi_res_lossless
 
-    @cache_2months
+    @cachebox.cached(cachebox.LRUCache(maxsize=256))
     @rate_limit
     def get_track(self, track_id) -> Track:
         return self.client.track(track_id)
 
-    @cache_2months
+    @cachebox.cached(cachebox.LRUCache(maxsize=256))
     @rate_limit
     def get_album(self, album_id) -> Album:
         return self.client.album(album_id)
 
-    @cache_2weeks
+    @cachebox.cached(cachebox.LRUCache(maxsize=128))
     @rate_limit
-    def search(self, query, models: Optional[List[Optional[Any]]] = None, limit=15) -> SearchResults:
+    def search(self, query, models: Optional[List[Optional[Any]]] = None, limit=7) -> SearchResults:
         if len(query) > 99:
             query = query[:99]
 
@@ -45,12 +47,12 @@ class TidalManager:
 
         return self.client.search(query, limit=limit, models=models)
 
-    @cache_2months
+    @cachebox.cached(cachebox.LRUCache(maxsize=256))
     @rate_limit
     def get_album_tracks(self, album: Album) -> list[Track]:
         return album.tracks()
 
-    @cache_2weeks
+    @cachebox.cached(cachebox.LRUCache(maxsize=256))
     @rate_limit
     def search_albums(self, album_name: str = None, artist_name: str = None, barcode=None) -> list[Album]:
         if barcode:
@@ -63,7 +65,7 @@ class TidalManager:
                 return res
         return []
 
-    @cache_2weeks
+    @cachebox.cached(cachebox.LRUCache(maxsize=128))
     @rate_limit
     def search_tracks(self, track_name: str = None, artist_name: str = None, isrc: str = None) -> list[Track]:
         if isrc:
@@ -78,16 +80,14 @@ class TidalManager:
 
         return []
 
-    @cache_2weeks
     def search_for_track_in_album(self, album: Album, spotify_track: dict) -> Track:
         for track in self.get_album_tracks(album):
             if get_track_matching_score(track, spotify_track) >= 4:
                 return track
 
-    @cache_2days
     def search_spotify_track(self, spotify_track: dict, quality=3) -> Track:
         """
-        Search for a Spotify track on Tidal and return the best match.
+        Search for a Spotify track on Tidal and return the best match using various search methods.
 
         :param spotify_track: Spotify track to search for
         :param quality: Minimum quality score to consider a match
@@ -141,7 +141,7 @@ class TidalManager:
             return None
 
     def download_track(self, track: Track, download_path: Path = None, output_dir: Path = None):
-        stream_manifest = track.get_stream().get_stream_manifest()
+        stream_manifest = get_stream(track).get_stream_manifest()
         download_urls = stream_manifest.get_urls()
         tmp_file = download_path / f"{track.id}.tmp"
         tmp_file.parent.mkdir(parents=True, exist_ok=True)

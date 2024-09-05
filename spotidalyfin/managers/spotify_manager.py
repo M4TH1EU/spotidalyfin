@@ -2,9 +2,10 @@
 import random
 import time
 
+import cachebox
 from minim import spotify
 
-from spotidalyfin.utils.decorators import rate_limit, cache_2months
+from spotidalyfin.utils.decorators import rate_limit
 
 
 class SpotifyManager:
@@ -17,6 +18,7 @@ class SpotifyManager:
             web_framework=None
         )
 
+    @cachebox.cached(cachebox.LRUCache(maxsize=128))
     @rate_limit
     def get_playlist_tracks(self, playlist_id):
         tracks = []
@@ -30,14 +32,17 @@ class SpotifyManager:
 
         return tracks
 
-    @cache_2months
+    @cachebox.cached(cachebox.LRUCache(maxsize=256))
+    @rate_limit
     def get_track(self, track_id):
         return self.client.get_track(track_id)
 
-    @cache_2months
+    @cachebox.cached(cachebox.LRUCache(maxsize=256))
+    @rate_limit
     def get_album(self, album_id):
         return self.client.get_album(album_id)
 
+    @cachebox.cached(cachebox.LRUCache(maxsize=16))
     @rate_limit
     def get_liked_songs(self):
         tracks = []

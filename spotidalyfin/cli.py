@@ -97,21 +97,14 @@ def entrypoint(command: str, action: str, **kwargs):
         log.debug("Matching Spotify tracks with Tidal...")
         for track in rich.progress.track(spotify_tracks_to_match, description="Matching tracks...", transient=True):
             # Match Spotify tracks ID with Tidal tracks ID
-            if 'track' in track:
-                track = track.get('track', None)
             if not track:
                 continue
+            if 'track' in track:
+                track = track.get('track', None)
 
             if jellyfin_manager.does_track_exist(track):
                 log.debug(f"Track {track['name']} already exists in Jellyfin")
                 continue
-
-            # # Check if the track has already been matched and saved in the database
-            # database_res = database.get(track['id'])
-            # if database_res:
-            #     log.debug(f"Track {track['name']} already matched with Tidal track : {database_res}")
-            #     tidal_tracks_to_download.append(tidal_manager.get_track(database_res))
-            #     continue
 
             # Add album barcodes and some other metadata to the track
             track['album'] = spotify_manager.get_album(track['album']['id'])
@@ -131,9 +124,6 @@ def entrypoint(command: str, action: str, **kwargs):
                                                                 tidal_track.album.name, tidal_track.real_quality),
                      extra={"markup": True})
 
-            # Save the match in the database
-            # database.put(track['id'], tidal_track.id)
-
             # Add the Tidal track to the list of tracks to download
             tidal_tracks_to_download.append(tidal_track)
 
@@ -145,7 +135,7 @@ def entrypoint(command: str, action: str, **kwargs):
             log.debug("Downloading track...")
             tidal_manager.download_track(track, cfg.get("dl-dir"), cfg.get("out-dir"))
 
-        log.info(f"The cache is using {get_size_of_folder(decorators.cache_dir)/1000000} Mo.")
+        log.info(f"The cache is using {get_size_of_folder(decorators.cache_dir) / 1000000} Mo.")
         log.info("Done!")
 
 

@@ -1,32 +1,33 @@
+import cachebox
 from tidalapi import Track, media
 from tidalapi.exceptions import MetadataNotAvailable
 
 from spotidalyfin.cfg import QUALITIES
 from spotidalyfin.utils.comparisons import weighted_word_overlap, close
-from spotidalyfin.utils.decorators import cache_2weeks, cache_2months, rate_limit
+from spotidalyfin.utils.decorators import rate_limit
 from spotidalyfin.utils.formatting import format_artists
 
 
-@cache_2weeks
 def get_real_audio_quality(track: Track) -> str:
-    """Get the real audio quality of a track (uses caching)."""
-    return get_stream(track).audio_quality
+    """Get the real audio quality of a track."""
+    if track.is_DolbyAtmos:
+        return "DOLBY_ATMOS"
+    elif track.is_Mqa:
+        return "MQA"
+    elif track.is_HiRes:
+        return "HI_RES_LOSSLESS"
+    else:
+        return track.audio_quality
 
 
-@cache_2weeks
+@cachebox.cached(cachebox.LRUCache(maxsize=64))
 @rate_limit
 def get_stream(track: Track) -> media.Stream:
     """Get the stream of a track (uses caching)."""
     return track.get_stream()
 
 
-@cache_2weeks
-def get_urls_for_track(track: Track) -> list[str]:
-    """Get the download URLs for a track (uses caching)."""
-    return get_stream(track).get_stream_manifest().get_urls()
-
-
-@cache_2months
+@cachebox.cached(cachebox.LRUCache(maxsize=32))
 def get_lyrics(track: Track) -> str:
     """Get the lyrics of a track (uses caching)."""
     try:
@@ -36,7 +37,6 @@ def get_lyrics(track: Track) -> str:
         return ""
 
 
-@cache_2weeks
 def get_best_match(tidal_tracks: list[Track], spotify_track: dict) -> Track:
     """
     Get the best match from a list of Tidal tracks based on a Spotify track.
@@ -79,7 +79,6 @@ def get_best_match(tidal_tracks: list[Track], spotify_track: dict) -> Track:
         return tidal_tracks[0]
 
 
-@cache_2weeks
 def get_track_matching_score(track: Track, spotify_track: dict) -> float:
     """
     Calculate the matching score between a Tidal track and a Spotify track.

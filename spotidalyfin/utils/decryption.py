@@ -4,6 +4,7 @@ import base64
 from Crypto.Cipher import AES
 from Crypto.Util import Counter
 
+
 # TODO: rewrite this ?
 
 def decrypt_security_token(security_token: str) -> (str, str):

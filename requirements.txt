@@ -4,5 +4,5 @@ rich~=13.8.0
 typer~=0.12.5
 tidalapi @ git+https://github.com/M4TH1EU/python-tidal.git
 python-ffmpeg~=2.0.12
-cachier~=3.0.1
 mutagen~=1.47.0
+cachebox~=4.1.1
