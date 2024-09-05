@@ -3,7 +3,7 @@ VERSION=1.0.0
 echo "THIS BUNDLES YOUR SECRETS INSIDE THE EXECUTABLE; DO NOT SHARE"
 wait 2
 
-rm -rf buildenv build dist *.spec
+rm -rf buildenv build dist spotidalyfin*.spec
 python -m venv buildenv
 source buildenv/bin/activate
 pip install -r requirements.txt
