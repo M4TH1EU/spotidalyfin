@@ -9,8 +9,7 @@ from tidalapi import Track
 
 from spotidalyfin import cfg
 from spotidalyfin.managers.tidal_manager import TidalManager
-from spotidalyfin.utils import decorators
-from spotidalyfin.utils.file_utils import file_to_list, parse_secrets_file, get_size_of_folder
+from spotidalyfin.utils.file_utils import file_to_list, parse_secrets_file
 from spotidalyfin.utils.logger import log, setup_logger
 from .managers.jellyfin_manager import JellyfinManager
 from .managers.spotify_manager import SpotifyManager
@@ -121,8 +120,8 @@ def entrypoint(command: str, action: str, **kwargs):
             log.info("[bold]Found a match:", extra={"markup": True})
             log.info("[green]Spotify: {} - {} - {}".format(track['name'], track['artists'][0]['name'],
                                                            track['album']['name']), extra={"markup": True})
-            log.info("[blue] Tidal : {} - {}  - {} ({})".format(tidal_track.full_name, tidal_track.artist.name,
-                                                                tidal_track.album.name, tidal_track.real_quality),
+            log.info("[blue] Tidal : {} - {}  - {} ({})\n".format(tidal_track.full_name, tidal_track.artist.name,
+                                                                  tidal_track.album.name, tidal_track.real_quality),
                      extra={"markup": True})
 
             # Add the Tidal track to the list of tracks to download
@@ -132,7 +131,7 @@ def entrypoint(command: str, action: str, **kwargs):
 
         # --------------------------------------
         # Download Tidal tracks
-        with Progress() as progress:
+        with Progress(transient=True) as progress:
             progress.add_task(f"Total progress", total=len(tidal_tracks_to_download))
 
             with ThreadPoolExecutor(max_workers=5) as executor:
@@ -141,7 +140,8 @@ def entrypoint(command: str, action: str, **kwargs):
                     futures.append(
                         executor.submit(tidal_manager.download_track, track, progress))
 
-        log.info(f"The cache is using {get_size_of_folder(decorators.cache_dir) / 1000000} Mo.")
+        # TODO: check if everything was downloaded correctly
+        log.info(f"[bold green]Downloaded {len(tidal_tracks_to_download)} tracks from Tidal.", extra={"markup": True})
         log.info("Done!")
 
 

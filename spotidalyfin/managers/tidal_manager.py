@@ -273,7 +273,7 @@ class TidalManager:
                 r.raise_for_status()
                 for chunk in r.iter_content(chunk_size=8192):
                     f.write(chunk)
-            log.debug(f"Downloaded track : {track.full_name} - {track.artist.name}")
+            log.debug(f"Downloaded track : {track.id}")
 
         if stream_manifest.is_encrypted:
             log.debug(f"Decrypting track {track.full_name} - {track.artist.name}")
@@ -288,14 +288,14 @@ class TidalManager:
         if mime_type == "mp4":
             if progress:
                 progress.update(task, description="Extracting flac from m4a...")
-            log.debug(f"Extracting flac from m4a : {track.full_name} - {track.artist.name}")
+            log.debug(f"Extracting flac from m4a : {track.id}")
             tmp_file = extract_flac_from_mp4(tmp_file)
 
         # Metadata and move file to output directory
         if tmp_file.exists():
             if progress:
                 progress.update(task, description="Setting audio tags...")
-            log.debug("Setting audio tags : {track.full_name} - {track.artist.name}")
+            log.debug(f"Setting audio tags : {track.id}")
             track.lyrics = self.get_lyrics(track)
             tags = set_audio_tags(tmp_file, track)
             organize_audio_file(file_path=tmp_file, output_dir=cfg.get('out-dir'), metadata=tags)
