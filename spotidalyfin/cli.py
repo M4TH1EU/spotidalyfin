@@ -65,6 +65,9 @@ def entrypoint(command: str, action: str, **kwargs):
     tidal_manager = TidalManager()
     jellyfin_manager = JellyfinManager(cfg.get("jellyfin_url"), cfg.get("jellyfin_api_key"))
 
+    # dumb call to verify user is logged to Spotify
+    spotify_manager.client.current_user()
+
     if command == "download":
         spotify_tracks_to_match: list[dict] = []
         tidal_tracks_to_download: list[Track] = []
