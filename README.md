@@ -1,4 +1,4 @@
-![logo](.git-assets/logo.webp)
+![logo](.github/logo.webp)
 # Spotidalyfin
 
 This project is an easy to use tool to download all your Spotify songs and playlists in **FLAC High Quality** using a
