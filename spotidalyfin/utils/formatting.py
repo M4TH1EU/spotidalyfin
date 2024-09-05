@@ -49,8 +49,11 @@ def parse_date(date_str: str):
     return datetime.strptime(date_str, date_format) if date_format else None
 
 
-def not_none(any) -> str:
-    return str(any) if any else ""
+def not_none(any, default=None) -> str:
+    try:
+        return str(any) if any else "" if default is None else default
+    except:
+        return "" if default is None else default
 
 
 def num(any):
