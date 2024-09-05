@@ -19,7 +19,8 @@ class SpotifyManager:
         self.client = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id=client_id, client_secret=client_secret,
                                                                 redirect_uri="http://127.0.0.1:6969",
                                                                 scope=scopes,
-                                                                cache_handler=CacheFileHandler(token_file)))
+                                                                cache_handler=CacheFileHandler(token_file),
+                                                                open_browser=False))
 
     @cachebox.cached(cachebox.LRUCache(maxsize=128))
     @rate_limit

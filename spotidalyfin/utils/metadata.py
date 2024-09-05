@@ -2,7 +2,7 @@ import shutil
 from pathlib import Path
 
 from mutagen.flac import FLAC, Picture
-from mutagen.id3 import TALB, TCOM, TCOP, TDRC, TIT2, TOPE, TPE1, TRCK, TSRC, USLT, ID3, APIC
+from mutagen.id3 import TALB, TCOP, TDRC, TIT2, TOPE, TPE1, TRCK, TSRC, USLT, ID3, APIC
 from mutagen.mp3 import MP3
 from tidalapi import Track
 
@@ -19,10 +19,9 @@ def set_audio_tags(file: Path, track: Track) -> dict:
     copy_right = not_none(track.copyright)
     tracknumber = not_none(track.track_num)
     discnumber = not_none(track.volume_num)
-    totaldisc = not_none(None)
-    totaltrack = not_none(track.album.num_tracks)  # TODO: get track with album data
+    totaldisc = not_none(track.album.num_volumes, 1)
+    totaltrack = not_none(track.album.num_tracks, 1)  # TODO: get track with album data
     date = not_none(track.tidal_release_date.strftime("%Y-%m-%d"))
-    composer = not_none(None)
     isrc = not_none(track.isrc)
     lyrics = not_none(track.lyrics)
     cover_url = not_none(track.album.image(1280))
@@ -41,7 +40,6 @@ def set_audio_tags(file: Path, track: Track) -> dict:
         audio["totaldisc"] = totaldisc
         audio["totaltrack"] = totaltrack
         audio["date"] = date
-        audio["composer"] = composer
         audio["isrc"] = isrc
         audio["lyrics"] = lyrics
         if hasattr(track, "spotify_id"):
@@ -67,7 +65,6 @@ def set_audio_tags(file: Path, track: Track) -> dict:
         audio.tags.add(TRCK(encoding=3, text=tracknumber))
         audio.tags.add(TRCK(encoding=3, text=discnumber))
         audio.tags.add(TDRC(encoding=3, text=date))
-        audio.tags.add(TCOM(encoding=3, text=composer))
         audio.tags.add(TSRC(encoding=3, text=isrc))
         audio.tags.add(USLT(encoding=3, text=lyrics))
         audio.tags.add(APIC(encoding=3, mime="image/jpeg", type=3, desc="Cover", data=cover_data))

@@ -12,8 +12,10 @@ def weighted_word_overlap(a: str, b: str) -> float:
 
     def normalize(text: str) -> list[str]:
         """Normalize text by tokenizing, converting to lowercase, and removing stopwords and non-alphanumeric characters."""
+        text = re.sub(r'\([^)]*\)', '', text)
         tokens = text.lower().split()
         tokens = [re.sub(r'\W+', '', token) for token in tokens]  # Remove non-alphanumeric characters
+
         tokens = [token for token in tokens if token != '']
         return tokens
 
