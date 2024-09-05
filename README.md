@@ -111,3 +111,14 @@ $ source venv/bin/activate
 $ pip install -r requirements.txt
 $ ./build.sh
 ```
+
+## Known issues
+### GLIB
+If you encounter the following error:
+```
+./spotidalyfin: /lib/x86_64-linux-gnu/libc.so.6: version `GLIBC_ABI_DT_RELR' not found (required by /tmp/.../libz.so.1)
+```
+It means your glibc version is too old. You can either try to update your system or manually install the required
+packages.  I had luck with versions > 2.37.
+
+*Packages for Ubuntu 22.04 : [libc6](https://pkgs.org/search/?q=libc6) and [libc-bin](https://pkgs.org/search/?q=libc-bin)*
