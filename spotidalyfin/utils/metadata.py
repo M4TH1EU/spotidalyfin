@@ -19,8 +19,8 @@ def set_audio_tags(file: Path, track: Track) -> dict:
     copy_right = not_none(track.copyright)
     tracknumber = not_none(track.track_num)
     discnumber = not_none(track.volume_num)
-    totaldisc = not_none(track.album.num_volumes, 1)
-    totaltrack = not_none(track.album.num_tracks, 1)  # TODO: get track with album data
+    totaldisc = not_none(track.album.num_volumes, "1") # TODO: get track with album data
+    totaltrack = not_none(track.album.num_tracks, "1")  # TODO: get track with album data
     date = not_none(track.tidal_release_date.strftime("%Y-%m-%d"))
     isrc = not_none(track.isrc)
     lyrics = not_none(track.lyrics)

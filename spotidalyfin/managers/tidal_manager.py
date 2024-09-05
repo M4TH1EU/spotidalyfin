@@ -295,7 +295,12 @@ class TidalManager:
                 progress.update(task, description="Setting audio tags...")
             log.debug(f"Setting audio tags : {track.id}")
             track.lyrics = self.get_lyrics(track)
-            tags = set_audio_tags(tmp_file, track)
+            try:
+                tags = set_audio_tags(tmp_file, track)
+            except ValueError:
+                log.error(f"Failed to set audio tags for track {track.id}")
+                return
+
             organize_audio_file(file_path=tmp_file, output_dir=cfg.get('out-dir'), metadata=tags)
         else:
             log.error(f"Download failed for track {track.id}")
