@@ -6,8 +6,7 @@ import cachebox
 import requests
 import tidalapi
 from rich.progress import Progress
-from tidalapi import Track, media
-from tidalapi import album, Album
+from tidalapi import Track, media, Album
 from tidalapi.exceptions import MetadataNotAvailable
 from tidalapi.session import SearchResults
 
@@ -15,7 +14,6 @@ from spotidalyfin import cfg
 from spotidalyfin.cfg import QUALITIES, QUALITIES_REVERSE
 from spotidalyfin.utils.comparisons import weighted_word_overlap, close
 from spotidalyfin.utils.decorators import rate_limit
-from spotidalyfin.utils.decryption import decrypt_security_token, decrypt_file
 from spotidalyfin.utils.file_utils import extract_flac_from_mp4
 from spotidalyfin.utils.formatting import format_artists
 from spotidalyfin.utils.logger import log
@@ -43,12 +41,8 @@ class TidalManager:
     @cachebox.cached(cachebox.LRUCache(maxsize=128))
     @rate_limit
     def search(self, query, models: Optional[List[Optional[Any]]] = None, limit=7) -> SearchResults:
-        if len(query) > 99:
-            query = query[:99]
-
-        if not models:
-            models = [media.Track]
-
+        query = query[:99] if len(query) > 99 else query
+        models = models or [media.Track]
         return self.client.search(query, limit=limit, models=models)
 
     @cachebox.cached(cachebox.LRUCache(maxsize=256))
@@ -61,35 +55,28 @@ class TidalManager:
     def search_albums(self, album_name: str = None, artist_name: str = None, barcode=None) -> list[Album]:
         if barcode:
             res = self.client.get_albums_by_barcode(barcode)
-            if res:
-                return res
+            return res or []
         if album_name and artist_name:
-            res = self.search(f"{album_name} {artist_name}", models=[album.Album]).get('albums')
-            if res:
-                return res
+            res = self.search(f"{album_name} {artist_name}", models=[Album]).get('albums')
+            return res or []
         return []
 
     @cachebox.cached(cachebox.LRUCache(maxsize=128))
     @rate_limit
     def search_tracks(self, track_name: str = None, artist_name: str = None, isrc: str = None) -> list[Track]:
         if isrc:
-            res = self.client.get_tracks_by_isrc(isrc.upper())
-            if res:
-                return res
-
+            return self.client.get_tracks_by_isrc(isrc.upper()) or []
         if track_name and artist_name:
-            res = self.search(f"{track_name} {artist_name}").get('tracks')
-            if res:
-                return res
-
+            return self.search(f"{track_name} {artist_name}").get('tracks') or []
         return []
 
-    def search_for_track_in_album(self, album: Album, spotify_track: dict) -> Track:
+    def search_for_track_in_album(self, album: Album, spotify_track: dict) -> Optional[Track]:
         for track in self.get_album_tracks(album):
             if self.get_track_matching_score(track, spotify_track) >= 4:
                 return track
+        return None
 
-    def search_spotify_track(self, spotify_track: dict, quality: int) -> Track:
+    def search_spotify_track(self, spotify_track: dict, quality: int) -> Optional[Track]:
         """
         Search for a Spotify track on Tidal and return the best match using various search methods.
 
@@ -104,52 +91,46 @@ class TidalManager:
         album_barcode = spotify_track.get('album', {}).get('external_ids', {}).get('upc', '')
         isrc = spotify_track.get('external_ids', {}).get('isrc', '').upper()
 
-        if track_name and artist_name and album_name:
-            matches = []
-
-            # Collect results using concurrent futures to perform async API calls
-            with ThreadPoolExecutor(max_workers=3) as executor:
-                futures = []
-                if isrc:
-                    futures.append(executor.submit(self.search_tracks, isrc=isrc))
-                if album_barcode:
-                    futures.append(executor.submit(self.search_albums, barcode=album_barcode))
-
-                futures.append(executor.submit(self.search_tracks, track_name=track_name, artist_name=artist_name))
-
-                results = [f.result() for f in concurrent.futures.as_completed(futures)]
-
-            # Process each result
-            for result in results:
-                if result and isinstance(result, list):
-                    # Track
-                    if isinstance(result[0], Track):
-                        best_track = self.get_best_match(result, spotify_track, quality)
-                        if best_track:
-                            if best_track.real_quality_score == quality and best_track.score >= 3.5:
-                                return best_track
-                            if best_track not in matches:
-                                matches.append(best_track)
-                    # Album
-                    elif isinstance(result[0], Album):
-                        for album in result:
-                            track = self.search_for_track_in_album(album, spotify_track)
-                            if track:
-                                track.real_quality = self.get_real_audio_quality(track)
-                                track.real_quality_score = QUALITIES.get(track.real_quality)
-                                if track.real_quality_score <= quality:
-                                    if track.real_quality_score == quality:
-                                        return track
-
-                                    if track not in matches:
-                                        matches.append(track)
-
-            if matches:
-                best_match = self.get_best_match(matches, spotify_track, quality)
-                if best_match:
-                    return best_match
-
+        if not (track_name and artist_name and album_name):
             return None
+
+        matches = []
+        futures = []
+
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            if isrc:
+                futures.append(executor.submit(self.search_tracks, isrc=isrc))
+            if album_barcode:
+                futures.append(executor.submit(self.search_albums, barcode=album_barcode))
+            futures.append(executor.submit(self.search_tracks, track_name=track_name, artist_name=artist_name))
+
+            results = [f.result() for f in concurrent.futures.as_completed(futures)]
+
+        for result in results:
+            if result and isinstance(result, list):
+                # Track
+                if isinstance(result[0], Track):
+                    best_track = self.get_best_match(result, spotify_track, quality)
+                    if best_track:
+                        if best_track.real_quality_score == quality and best_track.score >= 3.5:
+                            return best_track
+                        if best_track not in matches:
+                            matches.append(best_track)
+                # Album
+                elif isinstance(result[0], Album):
+                    for album in result:
+                        track = self.search_for_track_in_album(album, spotify_track)
+                        if track:
+                            track.real_quality = self.get_real_audio_quality(track)
+                            track.real_quality_score = QUALITIES.get(track.real_quality)
+                            if track.real_quality_score <= quality:
+                                if track.real_quality_score == quality:
+                                    return track
+
+                                if track not in matches:
+                                    matches.append(track)
+
+        return self.get_best_match(matches, spotify_track, quality) if matches else None
 
     def get_real_audio_quality(self, track: Track) -> str:
         """Get the real audio quality of a track."""
@@ -198,7 +179,7 @@ class TidalManager:
         except MetadataNotAvailable:
             return ""
 
-    def get_best_match(self, tidal_tracks: list[Track], spotify_track: dict, quality: int) -> Track:
+    def get_best_match(self, tidal_tracks: list[Track], spotify_track: dict, quality: int) -> Optional[Track]:
         """
         Get the best match from a list of Tidal tracks based on a Spotify track.
 
@@ -222,20 +203,12 @@ class TidalManager:
             track.score = self.get_track_matching_score(track, spotify_track)
             track.real_quality = self.get_real_audio_quality(track)
             track.real_quality_score = QUALITIES.get(track.real_quality)
-            track.spotify_id = spotify_track.get('id', '')
-
-            if track.score < 3.5:
-                continue
-
-            # Skip if quality is higher than the maximum allowed
-            if track.real_quality_score > quality:
-                continue
-
-            if track.real_quality_score > best_quality:
-                best_quality = QUALITIES.get(track.real_quality)
-                matches = [track]
-            elif track.real_quality_score == best_quality:
-                matches.append(track)
+            if track.score >= 3.5 and track.real_quality_score <= quality:
+                if track.real_quality_score > best_quality:
+                    best_quality = track.real_quality_score
+                    matches = [track]
+                elif track.real_quality_score == best_quality:
+                    matches.append(track)
 
         if matches and isinstance(matches, list):
             return max(matches, key=lambda x: x.score)
@@ -264,20 +237,14 @@ class TidalManager:
 
         if close(track.duration, spotify_track.get('duration_ms', 0) / 1000):
             score += 1
-
         if track.isrc.upper() == spotify_track.get('external_ids', {}).get('isrc', '').upper():
             score += 0.5
-
         if weighted_word_overlap(track.full_name, spotify_track.get('name', '')) > 0.7:
             score += 1
-
         if weighted_word_overlap(track.album.name, spotify_track.get('album', {}).get('name', '')) > 0.35:
             score += 1.5
-
-        if all(artist in format_artists(track.artists) for artist in
-               format_artists(spotify_track.get('artists', []))):
+        if all(artist in format_artists(track.artists) for artist in format_artists(spotify_track.get('artists', []))):
             score += 1
-
         return score
 
     def download_track(self, track: Track, progress: Progress = None):
@@ -299,24 +266,22 @@ class TidalManager:
             for url in download_urls:
                 if progress:
                     progress.update(task, advance=1)
-
                 r = requests.get(url, stream=True, timeout=10)
                 r.raise_for_status()
                 for chunk in r.iter_content(chunk_size=8192):
                     f.write(chunk)
             log.debug(f"Downloaded track : {track.id}")
 
-        if stream_manifest.is_encrypted:
-            log.debug(f"Decrypting track {track.full_name} - {track.artist.name}")
-            # TODO: convert Pathlib / make it work
-            key, nonce = decrypt_security_token(stream_manifest.encryption_key)
-            tmp_path_file_decrypted = str(tmp_file) + "_decrypted"
-            decrypt_file(str(tmp_file), tmp_path_file_decrypted, key, nonce)
+        # if stream_manifest.is_encrypted:
+        #     log.debug(f"Decrypting track {track.full_name} - {track.artist.name}")
+        #     # TODO: convert Pathlib / make it work
+        #     key, nonce = decrypt_security_token(stream_manifest.encryption_key)
+        #     tmp_path_file_decrypted = str(tmp_file) + "_decrypted"
+        #     decrypt_file(str(tmp_file), tmp_path_file_decrypted, key, nonce)
 
-        mime_type = stream_manifest.mime_type.split("/")[-1]
         # TODO: extract flac from mp4 option ?
         # Extract flac from mp4 container
-        if mime_type == "mp4":
+        if stream_manifest.mime_type.split("/")[-1] == "mp4":
             if progress:
                 progress.update(task, description="Extracting flac from m4a...")
             log.debug(f"Extracting flac from m4a : {track.id}")
@@ -330,6 +295,8 @@ class TidalManager:
             track.lyrics = self.get_lyrics(track)
             tags = set_audio_tags(tmp_file, track)
             organize_audio_file(file_path=tmp_file, output_dir=cfg.get('out-dir'), metadata=tags)
+        else:
+            log.error(f"Download failed for track {track.id}")
 
         if progress:
             progress.update(0, advance=1)
