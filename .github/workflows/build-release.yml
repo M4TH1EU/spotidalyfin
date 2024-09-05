@@ -11,22 +11,11 @@ jobs:
   pyinstaller-build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          path: spotidalyfin
-      - name: Test
-        run: |
-          echo $GITHUB_WORKSPACE
-          pwd
-          ls -la
-          ls -la /workspace/mathieu/spotify-tidal-downloader/spotidalyfin
-
       - name: Create Executable
         uses: sayyid5416/pyinstaller@v1
         with:
           python_ver: '3.12'
-          spec: '/workspace/mathieu/spotify-tidal-downloader/spotidalyfin/build.spec'
+          spec: 'build.spec'
           requirements: 'requirements.txt'
           upload_exe_with_name: 'spotidalyfin-${{ github.ref_name }}'
       - name: Release
