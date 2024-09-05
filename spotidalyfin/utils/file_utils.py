@@ -60,3 +60,7 @@ def extract_flac_from_mp4(file_path: Path, timeout=15) -> Path:
 
     file_path.unlink()
     return file_out
+
+def get_size_of_folder(folder: Path) -> int:
+    """Get the size of a folder in bytes."""
+    return sum(file.stat().st_size for file in get_all_files_in_directory(folder))

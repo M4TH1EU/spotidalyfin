@@ -1,47 +1,36 @@
-import sys
 from pathlib import Path
 from typing import Annotated
 
 import rich
 import typer
 from rich.progress import Progress, SpinnerColumn, TextColumn
+from tidalapi import Track
 
+from spotidalyfin import cfg
 from spotidalyfin.managers.tidal_manager import TidalManager
-from spotidalyfin.utils.file_utils import file_to_list, parse_secrets_file
+from spotidalyfin.utils import decorators
+from spotidalyfin.utils.file_utils import file_to_list, parse_secrets_file, get_size_of_folder
 from spotidalyfin.utils.logger import log, setup_logger
-from .db.database import Database
 from .managers.jellyfin_manager import JellyfinManager
 from .managers.spotify_manager import SpotifyManager
 
-APPLICATION_PATH = Path(sys._MEIPASS).resolve() if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS') else Path(
-    __file__).resolve().parent
-
 app = typer.Typer()
-config = {
-    "debug": False,
-    "out-dir": Path("~/Music/spotidalyfin").expanduser(),
-    "dl-dir": Path("/tmp/spotidalyfin"),
-    "secrets": APPLICATION_PATH / "spotidalyfin.secrets",
-    "streamrip": APPLICATION_PATH / "streamrip",
-    "quality": 3,
-}
 
 download_app = typer.Typer()
 app.add_typer(download_app, name="download")
 
 
 @app.callback()
-def main(debug: bool = config["debug"], quality: int = config['quality'], out_dir: Path = config["out-dir"],
-         dl_dir: Path = config["dl-dir"],
-         secrets: Path = config["secrets"]):
-    global config
-    config["debug"] = debug
-    config["quality"] = quality
-    config["out-dir"] = out_dir
-    config["dl-dir"] = dl_dir
-    config["secrets"] = secrets
-    config["db_path"] = config["out-dir"] / ".spotidalyfin.db"
-    config = config | parse_secrets_file(secrets)
+def main(debug: bool = cfg.get("debug"), quality: int = cfg.get('quality'), out_dir: Path = cfg.get("out-dir"),
+         dl_dir: Path = cfg.get("dl-dir"),
+         secrets: Path = cfg.get("secrets")):
+    cfg.put("debug", debug)
+    cfg.put("quality", quality)
+    cfg.put("out-dir", out_dir)
+    cfg.put("dl-dir", dl_dir)
+    cfg.put("secrets", secrets)
+    # cfg.put("db_path", cfg.get("dl-dir") / ".spotidalyfin.db")
+    cfg.get_config().update(parse_secrets_file(secrets))
 
 
 @download_app.command(name="liked")
@@ -65,20 +54,20 @@ def download_track(track_id: Annotated[str, typer.Argument(help="Track ID / URL"
 
 
 def entrypoint(command: str, action: str, **kwargs):
-    database = Database(config.get("db_path"))
-    setup_logger(config.get("debug"))
+    # database = Database(config.get("db_path"))
+    setup_logger(cfg.get("debug"))
 
     log.info("[bold]Starting [green]Spo[white]tidal[blue]yfin...", extra={"markup": True})
     log.info(f"Current action : {command} {action} {kwargs}\n")
 
     log.debug("Connecting to Spotify, Tidal and Jellyfin...")
-    spotify_manager = SpotifyManager(config.get("spotify_client_id"), config.get("spotify_client_secret"))
+    spotify_manager = SpotifyManager(cfg.get("spotify_client_id"), cfg.get("spotify_client_secret"))
     tidal_manager = TidalManager(Path("~/.config/spotidalyfin/tidal-session-pkce.json").expanduser())
-    jellyfin_manager = JellyfinManager(config.get("jellyfin_url"), config.get("jellyfin_api_key"))
+    jellyfin_manager = JellyfinManager(cfg.get("jellyfin_url"), cfg.get("jellyfin_api_key"))
 
     if command == "download":
-        spotify_tracks_to_match = []
-        tidal_tracks_to_download = []
+        spotify_tracks_to_match: list[dict] = []
+        tidal_tracks_to_download: list[Track] = []
 
         # -------------------------------------------
         # Retrieve Spotify tracks to match with Tidal
@@ -117,12 +106,12 @@ def entrypoint(command: str, action: str, **kwargs):
                 log.debug(f"Track {track['name']} already exists in Jellyfin")
                 continue
 
-            # Check if the track has already been matched and saved in the database
-            database_res = database.get(track['id'])
-            if database_res:
-                log.debug(f"Track {track['name']} already matched with Tidal track : {database_res}")
-                tidal_tracks_to_download.append(tidal_manager.get_track(database_res))
-                continue
+            # # Check if the track has already been matched and saved in the database
+            # database_res = database.get(track['id'])
+            # if database_res:
+            #     log.debug(f"Track {track['name']} already matched with Tidal track : {database_res}")
+            #     tidal_tracks_to_download.append(tidal_manager.get_track(database_res))
+            #     continue
 
             # Add album barcodes and some other metadata to the track
             track['album'] = spotify_manager.get_album(track['album']['id'])
@@ -143,17 +132,20 @@ def entrypoint(command: str, action: str, **kwargs):
                      extra={"markup": True})
 
             # Save the match in the database
-            database.put(track['id'], tidal_track.id)
+            # database.put(track['id'], tidal_track.id)
 
             # Add the Tidal track to the list of tracks to download
-            tidal_tracks_to_download.append(tidal_track.id)
+            tidal_tracks_to_download.append(tidal_track)
 
         log.info(f"Matched {len(tidal_tracks_to_download)}/{len(spotify_tracks_to_match)} Spotify tracks with Tidal.\b")
 
-        # TODO: download tracks with progress bar
-        # log.info("Downloading track...")
-        # tidal_manager.download_track(tidal_track, config.get("dl-dir"), config.get("out-dir"))
+        # --------------------------------------
+        # Download Tidal tracks
+        for track in rich.progress.track(tidal_tracks_to_download, description="Downloading tracks...", transient=True):
+            log.debug("Downloading track...")
+            tidal_manager.download_track(track, cfg.get("dl-dir"), cfg.get("out-dir"))
 
+        log.info(f"The cache is using {get_size_of_folder(decorators.cache_dir)/1000000} Mo.")
         log.info("Done!")
 
 

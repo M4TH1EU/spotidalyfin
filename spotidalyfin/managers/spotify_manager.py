@@ -4,7 +4,7 @@ import time
 
 from minim import spotify
 
-from spotidalyfin.utils.decorators import rate_limit
+from spotidalyfin.utils.decorators import rate_limit, cache_2months
 
 
 class SpotifyManager:
@@ -30,9 +30,11 @@ class SpotifyManager:
 
         return tracks
 
+    @cache_2months
     def get_track(self, track_id):
         return self.client.get_track(track_id)
 
+    @cache_2months
     def get_album(self, album_id):
         return self.client.get_album(album_id)
 
