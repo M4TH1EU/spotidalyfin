@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Create Executable
-        uses: sayyid5416/pyinstaller@v1
+        uses: https://git.broillet.ch/mathieu/pyinstaller-gitea-action@main
         with:
           python_ver: '3.12'
           spec: 'build.spec'
