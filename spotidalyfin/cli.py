@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Annotated
 
@@ -131,9 +132,14 @@ def entrypoint(command: str, action: str, **kwargs):
 
         # --------------------------------------
         # Download Tidal tracks
-        for track in rich.progress.track(tidal_tracks_to_download, description="Downloading tracks...", transient=True):
-            log.debug("Downloading track...")
-            tidal_manager.download_track(track, cfg.get("dl-dir"), cfg.get("out-dir"))
+        with Progress() as progress:
+            progress.add_task(f"Total progress", total=len(tidal_tracks_to_download))
+
+            with ThreadPoolExecutor(max_workers=5) as executor:
+                futures = []
+                for track in tidal_tracks_to_download:
+                    futures.append(
+                        executor.submit(tidal_manager.download_track, track, progress))
 
         log.info(f"The cache is using {get_size_of_folder(decorators.cache_dir) / 1000000} Mo.")
         log.info("Done!")

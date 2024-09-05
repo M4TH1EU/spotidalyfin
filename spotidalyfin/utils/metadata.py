@@ -9,7 +9,6 @@ from tidalapi import Track
 from spotidalyfin.utils.file_utils import open_image_url
 from spotidalyfin.utils.formatting import not_none, format_artists, num
 from spotidalyfin.utils.logger import log
-from spotidalyfin.utils.tidal_track_utils import get_lyrics
 
 
 def set_audio_tags(file: Path, track: Track) -> dict:
@@ -25,7 +24,7 @@ def set_audio_tags(file: Path, track: Track) -> dict:
     date = not_none(track.tidal_release_date.strftime("%Y-%m-%d"))
     composer = not_none(None)
     isrc = not_none(track.isrc)
-    lyrics = not_none(get_lyrics(track))
+    lyrics = not_none(track.lyrics)
     cover_url = not_none(track.album.image())
     cover_data = open_image_url(cover_url)
 
