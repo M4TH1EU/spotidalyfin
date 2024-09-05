@@ -1,6 +1,5 @@
 import concurrent
 from concurrent.futures import ThreadPoolExecutor
-from pathlib import Path
 from typing import Optional, List, Any
 
 import cachebox
@@ -25,7 +24,8 @@ from spotidalyfin.utils.metadata import set_audio_tags, organize_audio_file
 
 class TidalManager:
 
-    def __init__(self, session_file: Path):
+    def __init__(self):
+        session_file = cfg.get("config-dir") / "tidal-session-pkce.json"
         self.client = tidalapi.Session()
         self.client.login_session_file(session_file, do_pkce=True)
         self.client.audio_quality = QUALITIES_REVERSE.get(cfg.get("quality"))

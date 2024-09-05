@@ -4,16 +4,20 @@ import time
 
 import cachebox
 import spotipy
-from spotipy import SpotifyOAuth
+from spotipy import SpotifyOAuth, CacheFileHandler
 
+from spotidalyfin import cfg
 from spotidalyfin.utils.decorators import rate_limit
 
 
 class SpotifyManager:
     def __init__(self, client_id, client_secret):
         scopes = ['playlist-read-private', 'playlist-read-collaborative', 'user-library-read']
+        token_cache = CacheFileHandler(cfg.get("config-dir") / ".spotipy-token")
         self.client = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id=client_id, client_secret=client_secret,
-                                                                redirect_uri="http://127.0.0.1:6969", scope=scopes))
+                                                                redirect_uri="http://127.0.0.1:6969",
+                                                                scope=scopes,
+                                                                cache_handler=token_cache))
 
     @cachebox.cached(cachebox.LRUCache(maxsize=128))
     @rate_limit

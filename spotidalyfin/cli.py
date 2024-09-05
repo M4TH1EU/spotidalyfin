@@ -62,7 +62,7 @@ def entrypoint(command: str, action: str, **kwargs):
 
     log.debug("Connecting to Spotify, Tidal and Jellyfin...")
     spotify_manager = SpotifyManager(cfg.get("spotify_client_id"), cfg.get("spotify_client_secret"))
-    tidal_manager = TidalManager(Path("~/.config/spotidalyfin/tidal-session-pkce.json").expanduser())
+    tidal_manager = TidalManager()
     jellyfin_manager = JellyfinManager(cfg.get("jellyfin_url"), cfg.get("jellyfin_api_key"))
 
     if command == "download":

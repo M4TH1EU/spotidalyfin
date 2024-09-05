@@ -15,6 +15,7 @@ _config = {
     "debug": False,
     "out-dir": Path("~/Music/spotidalyfin").expanduser(),
     "dl-dir": Path("/tmp/spotidalyfin"),
+    "config-dir": Path("~/.config/spotidalyfin").expanduser(),
     "secrets": APPLICATION_PATH / "spotidalyfin.secrets",
     "streamrip": APPLICATION_PATH / "streamrip",
     "quality": 3,
