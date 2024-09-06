@@ -2,23 +2,14 @@ from pathlib import Path
 
 from spotidalyfin import APPLICATION_PATH
 
-QUALITIES = {
-    "DOLBY_ATMOS": 0,
-    "LOW": 1,
-    "LOSSLESS": 2,
-    "HI_RES_LOSSLESS": 3
-}
-
-QUALITIES_REVERSE = {v: k for k, v in QUALITIES.items()}
-
 _config = {
     "debug": False,
     "out-dir": Path("~/Music/spotidalyfin").expanduser(),
     "dl-dir": Path("/tmp/spotidalyfin"),
     "config-dir": Path("~/.config/spotidalyfin").expanduser(),
     "secrets": APPLICATION_PATH / "spotidalyfin.secrets",
-    "streamrip": APPLICATION_PATH / "streamrip",
     "quality": 3,
+    "jellyfin-metadata-dir": Path("/var/lib/jellyfin/metadata")
 }
 
 

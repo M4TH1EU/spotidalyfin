@@ -11,13 +11,21 @@ from tidalapi.exceptions import MetadataNotAvailable
 from tidalapi.session import SearchResults
 
 from spotidalyfin import cfg
-from spotidalyfin.cfg import QUALITIES, QUALITIES_REVERSE
 from spotidalyfin.utils.comparisons import weighted_word_overlap, close
 from spotidalyfin.utils.decorators import rate_limit
 from spotidalyfin.utils.file_utils import extract_flac_from_mp4
 from spotidalyfin.utils.formatting import format_artists
 from spotidalyfin.utils.logger import log
 from spotidalyfin.utils.metadata import set_audio_tags, organize_audio_file
+
+QUALITIES = {
+    "DOLBY_ATMOS": 0,
+    "LOW": 1,
+    "LOSSLESS": 2,
+    "HI_RES_LOSSLESS": 3
+}
+
+QUALITIES_REVERSE = {v: k for k, v in QUALITIES.items()}
 
 
 class TidalManager:
