@@ -1,12 +1,15 @@
 # jellyfin_manager.py
+from typing import Optional
 
 import requests
 from rich.progress import Progress
 
 from spotidalyfin import cfg
+from spotidalyfin.utils.comparisons import weighted_word_overlap, close
 from spotidalyfin.utils.file_utils import resize_image, calculate_checksum, file_to_list, remove_line_from_file, \
     write_line_to_file
-from spotidalyfin.utils.formatting import format_string
+from spotidalyfin.utils.formatting import format_artists, normalize_str, format_track_name_special, \
+    format_track_name_special2
 from spotidalyfin.utils.logger import log
 
 LIBRARY_MAX_SIZE = (1920, 1080)
@@ -20,73 +23,142 @@ class JellyfinManager:
         self.api_key = api_key
         self.metadata_dir = cfg.get("jellyfin-metadata-dir")
         self.checksum_file = self.metadata_dir / ".image_checksums_spotidalyfin_do_not_delete.txt"
+        self.user_id = "e9ba1418ab2241e38a17f26b17026e6e"  # TODO: change this
         self.checksums = None
 
-    def request(self, path, method="GET"):
+    def request(self, path, method="GET", params=None):
+        url = f"{self.url}/{path.lstrip('/')}"
+        headers = {"X-Emby-Token": self.api_key}
         try:
-            url = self.url + "/" + path.lstrip("/")
             if method == "GET":
-                return requests.get(url, headers={"X-Emby-Token": self.api_key}).json()
+                response = requests.get(url, headers=headers, params=params)
             elif method == "POST":
-                return requests.post(url, headers={"X-Emby-Token": self.api_key}).json()
-        except requests.exceptions.RequestException as e:
-            # TODO: catch exception
-            return
+                response = requests.post(url, headers=headers, params=params)
+            else:
+                raise ValueError(f"Invalid method: {method}")
 
-    def search(self, query, limit=5, include_item_types="Audio", recursive=True):
-        return self.request(
-            f"Items?searchTerm={query}&Recursive={recursive}&IncludeItemTypes={include_item_types}&Limit={limit}")
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException:
+            return None
 
-    def search_album(self, album_name, artist_name):
-        album_name = format_string(album_name)
-        artist_name = format_string(artist_name)
+    def search(self, query=None, limit=5, path="Items", year=None, parent_id=None, include_item_types="Audio",
+               recursive=True):
+        params = {
+            "Recursive": recursive,
+            "IncludeItemTypes": include_item_types,
+            "Limit": limit
+        }
+        if query:
+            params["searchTerm"] = query
+        if year:
+            params["years"] = year
+        if parent_id:
+            params["parentId"] = parent_id
 
-        response = self.search(f"{album_name} {artist_name}", include_item_types="MusicAlbum")
-        if response['TotalRecordCount'] > 0:
+        return self.request(path, params=params)
+
+    def search_by_parent_id(self, parent_id, limit=5, include_item_types="Audio", recursive=True):
+        return self.search(limit=limit, path=f"Users/{self.user_id}/Items", parent_id=parent_id,
+                           include_item_types=include_item_types,
+                           recursive=recursive)
+
+    def search_artist(self, artist_name) -> Optional[dict]:
+        response = self.search(query=artist_name, include_item_types="MusicArtist")
+        if response and response.get('TotalRecordCount', 0) > 0:
             for item in response['Items']:
-                # TODO: improve search
-                if format_string(item['Name']) == album_name and format_string(item['Artists'][0]) == artist_name:
-                    return item['Id']
+                if weighted_word_overlap(item['Name'], artist_name) > 0.9:
+                    return item
+        return None
 
-    def search_track_in_album(self, track_name, album_name, artist_name):
-        track_name = format_string(track_name)
-        album_name = format_string(album_name)
-        artist_name = format_string(artist_name)
-
-        album_id = self.search_album(album_name, artist_name)
-        if album_id:
-            response = self.request(f"Items/{album_id}/Children")
-            if response['TotalRecordCount'] > 0:
+    def search_track_for_artist(self, track_name, artist: dict) -> Optional[dict]:
+        if artist:
+            response = self.search_by_parent_id(artist.get('Id'))
+            if response and response.get('TotalRecordCount', 0) > 0:
                 for item in response['Items']:
-                    # TODO: improve search
-                    if item['Type'] == "Audio" and format_string(item['Name']) == track_name:
-                        return item['Id']
+                    if item['Type'] == "Audio" and weighted_word_overlap(item['Name'], track_name) >= 0.66:
+                        return item
+        return None
 
-    def search_track_by_name(self, track_name, artist_name, album_name):
-        track_name = format_string(track_name)
-        artist_name = format_string(artist_name)
-        album_name = format_string(album_name)
-
-        response = self.search(track_name, include_item_types="Audio")
-        if response['TotalRecordCount'] > 0:
+    def search_album(self, album_name, artist_name=None) -> Optional[dict]:
+        response = self.search(query=album_name, include_item_types="MusicAlbum")
+        if response and response.get('TotalRecordCount', 0) > 0:
             for item in response['Items']:
-                # TODO: improve search
-                if item['Type'] == "Audio" and format_string(item['Name']) == track_name:
-                    if format_string(item['Artists'][0]) == artist_name and format_string(item['Album']) == album_name:
-                        return item['Id']
+                jellyfin_album_name = item['Name']
+                jellyfin_artist_name = format_artists(item['Artists'])[0]
+                if weighted_word_overlap(jellyfin_album_name, album_name) >= 0.66:
+                    if not artist_name or weighted_word_overlap(jellyfin_artist_name, artist_name) >= 0.66:
+                        return item
+        return None
+
+    def search_track_in_album(self, track_name, album: dict, duration=None):
+        response = self.search_by_parent_id(album.get('Id'))
+        if response and response.get('TotalRecordCount', 0) > 0:
+            for item in response['Items']:
+                if weighted_word_overlap(item['Name'], track_name) >= 0.66:
+                    if not duration or close(item.get('RunTimeTicks', 0) / 10000000, duration):
+                        return item
+
+        return None
+
+    def search_track_by_name(self, track_name, artist_name=None, album_name=None, retry: bool = False) -> Optional[
+        dict]:
+        response = self.search(query=track_name, include_item_types="Audio")
+
+        if response and response.get('TotalRecordCount', 0) > 0:
+            for item in response['Items']:
+                if weighted_word_overlap(item['Name'], track_name) >= 0.66:
+                    if not artist_name or weighted_word_overlap(format_artists(item['Artists'])[0],
+                                                                artist_name) >= 0.66:
+                        if not album_name or weighted_word_overlap(item.get('Album', ''), album_name) >= 0.66:
+                            return item
+        elif not retry:
+            # TODO : fix this crap (too tired for this)
+            res = self.search_track_by_name(normalize_str(track_name), artist_name, album_name, retry=True)
+
+            if not res:
+                res = self.search_track_by_name(format_track_name_special(track_name), artist_name,
+                                                format_track_name_special(album_name), retry=True)
+            if not res:
+                res = self.search_track_by_name(format_track_name_special2(track_name), artist_name,
+                                                format_track_name_special2(album_name), retry=True)
+            if res:
+                return res
+
+        return None
 
     def does_track_exist(self, spotify_track: dict):
         track_name = spotify_track.get('name', '')
-        artist_name = spotify_track.get('artists', [{}])[0].get('name', '')
+        artist_name = format_artists(spotify_track.get('artists', [{}]), lower=False)[0]
         album_name = spotify_track.get('album', {}).get('name', '')
+        year = spotify_track.get('album', {}).get('release_date', '')[:4]
+        duration = spotify_track.get('duration_ms', 0) / 1000
 
-        find_by_album = self.search_track_in_album(track_name, album_name, artist_name)
-        if find_by_album:
-            return find_by_album
+        # Search for album from artist and then track name in album
+        jellyfin_album = self.search_album(album_name, artist_name) or self.search_album(album_name, "")
+        if jellyfin_album:
+            jellyfin_track = self.search_track_in_album(track_name, jellyfin_album, duration)
+            if jellyfin_track:
+                return True
 
-        find_by_name = self.search_track_by_name(track_name, artist_name, album_name)
-        if find_by_name:
-            return find_by_name
+        # Search by track name and verify artist name and album name
+        jellyfin_track = self.search_track_by_name(track_name, artist_name, album_name)
+        if jellyfin_track:
+            return True
+        else:
+            jellyfin_track = self.search_track_by_name(track_name, artist_name)
+            if jellyfin_track:
+                return True
+
+        # # Retry only using album name and track name
+        # retry_album_only = self.search_album(album_name, "")
+        # if retry_album_only and self.search_track_in_album(track_name, retry_album_only):
+        #     return True
+        #
+        # # Retry only using artist name and track name
+        # retry_artist_only = self.search_artist(artist_name)
+        # if retry_artist_only and self.search_track_for_artist(track_name, retry_artist_only):
+        #     return True
 
         return False
 

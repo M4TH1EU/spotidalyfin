@@ -1,4 +1,5 @@
 import datetime
+import re
 
 from tidalapi import Artist
 
@@ -9,12 +10,47 @@ def format_path(*parts):
 
 def format_string(string: str) -> str:
     """Format a string by removing content after certain delimiters and stripping whitespace."""
-    return string.split('-')[0].strip().split('(')[0].strip().split('[')[0].strip()
+    return string.strip().split('(')[0].strip().split('[')[0].strip().lower()
 
 
-def format_artists(artists: list, lower: bool = True) -> list:
+def normalize_str(text: str) -> str:
+    return " ".join(normalize(text))
+
+
+def normalize(text: str) -> list[str]:
+    """Normalize text by tokenizing, converting to lowercase, and removing stopwords and non-alphanumeric characters."""
+    # text = re.sub(r'\([^)]*\)', '', text) # remove all text within parentheses
+    text = text.lower()
+    # Removes various stuff in parentheses (e.g. (feat. ...), (from ...), (edition ...), (radio ...), (bande ...), etc.)
+    text = re.sub(r'\((feat|with|edition|radio|bande|original|ultimate)[^)]*\)', '', text)
+    text = re.sub(r'\(uk.*?album\)', '', text)
+    text = text.replace("remix", "")
+    # Removes date and version information (e.g. 2020 remaster, 2020 version, etc.)
+    # text = re.sub(r'\d{4} (remaster|version)', '', text)
+
+    tokens = text.split()
+    tokens = [re.sub(r'\W+', '', token) for token in tokens]  # Remove non-alphanumeric characters
+
+    tokens = [token for token in tokens if token != '']
+    return tokens
+
+def format_track_name_special(track_name: str) -> str:
+    if track_name:
+        if " - " in track_name:
+            return track_name.replace(" - ", " (") + ")"
+
+def format_track_name_special2(track_name: str) -> str:
+    if track_name:
+        if " - " in track_name:
+            return track_name.replace(" (", " - ").replace(")", "")
+
+
+def format_artists(artists: list | str, lower: bool = True) -> list:
     """Format a tidal/spotify list of artist names by handling multiple separators and converting to lowercase."""
     formatted_artists = []
+    if isinstance(artists, str):
+        artists = [artists]
+
     for artist in artists:
         artist_name = ""
 
@@ -22,6 +58,12 @@ def format_artists(artists: list, lower: bool = True) -> list:
             artist_name = artist.get('name', '')
         elif isinstance(artist, Artist):
             artist_name = artist.name
+        elif isinstance(artist, str):
+            artist_name = artist
+
+        # Fix for "Yusuf / Cat Stevens"
+        if "/ " in artist_name:
+            artist_name = artist_name.split("/ ")[1]
 
         for sep in ['&', 'and', ',']:
             if sep in artist_name:

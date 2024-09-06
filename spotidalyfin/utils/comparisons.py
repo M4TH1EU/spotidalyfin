@@ -1,5 +1,6 @@
-import re
 from collections import Counter
+
+from spotidalyfin.utils.formatting import normalize
 
 
 def close(a: int | float, b: int | float, delta: int = 2) -> bool | float:
@@ -9,16 +10,6 @@ def close(a: int | float, b: int | float, delta: int = 2) -> bool | float:
 
 def weighted_word_overlap(a: str, b: str) -> float:
     """Calculate the weighted word overlap between two album titles."""
-
-    def normalize(text: str) -> list[str]:
-        """Normalize text by tokenizing, converting to lowercase, and removing stopwords and non-alphanumeric characters."""
-        text = re.sub(r'\([^)]*\)', '', text)
-        tokens = text.lower().split()
-        tokens = [re.sub(r'\W+', '', token) for token in tokens]  # Remove non-alphanumeric characters
-
-        tokens = [token for token in tokens if token != '']
-        return tokens
-
     tokens_a = normalize(a)
     tokens_b = normalize(b)
 
