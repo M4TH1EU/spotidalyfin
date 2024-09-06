@@ -114,6 +114,7 @@ def entrypoint_download(action: str, spotify_manager: SpotifyManager, tidal_mana
     # --------------------------------------
     # Match Spotify tracks with Tidal tracks
     log.debug("Matching Spotify tracks with Tidal...")
+    already_on_jellyfin = 0
     for track in rich.progress.track(spotify_tracks_to_match, description="Matching tracks...", transient=True):
         # Match Spotify tracks ID with Tidal tracks ID
         if not track:
@@ -123,7 +124,7 @@ def entrypoint_download(action: str, spotify_manager: SpotifyManager, tidal_mana
 
         if jellyfin_manager.does_track_exist(track):
             log.debug(f"Track {track['name']} already exists in Jellyfin")
-            spotify_tracks_to_match.remove(track)
+            already_on_jellyfin += 1
             continue
 
         # Add album barcodes and some other metadata to the track
@@ -148,7 +149,7 @@ def entrypoint_download(action: str, spotify_manager: SpotifyManager, tidal_mana
         # Add the Tidal track to the list of tracks to download
         tidal_tracks_to_download.append(tidal_track)
 
-    log.info(f"Matched {len(tidal_tracks_to_download)}/{len(spotify_tracks_to_match)} Spotify tracks with Tidal.\b")
+    log.info(f"Matched {len(tidal_tracks_to_download)}/{len(spotify_tracks_to_match)-already_on_jellyfin} Spotify tracks with Tidal.\b")
 
     # --------------------------------------
     # Download Tidal tracks
