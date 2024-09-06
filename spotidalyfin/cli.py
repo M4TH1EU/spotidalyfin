@@ -8,7 +8,6 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from tidalapi import Track
 
 from spotidalyfin import cfg
-from spotidalyfin.compression.jellyfin_compression import JellyfinCompression
 from spotidalyfin.managers.tidal_manager import TidalManager
 from spotidalyfin.utils.file_utils import file_to_list, parse_secrets_file
 from spotidalyfin.utils.logger import log, setup_logger
@@ -168,7 +167,6 @@ def entrypoint_download(action: str, spotify_manager: SpotifyManager, tidal_mana
 
     # TODO: check if everything was downloaded correctly
     log.info(f"[bold green]Downloaded {len(tidal_tracks_to_download)} tracks from Tidal.", extra={"markup": True})
-    log.info("Done!")
 
 
 def entrypoint_jellyfin(action: str, spotify_manager: SpotifyManager, tidal_manager: TidalManager,
@@ -176,27 +174,28 @@ def entrypoint_jellyfin(action: str, spotify_manager: SpotifyManager, tidal_mana
     if action == "compress":
         log.info("Compressing Jellyfin metadata...")
 
-        ask = typer.confirm(
-            "Are you sure you want to compress the metadata? This is irreversible. Test it first and make sure you have a backup of the metadata directory.")
-        if not ask:
-            log.info("Aborting...")
-            raise typer.Abort()
+        if not cfg.get("y"):
+            ask = typer.confirm(
+                "Are you sure you want to compress the metadata? This is irreversible. Test it first and make sure you have a backup of the metadata directory.")
+            if not ask:
+                log.info("Aborting...")
+                raise typer.Abort()
 
-        jellyfin_compressor = JellyfinCompression()
-        jellyfin_compressor.compress_images()
+        with Progress(transient=True) as progress:
+            jellyfin_manager.compress_metadata_images(progress)
+
     elif action == "sync":
         pass
     elif action == "artists":
         pass
 
-    log.info("Done!")
-
 
 @jellyfin_app.command(name="compress",
                       help="Compresses metadata (images) of entire Jellyfin library without much quality loss")
 def compress(metadata_dir: Annotated[Path, typer.Option(help="Path to Jellyfin metadata directory")] = cfg.get(
-    "jellyfin-metadata-dir")):
+    "jellyfin-metadata-dir"), y: Annotated[bool, typer.Option("--yes", "-y", help="Skip confirmation")] = False):
     cfg.put("jellyfin-metadata-dir", metadata_dir)
+    cfg.put("y", y)
     entrypoint("jellyfin", "compress", metadata_dir=metadata_dir)
 
 
