@@ -2,8 +2,10 @@
 import re
 from typing import Optional
 
+import cachebox
 import requests
 from rich.progress import Progress
+from tidalapi import Track
 
 from spotidalyfin import cfg
 from spotidalyfin.utils.comparisons import weighted_word_overlap, close
@@ -53,6 +55,7 @@ class JellyfinManager:
         except requests.exceptions.RequestException:
             return []
 
+    @cachebox.cached(cachebox.LRUCache(maxsize=256))
     def search(self, query=None, limit=5, path="Items", year=None, parent_id=None, include_item_types="Audio",
                recursive=True) -> Optional[list]:
         params = {
@@ -69,11 +72,13 @@ class JellyfinManager:
 
         return self.request(path, params=params)
 
+    @cachebox.cached(cachebox.LRUCache(maxsize=256))
     def search_by_parent_id(self, parent_id, limit=5, include_item_types="Audio", recursive=True) -> Optional[list]:
         return self.search(limit=limit, path=f"Users/{self.user_id}/Items", parent_id=parent_id,
                            include_item_types=include_item_types,
                            recursive=recursive)
 
+    @cachebox.cached(cachebox.LRUCache(maxsize=256))
     def search_artist(self, artist_name) -> Optional[dict]:
         response = self.search(query=artist_name, include_item_types="MusicArtist")
         for item in response:
@@ -82,6 +87,7 @@ class JellyfinManager:
 
         return None
 
+    @cachebox.cached(cachebox.LRUCache(maxsize=256))
     def search_track_for_artist(self, track_name, artist: dict) -> Optional[dict]:
         if artist:
             response = self.search_by_parent_id(artist.get('Id'))
@@ -91,6 +97,7 @@ class JellyfinManager:
 
         return None
 
+    @cachebox.cached(cachebox.LRUCache(maxsize=256))
     def search_album(self, album_name, artist_name=None) -> Optional[dict]:
         response = self.search(query=album_name, include_item_types="MusicAlbum")
         if not response:
@@ -110,6 +117,7 @@ class JellyfinManager:
 
         return None
 
+    @cachebox.cached(cachebox.LRUCache(maxsize=256))
     def search_track_in_album(self, track_name, album: dict, duration=None):
         response = self.search_by_parent_id(album.get('Id'))
         for item in response:
@@ -122,6 +130,7 @@ class JellyfinManager:
 
         return None
 
+    @cachebox.cached(cachebox.LRUCache(maxsize=256))
     def search_track_by_name(self, track_name, artist_name=None, album_name=None, duration=None,
                              validate_track_name: bool = True) -> Optional[dict]:
         response = self.search(query=track_name, include_item_types="Audio")
@@ -147,11 +156,17 @@ class JellyfinManager:
 
         return None
 
-    def does_track_exist(self, spotify_track: dict):
-        track_name = spotify_track.get('name', '')
-        artist_name = format_artists(spotify_track.get('artists', [{}]), lower=False)[0]
-        album_name = spotify_track.get('album', {}).get('name', '')
-        duration = spotify_track.get('duration_ms', 0) / 1000
+    def does_track_exist(self, track: dict | Track) -> bool:
+        if isinstance(track, Track):
+            track_name = track.full_name
+            artist_name = track.artist.name
+            album_name = track.album.name
+            duration = track.duration
+        else:
+            track_name = track.get('name', '')
+            artist_name = format_artists(track.get('artists', [{}]), lower=False)[0]
+            album_name = track.get('album', {}).get('name', '')
+            duration = track.get('duration_ms', 0) / 1000
         # year = spotify_track.get('album', {}).get('release_date', '')[:4]
 
         # Search for album from artist and then track name in album

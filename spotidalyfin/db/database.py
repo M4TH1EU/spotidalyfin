@@ -1,11 +1,12 @@
 import sqlite3
 from pathlib import Path
 
+from spotidalyfin import cfg
 from spotidalyfin.utils.logger import log
 
 
 class Database:
-    def __init__(self, db_path: Path):
+    def __init__(self, db_path: Path = cfg.get("config-dir") / "spotidalyfin.db"):
         self.db_path = db_path
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.con = sqlite3.connect(self.db_path)

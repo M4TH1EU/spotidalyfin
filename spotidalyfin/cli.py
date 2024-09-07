@@ -8,6 +8,7 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from tidalapi import Track
 
 from spotidalyfin import cfg
+from spotidalyfin.db.database import Database
 from spotidalyfin.managers.tidal_manager import TidalManager
 from spotidalyfin.utils.file_utils import file_to_list, parse_secrets_file
 from spotidalyfin.utils.logger import log, setup_logger
@@ -34,11 +35,13 @@ def download_callback(
         quality: Annotated[int, typer.Option(
             help="Quality of the downloaded tracks (1: LOW, 2: LOSSLESS, 3: HI_RES_LOSSLESS)")] = cfg.get('quality'),
         out_dir: Annotated[Path, typer.Option(help="Output directory for downloaded tracks")] = cfg.get("out-dir"),
-        dl_dir: Annotated[Path, typer.Option(help="Temporary directory for downloaded tracks")] = cfg.get("dl-dir")
+        dl_dir: Annotated[Path, typer.Option(help="Temporary directory for downloaded tracks")] = cfg.get("dl-dir"),
+        ignore_jellyfin: Annotated[bool, typer.Option(help="Doesn't check if song is already on Jellyfin")] = False
 ):
     cfg.put("quality", quality)
     cfg.put("out-dir", out_dir)
     cfg.put("dl-dir", dl_dir)
+    cfg.put("ignore-jellyfin", ignore_jellyfin)
 
 
 @download_app.command(name="liked", help="Download liked songs from Spotify")
@@ -72,19 +75,21 @@ def entrypoint(command: str, action: str, **kwargs):
     tidal_manager = TidalManager()
     jellyfin_manager = JellyfinManager(cfg.get("jellyfin_url"), cfg.get("jellyfin_api_key"))
 
+    db = Database()
+
     # dumb call to verify user is logged to Spotify
     spotify_manager.client.current_user()
 
     if command == "download":
-        entrypoint_download(action, spotify_manager, tidal_manager, jellyfin_manager, **kwargs)
+        entrypoint_download(action, spotify_manager, tidal_manager, jellyfin_manager, db, **kwargs)
     elif command == "jellyfin":
-        entrypoint_jellyfin(action, spotify_manager, tidal_manager, jellyfin_manager, **kwargs)
+        entrypoint_jellyfin(action, spotify_manager, tidal_manager, jellyfin_manager, db, **kwargs)
 
     log.info("Done!")
 
 
 def entrypoint_download(action: str, spotify_manager: SpotifyManager, tidal_manager: TidalManager,
-                        jellyfin_manager: JellyfinManager, **kwargs):
+                        jellyfin_manager: JellyfinManager, db: Database, **kwargs):
     spotify_tracks_to_match: list[dict] = []
     tidal_tracks_to_download: list[Track] = []
 
@@ -122,10 +127,14 @@ def entrypoint_download(action: str, spotify_manager: SpotifyManager, tidal_mana
         if 'track' in track:
             track = track.get('track', None)
 
-        if jellyfin_manager.does_track_exist(track):
-            log.debug(f"Track {track['name']} already exists in Jellyfin")
-            already_on_jellyfin += 1
-            continue
+        track_data = tidal_manager.get_track(db.get(track['id'])) if db.get(track['id']) else track
+
+        # Check if the track already exists on Jellyfin and if we should ignore it
+        if cfg.get("ignore-jellyfin") is False:
+            if jellyfin_manager.does_track_exist(track_data):
+                log.debug(f"Track {track['name']} already exists in Jellyfin")
+                already_on_jellyfin += 1
+                continue
 
         # Add album barcodes and some other metadata to the track
         track['album'] = spotify_manager.get_album(track['album']['id'])
@@ -148,8 +157,11 @@ def entrypoint_download(action: str, spotify_manager: SpotifyManager, tidal_mana
 
         # Add the Tidal track to the list of tracks to download
         tidal_tracks_to_download.append(tidal_track)
+        # Save the match in the database
+        db.put(track['id'], tidal_track.id)
 
-    log.info(f"Matched {len(tidal_tracks_to_download)}/{len(spotify_tracks_to_match)-already_on_jellyfin} Spotify tracks with Tidal.\b")
+    log.info(
+        f"Matched {len(tidal_tracks_to_download)}/{len(spotify_tracks_to_match) - already_on_jellyfin} Spotify tracks with Tidal.\b")
 
     # --------------------------------------
     # Download Tidal tracks
@@ -171,7 +183,7 @@ def entrypoint_download(action: str, spotify_manager: SpotifyManager, tidal_mana
 
 
 def entrypoint_jellyfin(action: str, spotify_manager: SpotifyManager, tidal_manager: TidalManager,
-                        jellyfin_manager: JellyfinManager, **kwargs):
+                        jellyfin_manager: JellyfinManager, db: Database, **kwargs):
     if action == "compress":
         log.info("Compressing Jellyfin metadata...")
 
