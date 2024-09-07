@@ -184,7 +184,7 @@ def entrypoint_download(action: str, spotify_manager: SpotifyManager, tidal_mana
 
     files_after_download = len(list(cfg.get("out-dir").rglob("*/*/*")))
 
-    if (files_after_download - files_before_download) == len(tidal_tracks_to_download):
+    if files_after_download - files_before_download == len(tidal_tracks_to_download) - cfg.get("already-downloaded", 0):
         log.info(f"[bold green]Downloaded {len(tidal_tracks_to_download)} tracks from Tidal.", extra={"markup": True})
     else:
         log.debug(f"Files before download: {files_before_download}")

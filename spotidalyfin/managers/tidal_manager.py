@@ -274,6 +274,7 @@ class TidalManager:
 
         if final_path.exists():
             log.debug(f"Track already downloaded : {track.id}")
+            cfg.put("already-downloaded", cfg.get("already-downloaded", 0) + 1)
             return
 
         if progress:
