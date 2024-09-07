@@ -110,6 +110,10 @@ def format_track_path_from_metadata(metadata: dict, suffix: str = None) -> Path:
 
     path += f"{title}"
 
+    invalid_chars = ["<", ">", ":", "\"", "/", "\\", "|", "?", "*", "."]
+    for char in invalid_chars:
+        path = path.replace(char, "")
+
     if not suffix:
         suffix = ".flac" if cfg.get("m4a2flac") else ".m4a"
     path += suffix
