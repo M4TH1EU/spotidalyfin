@@ -36,12 +36,14 @@ def download_callback(
             help="Quality of the downloaded tracks (1: LOW, 2: LOSSLESS, 3: HI_RES_LOSSLESS)")] = cfg.get('quality'),
         out_dir: Annotated[Path, typer.Option(help="Output directory for downloaded tracks")] = cfg.get("out-dir"),
         dl_dir: Annotated[Path, typer.Option(help="Temporary directory for downloaded tracks")] = cfg.get("dl-dir"),
-        ignore_jellyfin: Annotated[bool, typer.Option(help="Doesn't check if song is already on Jellyfin")] = False
+        ignore_jellyfin: Annotated[bool, typer.Option(help="Doesn't check if song is already on Jellyfin")] = False,
+        m4a2flac: Annotated[bool, typer.Option(help="Convert M4A files to FLAC")] = True
 ):
     cfg.put("quality", quality)
     cfg.put("out-dir", out_dir)
     cfg.put("dl-dir", dl_dir)
     cfg.put("ignore-jellyfin", ignore_jellyfin)
+    cfg.put("m4a2flac", m4a2flac)
 
 
 @download_app.command(name="liked", help="Download liked songs from Spotify")

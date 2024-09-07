@@ -267,11 +267,6 @@ class TidalManager:
             task = progress.add_task(f"Downloading {track.full_name} - {track.artist.name}...",
                                      total=len(download_urls))
 
-        # TODO: check why ??
-        # if len(download_urls) == 1:
-        #     r = requests.get(download_urls[0], stream=True, timeout=10)
-        #     r.raise_for_status()
-
         with open(tmp_file, "wb") as f:
             for url in download_urls:
                 if progress:
@@ -289,13 +284,13 @@ class TidalManager:
         #     tmp_path_file_decrypted = str(tmp_file) + "_decrypted"
         #     decrypt_file(str(tmp_file), tmp_path_file_decrypted, key, nonce)
 
-        # TODO: extract flac from mp4 option ?
         # Extract flac from mp4 container
-        if stream_manifest.mime_type.split("/")[-1] == "mp4":
-            if progress:
-                progress.update(task, description="Extracting flac from m4a...")
-            log.debug(f"Extracting flac from m4a : {track.id}")
-            tmp_file = extract_flac_from_mp4(tmp_file)
+        if cfg.get("m4a2flac"):
+            if stream_manifest.mime_type.split("/")[-1] == "mp4":
+                if progress:
+                    progress.update(task, description="Extracting flac from m4a...")
+                log.debug(f"Extracting flac from m4a : {track.id}")
+                tmp_file = extract_flac_from_mp4(tmp_file)
 
         # Metadata and move file to output directory
         if tmp_file.exists():
