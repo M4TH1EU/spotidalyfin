@@ -25,10 +25,9 @@ class JellyfinManager:
         self.api_key = api_key
         self.metadata_dir = cfg.get("jellyfin-metadata-dir")
         self.checksum_file = self.metadata_dir / ".image_checksums_spotidalyfin_do_not_delete.txt"
-        self.user_id = "e9ba1418ab2241e38a17f26b17026e6e"  # TODO: change this
         self.checksums = None
 
-    def request(self, path, method="GET", params=None) -> list:
+    def request(self, path, method="GET", params: dict = {}) -> list:
         url = f"{self.url}/{path.lstrip('/')}"
         headers = {"X-Emby-Token": self.api_key}
 
@@ -74,7 +73,7 @@ class JellyfinManager:
 
     @cachebox.cached(cachebox.LRUCache(maxsize=256))
     def search_by_parent_id(self, parent_id, limit=5, include_item_types="Audio", recursive=True) -> Optional[list]:
-        return self.search(limit=limit, path=f"Users/{self.user_id}/Items", parent_id=parent_id,
+        return self.search(limit=limit, path=f"Items", parent_id=parent_id,
                            include_item_types=include_item_types,
                            recursive=recursive)
 
@@ -87,12 +86,11 @@ class JellyfinManager:
 
         return None
 
-    @cachebox.cached(cachebox.LRUCache(maxsize=256))
     def search_track_for_artist(self, track_name, artist: dict) -> Optional[dict]:
         if artist:
-            response = self.search_by_parent_id(artist.get('Id'))
+            response = self.search_by_parent_id(artist.get('Id'), include_item_types="Audio")
             for item in response:
-                if item['Type'] == "Audio" and weighted_word_overlap(item['Name'], track_name) >= 0.66:
+                if weighted_word_overlap(item['Name'], track_name) >= 0.66:
                     return item
 
         return None
@@ -117,7 +115,6 @@ class JellyfinManager:
 
         return None
 
-    @cachebox.cached(cachebox.LRUCache(maxsize=256))
     def search_track_in_album(self, track_name, album: dict, duration=None):
         response = self.search_by_parent_id(album.get('Id'))
         for item in response:
