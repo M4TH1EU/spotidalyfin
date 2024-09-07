@@ -1,4 +1,5 @@
 import hashlib
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path
@@ -64,11 +65,20 @@ def write_list_to_file(file_path: Path, data: list):
             file.write(line + "\n")
 
 
-def create_file(file_path: Path):
+def create_file(file_path: Path) -> Path:
     """Create a file if it does not exist."""
     if not file_path.exists():
         file_path.parent.mkdir(parents=True, exist_ok=True)
         file_path.touch()
+        log.debug(f"Created file {file_path}")
+    return file_path
+
+
+def move_file(file_path: Path, destination: Path):
+    """Move a file to a destination."""
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(file_path, destination)
+    log.debug(f"Moved {file_path} to {destination}")
 
 
 def calculate_checksum(file_path: Path) -> str:

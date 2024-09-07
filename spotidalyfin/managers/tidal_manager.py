@@ -13,10 +13,10 @@ from tidalapi.session import SearchResults
 from spotidalyfin import cfg
 from spotidalyfin.utils.comparisons import weighted_word_overlap, close
 from spotidalyfin.utils.decorators import rate_limit
-from spotidalyfin.utils.file_utils import extract_flac_from_mp4
+from spotidalyfin.utils.file_utils import extract_flac_from_mp4, move_file, create_file
 from spotidalyfin.utils.formatting import format_artists
 from spotidalyfin.utils.logger import log
-from spotidalyfin.utils.metadata import set_audio_tags, organize_audio_file
+from spotidalyfin.utils.metadata import set_audio_tags, get_track_metadata, format_track_path_from_metadata
 
 QUALITIES = {
     "DOLBY_ATMOS": 0,
@@ -258,10 +258,23 @@ class TidalManager:
         return score
 
     def download_track(self, track: Track, progress: Progress = None):
+        # Retrive all the download urls
         stream_manifest = self.get_stream(track).get_stream_manifest()
         download_urls = stream_manifest.get_urls()
-        tmp_file = cfg.get("dl-dir") / f"{track.id}.tmp"
-        tmp_file.parent.mkdir(parents=True, exist_ok=True)
+
+        # Add lyrics to track (to embed in the file)
+        track.lyrics = self.get_lyrics(track)
+        # Extract metadata from track to embed in the file
+        metadata = get_track_metadata(track)
+
+        # Create temporary file
+        tmp_file = create_file(cfg.get("dl-dir") / f"{track.id}.tmp")
+        # Get final path of file after download
+        final_path = cfg.get("out-dir") / format_track_path_from_metadata(metadata)
+
+        if final_path.exists():
+            log.debug(f"Track already downloaded : {track.id}")
+            return
 
         if progress:
             task = progress.add_task(f"Downloading {track.full_name} - {track.artist.name}...",
@@ -276,6 +289,8 @@ class TidalManager:
                 for chunk in r.iter_content(chunk_size=8192):
                     f.write(chunk)
             log.debug(f"Downloaded track : {track.id}")
+        if not tmp_file.exists():
+            log.error(f"Download failed for track {track.id}")
 
         # if stream_manifest.is_encrypted:
         #     log.debug(f"Decrypting track {track.full_name} - {track.artist.name}")
@@ -292,21 +307,16 @@ class TidalManager:
                 log.debug(f"Extracting flac from m4a : {track.id}")
                 tmp_file = extract_flac_from_mp4(tmp_file)
 
-        # Metadata and move file to output directory
-        if tmp_file.exists():
-            if progress:
-                progress.update(task, description="Setting audio tags...")
-            log.debug(f"Setting audio tags : {track.id}")
-            track.lyrics = self.get_lyrics(track)
-            try:
-                tags = set_audio_tags(tmp_file, track)
-            except ValueError:
-                log.error(f"Failed to set audio tags for track {track.id}")
-                return
+                if not tmp_file.exists():
+                    log.error(f"M4A to FLC conversion failed for track {track.id}")
 
-            organize_audio_file(file_path=tmp_file, output_dir=cfg.get('out-dir'), metadata=tags)
-        else:
-            log.error(f"Download failed for track {track.id}")
+        # Saves metadata to file and move file to final destination
+        if progress:
+            progress.update(task, description="Setting audio tags...")
+        log.debug(f"Setting audio tags and moving : {track.id}")
+
+        set_audio_tags(tmp_file, metadata)
+        move_file(tmp_file, final_path)
 
         if progress:
             progress.update(0, advance=1)
