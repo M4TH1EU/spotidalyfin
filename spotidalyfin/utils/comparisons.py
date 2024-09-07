@@ -3,7 +3,7 @@ from collections import Counter
 from spotidalyfin.utils.formatting import normalize
 
 
-def close(a: int | float, b: int | float, delta: int = 2) -> bool | float:
+def close(a: int | float, b: int | float, delta: int = 3) -> bool | float:
     """Check if two numbers are within a specified range."""
     return abs(a - b) < delta
 

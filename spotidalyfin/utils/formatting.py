@@ -13,14 +13,32 @@ def format_string(string: str) -> str:
     return string.strip().split('(')[0].strip().split('[')[0].strip().lower()
 
 
-def normalize_str(text: str) -> str:
-    return " ".join(normalize(text))
+def normalize_str(text: str, remove_in_brackets: bool = False, try_fix_track_name: bool = False,
+                  stop_at_dash_char: bool = False) -> str:
+    if stop_at_dash_char:
+        text = text.split(" - ")[0]
+
+    if try_fix_track_name:
+        if len(text.split(" - ")) == 2:
+            # Convert "Song - From ..." to "Song (From ...)" (example)
+            text = text.replace(" - ", " (") + ")"
+
+    if remove_in_brackets:
+        # Removes everything in parentheses
+        text = re.sub(r'\([^)]*\)', '', text)
+
+    words_to_remove = ["Album", "Original", "Remastered", "Remaster", "Version", "Edit", "Explicit", "Deluxe", "Bonus"]
+    for word in words_to_remove:
+        text = text.replace(word, "")
+
+    text = text.strip()
+    return text
 
 
 def normalize(text: str) -> list[str]:
     """Normalize text by tokenizing, converting to lowercase, and removing stopwords and non-alphanumeric characters."""
-    # text = re.sub(r'\([^)]*\)', '', text) # remove all text within parentheses
     text = text.lower()
+
     # Removes various stuff in parentheses (e.g. (feat. ...), (from ...), (edition ...), (radio ...), (bande ...), etc.)
     text = re.sub(r'\((feat|with|edition|radio|bande|original|ultimate)[^)]*\)', '', text)
     text = re.sub(r'\(uk.*?album\)', '', text)
@@ -33,16 +51,6 @@ def normalize(text: str) -> list[str]:
 
     tokens = [token for token in tokens if token != '']
     return tokens
-
-def format_track_name_special(track_name: str) -> str:
-    if track_name:
-        if " - " in track_name:
-            return track_name.replace(" - ", " (") + ")"
-
-def format_track_name_special2(track_name: str) -> str:
-    if track_name:
-        if " - " in track_name:
-            return track_name.replace(" (", " - ").replace(")", "")
 
 
 def format_artists(artists: list | str, lower: bool = True) -> list:
