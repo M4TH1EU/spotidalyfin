@@ -171,6 +171,8 @@ def entrypoint_download(action: str, spotify_manager: SpotifyManager, tidal_mana
         log.info("No tracks to download.")
         return
 
+    files_before_download = len(list(cfg.get("out-dir").rglob("*/*/*")))
+
     with Progress(transient=True) as progress:
         progress.add_task(f"Total progress", total=len(tidal_tracks_to_download))
 
@@ -180,8 +182,16 @@ def entrypoint_download(action: str, spotify_manager: SpotifyManager, tidal_mana
                 futures.append(
                     executor.submit(tidal_manager.download_track, track, progress))
 
-    # TODO: check if everything was downloaded correctly
-    log.info(f"[bold green]Downloaded {len(tidal_tracks_to_download)} tracks from Tidal.", extra={"markup": True})
+    files_after_download = len(list(cfg.get("out-dir").rglob("*/*/*")))
+
+    if (files_after_download - files_before_download) == len(tidal_tracks_to_download):
+        log.info(f"[bold green]Downloaded {len(tidal_tracks_to_download)} tracks from Tidal.", extra={"markup": True})
+    else:
+        log.debug(f"Files before download: {files_before_download}")
+        log.debug(f"Files after download: {files_after_download}")
+        log.warning(
+            f"[bold yellow]Some tracks might not have been downloaded correctly. Check the logs for more information.",
+            extra={"markup": True})
 
 
 def entrypoint_jellyfin(action: str, spotify_manager: SpotifyManager, tidal_manager: TidalManager,
