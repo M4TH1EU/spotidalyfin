@@ -129,11 +129,11 @@ def entrypoint_download(action: str, spotify_manager: SpotifyManager, tidal_mana
         if 'track' in track:
             track = track.get('track', None)
 
-        track_data = tidal_manager.get_track(db.get(track['id'])) if db.get(track['id']) else track
+        track_data_for_jellyfin = tidal_manager.get_track(db.get(track['id'])) if db.get(track['id']) else track
 
         # Check if the track already exists on Jellyfin and if we should ignore it
         if cfg.get("ignore-jellyfin") is False:
-            if jellyfin_manager.does_track_exist(track_data):
+            if jellyfin_manager.does_track_exist(track_data_for_jellyfin):
                 log.debug(f"Track {track['name']} already exists in Jellyfin")
                 already_on_jellyfin += 1
                 continue
