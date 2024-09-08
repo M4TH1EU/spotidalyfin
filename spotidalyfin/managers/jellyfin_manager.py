@@ -1,6 +1,6 @@
 # jellyfin_manager.py
 import re
-from typing import Optional
+from typing import Optional, List
 
 import cachebox
 import requests
@@ -365,23 +365,17 @@ class JellyfinManager:
         :return: User ID if found, otherwise None :class:`Optional[str]`
         """
         users = self.request("Users")
-        for user in users:
-            if user.get('Name', '') == username:
-                return user.get('Id', '')
-
-        return None
+        return next((user.get('Id', '') for user in users if user.get('Name', '') == username), None)
 
     @cachebox.cached(cachebox.LRUCache(maxsize=16))
-    def get_playlists(self, user_id: str) -> list:
+    def get_playlists(self, user_id: str) -> List[dict]:
         """
         Get the playlists of a user.
 
         :param user_id: ID of the user :str
         :return: List of playlists :class:`list`
         """
-
-        playlists = self.search("", user_id=user_id, include_item_types="Playlist", limit=500)
-        return playlists
+        return self.search("", user_id=user_id, include_item_types="Playlist", limit=500)
 
     @cachebox.cached(cachebox.LRUCache(maxsize=16))
     def get_playlist_id_from_name(self, playlist_name: str, user_id: str) -> Optional[str]:
@@ -392,14 +386,21 @@ class JellyfinManager:
         :param user_id: ID of the user :str
         :return: Playlist ID if found, otherwise None :class:`Optional[str]`
         """
-        for playlist in self.get_playlists(user_id):
-            if playlist.get('Name', '') == playlist_name:
-                return playlist.get('Id', '')
-
-        return None
+        playlists = self.get_playlists(user_id)
+        return next((playlist.get('Id', '') for playlist in playlists if playlist.get('Name', '') == playlist_name),
+                    None)
 
     def create_playlist(self, playlist_name: str, user_id: str, is_public: bool = False, cover_url: str = None):
+        """
+        Create a new playlist for the user. If a playlist with the same name already exists, it will be deleted and recreated.
+
+        :param playlist_name: Name of the playlist to create :str
+        :param user_id: ID of the user :str
+        :param is_public: Whether the playlist should be public or private :bool
+        :param cover_url: URL of the cover image for the playlist :str, optional
+        """
         playlist_id = self.get_playlist_id_from_name(playlist_name, user_id)
+
         if playlist_id:
             log.debug(f"Playlist '{playlist_name}' already exists. Deleting and recreating it.")
             self.delete_playlist(playlist_id)
@@ -419,43 +420,62 @@ class JellyfinManager:
                 self.request(f"Items/{playlist_id}/Images/Primary", method="POST", image_data=image_data)
 
     def delete_playlist(self, playlist_id: str):
+        """
+        Delete a playlist by its ID.
+
+        :param playlist_id: ID of the playlist :str
+        """
         self.request(f"Items/{playlist_id}", method="DELETE")
 
     def add_track_to_playlist(self, track_id: str, playlist_id: str, user_id: str):
-        params = {
-            "ids": track_id,
-            "userId": user_id
-        }
+        """
+        Add a single track to a playlist.
 
-        self.request(f"Playlists/{playlist_id}/Items", method="POST", params=params)
+        :param track_id: ID of the track to add :str
+        :param playlist_id: ID of the playlist :str
+        :param user_id: ID of the user :str
+        """
+        self.request(f"Playlists/{playlist_id}/Items", method="POST", params={"ids": track_id, "userId": user_id})
 
-    def add_tracks_to_playlist(self, track_ids: list, playlist_id: str, user_id: str):
-        # Split the list of track IDs into chunks of 10
-        for i in range(0, len(track_ids), 10):
-            # Get a chunk of 10 (or less, if it's the last group)
-            batch = track_ids[i:i + 10]
-            # Add the tracks to the playlist as a comma-separated string
+    def add_tracks_to_playlist(self, track_ids: List[str], playlist_id: str, user_id: str):
+        """
+        Add multiple tracks to a playlist in chunks of 15 (to not DDOS the server)
+
+        :param track_ids: List of track IDs to add :list
+        :param playlist_id: ID of the playlist :str
+        :param user_id: ID of the user :str
+        """
+        for i in range(0, len(track_ids), 15):
+            batch = track_ids[i:i + 15]
             self.add_track_to_playlist(",".join(batch), playlist_id, user_id)
 
     def sync_playlist(self, playlist_with_tracks: dict, user: str, progress: Progress = None,
                       tidal_manager: TidalManager = None, database: Database = None):
-        user = self.get_user_id_from_username(user)
-        if not user:
+        """
+        Syncs a playlist by creating it in the system and adding tracks to it.
+
+        :param playlist_with_tracks: Playlist information including tracks :dict or :list
+        :param user: Username of the user :str
+        :param progress: Optional progress tracker :Progress
+        :param tidal_manager: Optional Tidal manager for track retrieval :TidalManager
+        :param database: Optional database for track lookup :Database
+        """
+        user_id = self.get_user_id_from_username(user)
+
+        if not user_id:
             log.error(f"User '{user}' not found.")
             return
 
         tracks_id_to_add = []
-        tracks = []
 
-        # Check if the playlist is the Liked Songs playlist or a regular playlist
+        # Liked Songs playlist (input is a list)
         if isinstance(playlist_with_tracks, list):
-            # Liked Songs playlist
             playlist_name = "Liked Songs"
-            self.create_playlist(playlist_name, user, is_public=False,
+            self.create_playlist(playlist_name, user_id, is_public=False,
                                  cover_url="https://misc.scdn.co/liked-songs/liked-songs-300.png")
             tracks = playlist_with_tracks
 
-        # Regular playlist
+        # Regular playlist (input is a dict)
         elif isinstance(playlist_with_tracks, dict):
             playlist_name = playlist_with_tracks.get('name', '')
             tracks = playlist_with_tracks.get('tracks', [])
@@ -463,20 +483,22 @@ class JellyfinManager:
             is_public = author == "spotify"
             cover_url = playlist_with_tracks.get('images', [{}])[0].get('url', None)
 
-            self.create_playlist(playlist_name, user, is_public, cover_url)
+            self.create_playlist(playlist_name, user_id, is_public, cover_url)
 
+        # Collect track IDs to add
         for track in tracks:
-            track = track.get('track')
-
+            track_data = track.get('track', track)
             if tidal_manager and database:
-                id = database.get(track.get('id'))
-                if id:
-                    track = tidal_manager.get_track(id)
+                track_id = database.get(track_data.get('id'))
+                if track_id:
+                    track_data = tidal_manager.get_track(track_id)
 
-            jellyfin_track = self.get_track_from_data(track)
+            jellyfin_track = self.get_track_from_data(track_data)
             if jellyfin_track:
                 tracks_id_to_add.append(jellyfin_track.get('Id', ''))
 
-        # Add the tracks to the playlist
+        # Add tracks to the playlist
         if tracks_id_to_add and playlist_name:
-            self.add_tracks_to_playlist(tracks_id_to_add, self.get_playlist_id_from_name(playlist_name, user), user)
+            playlist_id = self.get_playlist_id_from_name(playlist_name, user_id)
+            if playlist_id:
+                self.add_tracks_to_playlist(tracks_id_to_add, playlist_id, user_id)

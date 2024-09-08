@@ -1,7 +1,11 @@
 import sqlite3
 from pathlib import Path
+from typing import Optional
+
+from tidalapi import Track
 
 from spotidalyfin import cfg
+from spotidalyfin.managers.tidal_manager import TidalManager
 from spotidalyfin.utils.logger import log
 
 
@@ -54,3 +58,11 @@ class Database:
             self.con.commit()
         except sqlite3.IntegrityError as e:
             log.error(f"Error: {e}")
+
+    def get_tidal_track_from_database(self, spotify_id: str, tidal_manager: TidalManager) -> Optional[Track]:
+        tidal_id = self.get(spotify_id)
+        if tidal_id:
+            track = tidal_manager.get_track(tidal_id)
+            if track:
+                return track
+        return None

@@ -137,8 +137,11 @@ def match_spotify_with_tidal(spotify_tracks: List[dict], tidal_manager: TidalMan
         if not track:
             continue
 
-        track_data = db.get(track['id']) or track
-        if cfg.get("ignore-jellyfin") is False and jellyfin_manager.does_track_exist(track_data):
+        if 'track' in track:
+            track = track['track']
+
+        track_from_db = db.get_tidal_track_from_database(track['id'], tidal_manager)
+        if cfg.get("ignore-jellyfin") is False and jellyfin_manager.does_track_exist(track_from_db or track):
             log.debug(f"Track {track['name']} already exists in Jellyfin")
             already_on_jellyfin += 1
             continue
