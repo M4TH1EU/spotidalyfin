@@ -8,6 +8,8 @@ from rich.progress import Progress
 from tidalapi import Track
 
 from spotidalyfin import cfg
+from spotidalyfin.db.database import Database
+from spotidalyfin.managers.tidal_manager import TidalManager
 from spotidalyfin.utils.comparisons import weighted_word_overlap, close
 from spotidalyfin.utils.file_utils import resize_image, calculate_checksum, file_to_list, remove_line_from_file, \
     write_line_to_file, get_as_base64
@@ -435,13 +437,15 @@ class JellyfinManager:
             # Add the tracks to the playlist as a comma-separated string
             self.add_track_to_playlist(",".join(batch), playlist_id, user_id)
 
-    def sync_playlist(self, playlist_with_tracks: dict, user: str, progress: Progress = None):
+    def sync_playlist(self, playlist_with_tracks: dict, user: str, progress: Progress = None,
+                      tidal_manager: TidalManager = None, database: Database = None):
         user = self.get_user_id_from_username(user)
         if not user:
             log.error(f"User '{user}' not found.")
             return
 
         tracks_id_to_add = []
+        tracks = []
 
         # Check if the playlist is the Liked Songs playlist or a regular playlist
         if isinstance(playlist_with_tracks, list):
@@ -449,12 +453,7 @@ class JellyfinManager:
             playlist_name = "Liked Songs"
             self.create_playlist(playlist_name, user, is_public=False,
                                  cover_url="https://misc.scdn.co/liked-songs/liked-songs-300.png")
-
-            for track in playlist_with_tracks:
-                track = track.get('track')
-                jellyfin_track = self.get_track_from_data(track)
-                if jellyfin_track:
-                    tracks_id_to_add.append(jellyfin_track.get('Id', ''))
+            tracks = playlist_with_tracks
 
         # Regular playlist
         elif isinstance(playlist_with_tracks, dict):
@@ -466,11 +465,17 @@ class JellyfinManager:
 
             self.create_playlist(playlist_name, user, is_public, cover_url)
 
-            for track in tracks:
-                track = track.get('track')
-                jellyfin_track = self.get_track_from_data(track)
-                if jellyfin_track:
-                    tracks_id_to_add.append(jellyfin_track.get('Id', ''))
+        for track in tracks:
+            track = track.get('track')
+
+            if tidal_manager and database:
+                id = database.get(track.get('id'))
+                if id:
+                    track = tidal_manager.get_track(id)
+
+            jellyfin_track = self.get_track_from_data(track)
+            if jellyfin_track:
+                tracks_id_to_add.append(jellyfin_track.get('Id', ''))
 
         # Add the tracks to the playlist
         if tracks_id_to_add and playlist_name:
