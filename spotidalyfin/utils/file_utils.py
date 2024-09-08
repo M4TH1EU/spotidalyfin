@@ -140,17 +140,17 @@ def get_as_base64(url):
         return None
 
 
-def extract_flac_from_mp4(file_path: Path, timeout=15) -> Path:
+def extract_flac_from_mp4(file_path: Path, timeout=25) -> Path:
     """Extract a FLAC audio file from an MP4 file."""
     file_out = file_path.with_suffix(".flac")
 
     try:
         FFmpeg().option("y").input(str(file_path)).output(str(file_out), {"f": "flac"}).execute(timeout=timeout)
     except FFmpegError as e:
-        log.error(f"Error extracting FLAC from MP4: {e}")
+        log.error(f"Error extracting FLAC from MP4 {file_path} : {e}")
         return file_path
     except subprocess.TimeoutExpired:
-        log.error(f"Timeout extracting FLAC from MP4")
+        log.error(f"Timeout extracting FLAC from MP4 {file_path}")
         return file_path
 
     file_path.unlink()
