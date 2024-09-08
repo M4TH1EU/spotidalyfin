@@ -92,6 +92,13 @@ def format_track_path_from_metadata(metadata: dict, suffix: str = None) -> Path:
     title = metadata.get('title')
     multiartist = metadata.get('_multiartist')
 
+    invalid_chars = ["<", ">", ":", "\"", "/", "\\", "|", "?", "*", "."]
+    for char in invalid_chars:
+        title = title.replace(char, "")
+        album_artist = album_artist.replace(char, "")
+        artist = artist.replace(char, "")
+        album = album.replace(char, "")
+
     # Build path components
     path = f"{album_artist}/"
 
@@ -109,10 +116,6 @@ def format_track_path_from_metadata(metadata: dict, suffix: str = None) -> Path:
         path += f"{artist} - "
 
     path += f"{title}"
-
-    invalid_chars = ["<", ">", ":", "\"", "/", "\\", "|", "?", "*", "."]
-    for char in invalid_chars:
-        path = path.replace(char, "")
 
     if not suffix:
         suffix = ".flac" if cfg.get("m4a2flac") else ".m4a"
