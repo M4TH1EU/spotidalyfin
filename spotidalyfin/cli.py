@@ -1,10 +1,10 @@
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, List
 
 import rich
 import typer
-from rich.progress import Progress, SpinnerColumn, TextColumn
+from rich.progress import Progress
 from tidalapi import Track
 
 from spotidalyfin import cfg
@@ -28,6 +28,7 @@ jellyfin_app.add_typer(jellyfin_app_sync, name="sync")
 
 @app.callback()
 def app_callback(debug: bool = cfg.get("debug"), secrets: Path = cfg.get("secrets")):
+    """Callback for app configuration."""
     cfg.put("debug", debug)
     cfg.put("secrets", secrets)
     cfg.get_config().update(parse_secrets_file(secrets))
@@ -42,6 +43,7 @@ def download_callback(
         ignore_jellyfin: Annotated[bool, typer.Option(help="Doesn't check if song is already on Jellyfin")] = False,
         m4a2flac: Annotated[bool, typer.Option(help="Convert M4A files to FLAC")] = True
 ):
+    """Callback for download settings."""
     cfg.put("quality", quality)
     cfg.put("out-dir", out_dir)
     cfg.put("dl-dir", dl_dir)
@@ -49,6 +51,7 @@ def download_callback(
     cfg.put("m4a2flac", m4a2flac)
 
 
+# Commands for downloading
 @download_app.command(name="liked", help="Download liked songs from Spotify")
 def download_liked_songs():
     entrypoint("download", "liked")
@@ -69,175 +72,175 @@ def download_track(track_id: Annotated[str, typer.Argument(help="Track ID / URL"
     entrypoint("download", "track", track_id=track_id)
 
 
+# Entrypoint handlers for command actions
 def entrypoint(command: str, action: str, **kwargs):
+    """Main entry point for commands."""
     setup_logger(cfg.get("debug"))
-
     log.info("[bold]Starting [green]Spo[white]tidal[blue]yfin...", extra={"markup": True})
-    log.info(f"Current action : {action}\n")
+    log.info(f"Current action: {action}\n")
 
-    log.debug("Connecting to Spotify, Tidal and Jellyfin...")
     spotify_manager = SpotifyManager(cfg.get("spotify_client_id"), cfg.get("spotify_client_secret"))
     tidal_manager = TidalManager()
     jellyfin_manager = JellyfinManager(cfg.get("jellyfin_url"), cfg.get("jellyfin_api_key"))
-
     db = Database()
 
-    # dumb call to verify user is logged to Spotify
+    # Ensure Spotify is connected
     spotify_manager.client.current_user()
 
     if command == "download":
-        entrypoint_download(action, spotify_manager, tidal_manager, jellyfin_manager, db, **kwargs)
+        handle_download(action, spotify_manager, tidal_manager, jellyfin_manager, db, **kwargs)
     elif command == "jellyfin":
-        entrypoint_jellyfin(action, spotify_manager, tidal_manager, jellyfin_manager, db, **kwargs)
+        handle_jellyfin(action, spotify_manager, tidal_manager, jellyfin_manager, db, **kwargs)
 
     log.info("Done!")
 
 
-def entrypoint_download(action: str, spotify_manager: SpotifyManager, tidal_manager: TidalManager,
-                        jellyfin_manager: JellyfinManager, db: Database, **kwargs):
-    spotify_tracks_to_match: list[dict] = []
-    tidal_tracks_to_download: list[Track] = []
+def handle_download(action: str, spotify_manager: SpotifyManager, tidal_manager: TidalManager,
+                    jellyfin_manager: JellyfinManager, db: Database, **kwargs):
+    """Handles the download process based on the action."""
+    spotify_tracks = get_spotify_tracks(action, spotify_manager, **kwargs)
+    tidal_tracks = match_spotify_with_tidal(spotify_tracks, tidal_manager, spotify_manager, jellyfin_manager, db)
+    download_tidal_tracks(tidal_tracks, tidal_manager)
 
-    # -------------------------------------------
-    # Retrieve Spotify tracks to match with Tidal
-    with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"),
-                  transient=True) as progress:
-        log.debug("Collecting Spotify tracks metadata...")
-        progress.add_task("Collecting Spotify tracks metadata...")
 
-        # Collect Spotify tracks to match with Tidal for download
-        if action == "liked":
-            spotify_tracks_to_match.extend(spotify_manager.get_liked_songs())
-        elif action == "playlist":
-            spotify_tracks_to_match.extend(spotify_manager.get_playlist_tracks(kwargs["playlist_id"]))
-        elif action == "file":
-            urls = file_to_list(kwargs["file_path"])
-            for url in urls:
-                if "playlist" in url:
-                    spotify_tracks_to_match.extend(spotify_manager.get_playlist_tracks(url))
-                else:
-                    spotify_tracks_to_match.append(spotify_manager.get_track(url))
-        elif action == "track":
-            spotify_tracks_to_match.append(spotify_manager.get_track(kwargs["track_id"]))
-    log.info(f"Found {len(spotify_tracks_to_match)} Spotify tracks.\n")
+def get_spotify_tracks(action: str, spotify_manager: SpotifyManager, **kwargs) -> List[dict]:
+    """Retrieve Spotify tracks based on the action."""
+    log.debug("Collecting Spotify tracks metadata...")
+    spotify_tracks = []
 
-    # --------------------------------------
-    # Match Spotify tracks with Tidal tracks
-    log.debug("Matching Spotify tracks with Tidal...")
+    if action == "liked":
+        spotify_tracks = spotify_manager.get_liked_songs()
+    elif action == "playlist":
+        spotify_tracks = spotify_manager.get_playlist_tracks(kwargs["playlist_id"])
+    elif action == "file":
+        urls = file_to_list(kwargs["file_path"])
+        for url in urls:
+            if "playlist" in url:
+                spotify_tracks.extend(spotify_manager.get_playlist_tracks(url))
+            else:
+                spotify_tracks.append(spotify_manager.get_track(url))
+    elif action == "track":
+        spotify_tracks.append(spotify_manager.get_track(kwargs["track_id"]))
+
+    log.info(f"Found {len(spotify_tracks)} Spotify tracks.\n")
+    return spotify_tracks
+
+
+def match_spotify_with_tidal(spotify_tracks: List[dict], tidal_manager: TidalManager, spotify_manager: SpotifyManager,
+                             jellyfin_manager: JellyfinManager, db: Database) -> List[Track]:
+    """Match Spotify tracks with Tidal tracks."""
+    tidal_tracks_to_download = []
     already_on_jellyfin = 0
-    for track in rich.progress.track(spotify_tracks_to_match, description="Matching tracks...", transient=True):
-        # Match Spotify tracks ID with Tidal tracks ID
+
+    log.debug("Matching Spotify tracks with Tidal...")
+    for track in rich.progress.track(spotify_tracks, description="Matching tracks...", transient=True):
         if not track:
             continue
-        if 'track' in track:
-            track = track.get('track', None)
 
-        track_data_for_jellyfin = tidal_manager.get_track(db.get(track['id'])) if db.get(track['id']) else track
-
-        # Check if the track already exists on Jellyfin and if we should ignore it
-        if cfg.get("ignore-jellyfin") is False:
-            if jellyfin_manager.does_track_exist(track_data_for_jellyfin):
-                log.debug(f"Track {track['name']} already exists in Jellyfin")
-                already_on_jellyfin += 1
-                continue
-
-        # Add album barcodes and some other metadata to the track
-        track['album'] = spotify_manager.get_album(track['album']['id'])
-
-        # Search for the track on Tidal
-        tidal_track = tidal_manager.search_spotify_track(track, cfg.get('quality'))
-        if not tidal_track:
-            log.warning(f"Could not find track {track['name']} on Tidal")
+        track_data = db.get(track['id']) or track
+        if cfg.get("ignore-jellyfin") is False and jellyfin_manager.does_track_exist(track_data):
+            log.debug(f"Track {track['name']} already exists in Jellyfin")
+            already_on_jellyfin += 1
             continue
 
-        tidal_track.spotify_id = track['id']
+        # Add metadata and find track on Tidal
+        track['album'] = spotify_manager.get_album(track['album']['id'])
+        tidal_track = tidal_manager.search_spotify_track(track, cfg.get('quality'))
 
-        log.info("[bold]Found a match:", extra={"markup": True})
-        log.info("[green]Spotify: {} - {} - {}".format(track['name'], track['artists'][0]['name'],
-                                                       track['album']['name']), extra={"markup": True})
-        log.info("[blue] Tidal : {} - {}  - {} ({} - {})\n".format(tidal_track.full_name, tidal_track.artist.name,
-                                                                   tidal_track.album.name, tidal_track.real_quality,
-                                                                   tidal_track.id),
-                 extra={"markup": True})
-
-        # Add the Tidal track to the list of tracks to download
-        tidal_tracks_to_download.append(tidal_track)
-        # Save the match in the database
-        db.put(track['id'], tidal_track.id)
+        if tidal_track:
+            log_track_match(track, tidal_track)
+            tidal_tracks_to_download.append(tidal_track)
+            db.put(track['id'], tidal_track.id)
+        else:
+            log.warning(
+                f"Could not find a match for {track['name']} - {track['artists'][0]['name']} - {track['album']['name']}")
+            continue
 
     log.info(
-        f"Matched {len(tidal_tracks_to_download)}/{len(spotify_tracks_to_match) - already_on_jellyfin} Spotify tracks with Tidal.\b")
+        f"Matched {len(tidal_tracks_to_download)}/{len(spotify_tracks) - already_on_jellyfin} Spotify tracks with Tidal.")
+    return tidal_tracks_to_download
 
-    # --------------------------------------
-    # Download Tidal tracks
-    if not tidal_tracks_to_download:
+
+def log_track_match(spotify_track: dict, tidal_track: Track):
+    """Logs track matching information."""
+    log.info("[bold]Found a match:", extra={"markup": True})
+    log.info(
+        f"[green]Spotify: {spotify_track['name']} - {spotify_track['artists'][0]['name']} - {spotify_track['album']['name']}",
+        extra={"markup": True})
+    log.info(
+        f"[blue]Tidal: {tidal_track.full_name} - {tidal_track.artist.name} - {tidal_track.album.name} ({tidal_track.real_quality} - {tidal_track.id})\n",
+        extra={"markup": True})
+
+
+def download_tidal_tracks(tidal_tracks: List[Track], tidal_manager: TidalManager):
+    """Download matched Tidal tracks."""
+    if not tidal_tracks:
         log.info("No tracks to download.")
         return
 
     files_before_download = len(list(cfg.get("out-dir").rglob("*/*/*")))
 
     with Progress(transient=True) as progress:
-        progress.add_task(f"Total progress", total=len(tidal_tracks_to_download))
+        progress.add_task(f"Total progress", total=len(tidal_tracks))
 
         with ThreadPoolExecutor(max_workers=5) as executor:
-            futures = []
-            for track in tidal_tracks_to_download:
-                futures.append(
-                    executor.submit(tidal_manager.download_track, track, progress))
+            futures = [executor.submit(tidal_manager.download_track, track, progress) for track in tidal_tracks]
 
     files_after_download = len(list(cfg.get("out-dir").rglob("*/*/*")))
 
-    if files_after_download - files_before_download == len(tidal_tracks_to_download) - cfg.get("already-downloaded", 0):
-        log.info(f"[bold green]Downloaded {len(tidal_tracks_to_download)} tracks from Tidal.", extra={"markup": True})
+    if files_after_download - files_before_download == len(tidal_tracks) - cfg.get("already-downloaded", 0):
+        log.info(f"[bold green]Downloaded {len(tidal_tracks)} tracks from Tidal.", extra={"markup": True})
     else:
-        log.debug(f"Files before download: {files_before_download}")
-        log.debug(f"Files after download: {files_after_download}")
         log.warning(
             f"[bold yellow]Some tracks might not have been downloaded correctly. Check the logs for more information.",
             extra={"markup": True})
 
 
-def entrypoint_jellyfin(action: str, spotify_manager: SpotifyManager, tidal_manager: TidalManager,
-                        jellyfin_manager: JellyfinManager, db: Database, **kwargs):
+def handle_jellyfin(action: str, spotify_manager: SpotifyManager, tidal_manager: TidalManager,
+                    jellyfin_manager: JellyfinManager, db: Database, **kwargs):
+    """Handles Jellyfin-related commands."""
     if action == "compress":
-        log.info("Compressing Jellyfin metadata...")
-
-        if not cfg.get("y"):
-            ask = typer.confirm(
-                "Are you sure you want to compress the metadata? This is irreversible. Test it first and make sure you have a backup of the metadata directory.")
-            if not ask:
-                log.info("Aborting...")
-                raise typer.Abort()
-
-        with Progress(transient=True) as progress:
-            jellyfin_manager.compress_metadata_images(progress)
-
+        compress_jellyfin_metadata(jellyfin_manager)
     elif action == "sync":
-        if kwargs["source"] == "liked":
-            tracks = spotify_manager.get_liked_songs()
-            jellyfin_manager.sync_playlist(playlist_with_tracks=tracks, user=kwargs.get("playlist_user"),
-                                           tidal_manager=tidal_manager, database=db)
-        elif kwargs["source"] == "playlist":
-            playlist_with_tracks = spotify_manager.get_playlist_with_tracks(kwargs["playlist_id"])
-            jellyfin_manager.sync_playlist(playlist_with_tracks, user=kwargs.get("playlist_user"),
-                                           tidal_manager=tidal_manager, database=db)
-        elif kwargs["source"] == "file":
-            playlists = file_to_list(kwargs["file_path"])
-            for playlist in playlists:
-                playlist_with_tracks = spotify_manager.get_playlist_with_tracks(playlist)
-                jellyfin_manager.sync_playlist(playlist_with_tracks, user=kwargs.get("playlist_user"),
-                                               tidal_manager=tidal_manager, database=db)
-        else:
-            raise typer.BadParameter("Invalid source")
-
-    elif action == "artists":
-        pass
+        sync_jellyfin_playlist(spotify_manager, jellyfin_manager, tidal_manager, db, **kwargs)
 
 
+def compress_jellyfin_metadata(jellyfin_manager: JellyfinManager):
+    """Compresses Jellyfin metadata."""
+    log.info("Compressing Jellyfin metadata...")
+    if not cfg.get("y"):
+        confirm = typer.confirm("Are you sure you want to compress the metadata? This is irreversible.")
+        if not confirm:
+            log.info("Aborting...")
+            raise typer.Abort()
+
+    with Progress(transient=True) as progress:
+        jellyfin_manager.compress_metadata_images(progress)
+
+
+def sync_jellyfin_playlist(spotify_manager: SpotifyManager, jellyfin_manager: JellyfinManager,
+                           tidal_manager: TidalManager, db: Database, **kwargs):
+    """Syncs Spotify playlists with Jellyfin."""
+    source = kwargs["source"]
+    if source == "liked":
+        tracks = spotify_manager.get_liked_songs()
+    elif source == "playlist":
+        tracks = spotify_manager.get_playlist_with_tracks(kwargs["playlist_id"])
+    elif source == "file":
+        playlist_ids = file_to_list(kwargs["file_path"])
+        for playlist_id in playlist_ids:
+            tracks = spotify_manager.get_playlist_with_tracks(playlist_id)
+
+    jellyfin_manager.sync_playlist(playlist_with_tracks=tracks, user=kwargs.get("playlist_user"),
+                                   tidal_manager=tidal_manager, database=db)
+
+
+# Jellyfin app commands
 @jellyfin_app.command(name="compress",
                       help="Compresses metadata (images) of entire Jellyfin library without much quality loss")
 def compress(metadata_dir: Annotated[Path, typer.Option(help="Path to Jellyfin metadata directory")] = cfg.get(
-    "jellyfin-metadata-dir"), y: Annotated[bool, typer.Option("--yes", "-y", help="Skip confirmation")] = False):
+    "jellyfin-metadata-dir"),
+        y: Annotated[bool, typer.Option("--yes", "-y", help="Skip confirmation")] = False):
     cfg.put("jellyfin-metadata-dir", metadata_dir)
     cfg.put("y", y)
     entrypoint("jellyfin", "compress", metadata_dir=metadata_dir)
