@@ -367,7 +367,6 @@ class JellyfinManager:
         users = self.request("Users")
         return next((user.get('Id', '') for user in users if user.get('Name', '') == username), None)
 
-    @cachebox.cached(cachebox.LRUCache(maxsize=16))
     def get_playlists(self, user_id: str) -> List[dict]:
         """
         Get the playlists of a user.
@@ -375,9 +374,8 @@ class JellyfinManager:
         :param user_id: ID of the user :str
         :return: List of playlists :class:`list`
         """
-        return self.search("", user_id=user_id, include_item_types="Playlist", limit=500)
+        return self.search("", user_id=user_id, include_item_types="Playlist", limit=500, cachebox__ignore=True)
 
-    @cachebox.cached(cachebox.LRUCache(maxsize=16))
     def get_playlist_id_from_name(self, playlist_name: str, user_id: str) -> Optional[str]:
         """
         Get the playlist ID from the playlist name.
@@ -399,8 +397,9 @@ class JellyfinManager:
         :param is_public: Whether the playlist should be public or private :bool
         :param cover_url: URL of the cover image for the playlist :str, optional
         """
-        playlist_id = self.get_playlist_id_from_name(playlist_name, user_id)
 
+        # Check if the playlist already exists
+        playlist_id = self.get_playlist_id_from_name(playlist_name, user_id)
         if playlist_id:
             log.debug(f"Playlist '{playlist_name}' already exists. Deleting and recreating it.")
             self.delete_playlist(playlist_id)
@@ -471,16 +470,16 @@ class JellyfinManager:
         # Liked Songs playlist (input is a list)
         if isinstance(playlist_with_tracks, list):
             playlist_name = "Liked Songs"
+            tracks = playlist_with_tracks
             self.create_playlist(playlist_name, user_id, is_public=False,
                                  cover_url="https://misc.scdn.co/liked-songs/liked-songs-300.png")
-            tracks = playlist_with_tracks
 
         # Regular playlist (input is a dict)
         elif isinstance(playlist_with_tracks, dict):
             playlist_name = playlist_with_tracks.get('name', '')
             tracks = playlist_with_tracks.get('tracks', [])
             author = playlist_with_tracks.get('owner', {}).get('id', '')
-            is_public = author == "spotify"
+            is_public = "spotify" in author  # TODO: improve
             cover_url = playlist_with_tracks.get('images', [{}])[0].get('url', None)
 
             self.create_playlist(playlist_name, user_id, is_public, cover_url)
