@@ -4,7 +4,7 @@ from typing import Annotated, List
 
 import rich
 import typer
-from rich.progress import Progress
+from rich.progress import Progress, SpinnerColumn, TextColumn
 from tidalapi import Track
 
 from spotidalyfin import cfg
@@ -108,16 +108,23 @@ def get_spotify_tracks(action: str, spotify_manager: SpotifyManager, **kwargs) -
     log.debug("Collecting Spotify tracks metadata...")
     spotify_tracks = []
 
-    if action == "liked":
-        spotify_tracks = spotify_manager.get_liked_songs()
-    elif action == "playlist":
-        spotify_tracks = spotify_manager.get_playlist_tracks(kwargs["playlist_id"])
-    elif action == "file":
-        urls = file_to_list(kwargs["file_path"])
-        for url in urls:
-            spotify_tracks.extend(spotify_manager.get_playlist_tracks(url))
-    elif action == "track":
-        spotify_tracks.append(spotify_manager.get_track(kwargs["track_id"]))
+    with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            transient=True,
+    ) as progress:
+        progress.add_task(description="Collecting Spotify tracks metadata...", total=None)
+
+        if action == "liked":
+            spotify_tracks = spotify_manager.get_liked_songs()
+        elif action == "playlist":
+            spotify_tracks = spotify_manager.get_playlist_tracks(kwargs["playlist_id"])
+        elif action == "file":
+            urls = file_to_list(kwargs["file_path"])
+            for url in urls:
+                spotify_tracks.extend(spotify_manager.get_playlist_tracks(url))
+        elif action == "track":
+            spotify_tracks.append(spotify_manager.get_track(kwargs["track_id"]))
 
     log.info(f"Found {len(spotify_tracks)} Spotify tracks.\n")
     return spotify_tracks
