@@ -24,7 +24,7 @@ class SpotifyManager:
 
     @cachebox.cached(cachebox.LRUCache(maxsize=128))
     @rate_limit
-    def get_playlist_tracks(self, playlist_id):
+    def get_playlist_tracks(self, playlist_id: str):
         tracks = []
         results = self.client.playlist_items(playlist_id, limit=50, additional_types='track')
         tracks.extend(results.get('items'))
@@ -59,3 +59,27 @@ class SpotifyManager:
             tracks.extend(results.get('items'))
 
         return tracks
+
+    @cachebox.cached(cachebox.LRUCache(maxsize=2))
+    @rate_limit
+    def get_all_playlists_tracks(self):
+        playlists = self.client.current_user_playlists()
+        all_tracks = []
+        for playlist in playlists['items']:
+            tracks = self.get_playlist_tracks(playlist['id'])
+            all_tracks.extend(tracks)
+        return all_tracks
+
+    def get_playlist_name(self, playlist_id):
+        return self.get_playlist(playlist_id)['name']
+
+    @cachebox.cached(cachebox.LRUCache(maxsize=32))
+    @rate_limit
+    def get_playlist(self, playlist_id):
+        return self.client.playlist(playlist_id)
+
+    def get_playlist_with_tracks(self, playlist_id):
+        playlist = self.get_playlist(playlist_id)
+        tracks = self.get_playlist_tracks(playlist_id)
+        playlist['tracks'] = tracks
+        return playlist

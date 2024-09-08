@@ -19,8 +19,11 @@ app = typer.Typer()
 
 download_app = typer.Typer()
 app.add_typer(download_app, name="download")
+
 jellyfin_app = typer.Typer()
 app.add_typer(jellyfin_app, name="jellyfin")
+jellyfin_app_sync = typer.Typer()
+jellyfin_app.add_typer(jellyfin_app_sync, name="sync")
 
 
 @app.callback()
@@ -210,7 +213,20 @@ def entrypoint_jellyfin(action: str, spotify_manager: SpotifyManager, tidal_mana
             jellyfin_manager.compress_metadata_images(progress)
 
     elif action == "sync":
-        pass
+        if kwargs["source"] == "liked":
+            tracks = spotify_manager.get_liked_songs()
+            jellyfin_manager.sync_playlist(playlist_with_tracks=tracks, user=kwargs.get("playlist_user"))
+        elif kwargs["source"] == "playlist":
+            playlist_with_tracks = spotify_manager.get_playlist_with_tracks(kwargs["playlist_id"])
+            jellyfin_manager.sync_playlist(playlist_with_tracks, user=kwargs.get("playlist_user"))
+        elif kwargs["source"] == "file":
+            playlists = file_to_list(kwargs["file_path"])
+            for playlist in playlists:
+                playlist_with_tracks = spotify_manager.get_playlist_with_tracks(playlist)
+                jellyfin_manager.sync_playlist(playlist_with_tracks, user=kwargs.get("playlist_user"))
+        else:
+            raise typer.BadParameter("Invalid source")
+
     elif action == "artists":
         pass
 
@@ -224,13 +240,25 @@ def compress(metadata_dir: Annotated[Path, typer.Option(help="Path to Jellyfin m
     entrypoint("jellyfin", "compress", metadata_dir=metadata_dir)
 
 
-@jellyfin_app.command(name="sync", help="Syncs playlists from Tidal to Jellyfin")
-def sync():
-    pass
+@jellyfin_app_sync.command(name="liked", help="Sync liked songs from Spotify to Jellyfin")
+def sync_liked(user: Annotated[str, typer.Argument(help="Jellyfin user to sync the playlist to")]):
+    entrypoint("jellyfin", "sync", source="liked", playlist_user=user)
+
+
+@jellyfin_app_sync.command(name="playlist", help="Sync playlist from Spotify to Jellyfin")
+def sync_playlist(playlist_id: Annotated[str, typer.Argument(help="Playlist ID / URL")],
+                  user: Annotated[str, typer.Argument(help="Jellyfin user to sync the playlist to")]):
+    entrypoint("jellyfin", "sync", source="playlist", playlist_id=playlist_id, playlist_user=user)
+
+
+@jellyfin_app_sync.command(name="file", help="Sync a list of tracks/playlist from a file from Spotify to Jellyfin")
+def sync_from_file(file_path: Annotated[Path, typer.Argument(help="Path to file with playlist IDs")],
+                   user: Annotated[str, typer.Argument(help="Jellyfin user to sync the playlist to")]):
+    entrypoint("jellyfin", "sync", source="file", file_path=file_path, playlist_user=user)
 
 
 @jellyfin_app.command(name="artists", help="Downloads artists images from Tidal and uploads them to Jellyfin")
-def sync_artists():
+def download_artists_images():
     pass
 
 
