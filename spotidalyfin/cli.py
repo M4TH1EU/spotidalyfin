@@ -59,7 +59,7 @@ def download_playlist(playlist_id: Annotated[str, typer.Argument(help="Track ID 
     entrypoint("download", "playlist", playlist_id=playlist_id)
 
 
-@download_app.command(name="file", help="Download a list of tracks/playlist from a file from Spotify")
+@download_app.command(name="file", help="Download a list of playlist from a file from Spotify")
 def download_from_file(file_path: Annotated[Path, typer.Argument(help="Path to file with playlist IDs")]):
     entrypoint("download", "file", file_path=file_path)
 
@@ -215,15 +215,18 @@ def entrypoint_jellyfin(action: str, spotify_manager: SpotifyManager, tidal_mana
     elif action == "sync":
         if kwargs["source"] == "liked":
             tracks = spotify_manager.get_liked_songs()
-            jellyfin_manager.sync_playlist(playlist_with_tracks=tracks, user=kwargs.get("playlist_user"))
+            jellyfin_manager.sync_playlist(playlist_with_tracks=tracks, user=kwargs.get("playlist_user"),
+                                           tidal_manager=tidal_manager, database=db)
         elif kwargs["source"] == "playlist":
             playlist_with_tracks = spotify_manager.get_playlist_with_tracks(kwargs["playlist_id"])
-            jellyfin_manager.sync_playlist(playlist_with_tracks, user=kwargs.get("playlist_user"))
+            jellyfin_manager.sync_playlist(playlist_with_tracks, user=kwargs.get("playlist_user"),
+                                           tidal_manager=tidal_manager, database=db)
         elif kwargs["source"] == "file":
             playlists = file_to_list(kwargs["file_path"])
             for playlist in playlists:
                 playlist_with_tracks = spotify_manager.get_playlist_with_tracks(playlist)
-                jellyfin_manager.sync_playlist(playlist_with_tracks, user=kwargs.get("playlist_user"))
+                jellyfin_manager.sync_playlist(playlist_with_tracks, user=kwargs.get("playlist_user"),
+                                               tidal_manager=tidal_manager, database=db)
         else:
             raise typer.BadParameter("Invalid source")
 
@@ -246,12 +249,12 @@ def sync_liked(user: Annotated[str, typer.Argument(help="Jellyfin user to sync t
 
 
 @jellyfin_app_sync.command(name="playlist", help="Sync playlist from Spotify to Jellyfin")
-def sync_playlist(playlist_id: Annotated[str, typer.Argument(help="Playlist ID / URL")],
+def sync_playlist(playlist_id: Annotated[str, typer.Argument(help="Playlist ID")],
                   user: Annotated[str, typer.Argument(help="Jellyfin user to sync the playlist to")]):
     entrypoint("jellyfin", "sync", source="playlist", playlist_id=playlist_id, playlist_user=user)
 
 
-@jellyfin_app_sync.command(name="file", help="Sync a list of tracks/playlist from a file from Spotify to Jellyfin")
+@jellyfin_app_sync.command(name="file", help="Sync a list of playlists from Spotify from a file to Jellyfin")
 def sync_from_file(file_path: Annotated[Path, typer.Argument(help="Path to file with playlist IDs")],
                    user: Annotated[str, typer.Argument(help="Jellyfin user to sync the playlist to")]):
     entrypoint("jellyfin", "sync", source="file", file_path=file_path, playlist_user=user)
