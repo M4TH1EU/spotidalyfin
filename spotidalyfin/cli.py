@@ -115,10 +115,7 @@ def get_spotify_tracks(action: str, spotify_manager: SpotifyManager, **kwargs) -
     elif action == "file":
         urls = file_to_list(kwargs["file_path"])
         for url in urls:
-            if "playlist" in url:
-                spotify_tracks.extend(spotify_manager.get_playlist_tracks(url))
-            else:
-                spotify_tracks.append(spotify_manager.get_track(url))
+            spotify_tracks.extend(spotify_manager.get_playlist_tracks(url))
     elif action == "track":
         spotify_tracks.append(spotify_manager.get_track(kwargs["track_id"]))
 
@@ -233,6 +230,8 @@ def sync_jellyfin_playlist(spotify_manager: SpotifyManager, jellyfin_manager: Je
         playlist_ids = file_to_list(kwargs["file_path"])
         for playlist_id in playlist_ids:
             tracks = spotify_manager.get_playlist_with_tracks(playlist_id)
+            jellyfin_manager.sync_playlist(playlist_with_tracks=tracks, user=kwargs.get("playlist_user"),
+                                           tidal_manager=tidal_manager, database=db)
 
     jellyfin_manager.sync_playlist(playlist_with_tracks=tracks, user=kwargs.get("playlist_user"),
                                    tidal_manager=tidal_manager, database=db)
