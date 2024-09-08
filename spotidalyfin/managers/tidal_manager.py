@@ -6,7 +6,7 @@ import cachebox
 import requests
 import tidalapi
 from rich.progress import Progress
-from tidalapi import Track, media, Album
+from tidalapi import Track, media, Album, Artist
 from tidalapi.exceptions import MetadataNotAvailable, ObjectNotFound
 from tidalapi.session import SearchResults
 
@@ -48,7 +48,18 @@ class TidalManager:
     def get_album(self, album_id) -> Album:
         return self.client.album(album_id)
 
-    @cachebox.cached(cachebox.LRUCache(maxsize=128))
+    @cachebox.cached(cachebox.LRUCache(maxsize=256))
+    @rate_limit
+    def get_artist(self, artist_id) -> Artist:
+        return self.client.artist(artist_id)
+
+    @cachebox.cached(cachebox.LRUCache(maxsize=256))
+    @rate_limit
+    def search_artist(self, artist_name: str) -> Optional[Artist]:
+        artists = self.search(artist_name, models=[Artist]).get('artists')
+        if artists:
+            return artists[0]
+
     @rate_limit
     def search(self, query, models: Optional[List[Optional[Any]]] = None, limit=7) -> SearchResults:
         query = query[:99] if len(query) > 99 else query

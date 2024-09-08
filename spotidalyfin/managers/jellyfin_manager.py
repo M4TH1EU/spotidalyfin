@@ -69,6 +69,18 @@ class JellyfinManager:
         except requests.exceptions.RequestException:
             return []
 
+    def delete_item(self, item_id):
+        self.request(f"Items/{item_id}", method="DELETE")
+
+    def change_primary_image(self, item_id, image_data):
+        self.request(f"Items/{item_id}/Images/Primary", method="POST", image_data=image_data)
+
+    def get_artists(self):
+        return self.request("Artists")
+
+    def get_users(self):
+        return self.request("Users")
+
     @cachebox.cached(cachebox.LRUCache(maxsize=256))
     def search(self, query=None, limit=5, path="Items", year=None, parent_id=None, user_id=None,
                include_item_types="Audio",
@@ -364,7 +376,7 @@ class JellyfinManager:
         :param username: Username of the user :str
         :return: User ID if found, otherwise None :class:`Optional[str]`
         """
-        users = self.request("Users")
+        users = self.get_users()
         return next((user.get('Id', '') for user in users if user.get('Name', '') == username), None)
 
     def get_playlists(self, user_id: str) -> List[dict]:
@@ -416,7 +428,7 @@ class JellyfinManager:
             image_data = get_as_base64(cover_url)
             if image_data:
                 playlist_id = self.get_playlist_id_from_name(playlist_name, user_id)
-                self.request(f"Items/{playlist_id}/Images/Primary", method="POST", image_data=image_data)
+                self.change_primary_image(playlist_id, image_data)
 
     def delete_playlist(self, playlist_id: str):
         """
@@ -424,7 +436,7 @@ class JellyfinManager:
 
         :param playlist_id: ID of the playlist :str
         """
-        self.request(f"Items/{playlist_id}", method="DELETE")
+        self.delete_item(playlist_id)
 
     def add_track_to_playlist(self, track_id: str, playlist_id: str, user_id: str):
         """
@@ -448,7 +460,7 @@ class JellyfinManager:
             batch = track_ids[i:i + 15]
             self.add_track_to_playlist(",".join(batch), playlist_id, user_id)
 
-    def sync_playlist(self, playlist_with_tracks: dict, user: str, progress: Progress = None,
+    def sync_playlist(self, playlist_with_tracks: dict, user: str,
                       tidal_manager: TidalManager = None, database: Database = None):
         """
         Syncs a playlist by creating it in the system and adding tracks to it.
@@ -467,37 +479,73 @@ class JellyfinManager:
 
         tracks_id_to_add = []
 
-        # Liked Songs playlist (input is a list)
-        if isinstance(playlist_with_tracks, list):
-            playlist_name = "Liked Songs"
-            tracks = playlist_with_tracks
-            self.create_playlist(playlist_name, user_id, is_public=False,
-                                 cover_url="https://misc.scdn.co/liked-songs/liked-songs-300.png")
+        with Progress() as progress:
+            task = progress.add_task(f"Syncing playlist '{playlist_with_tracks.get('name', '')}'...", total=1)
 
-        # Regular playlist (input is a dict)
-        elif isinstance(playlist_with_tracks, dict):
-            playlist_name = playlist_with_tracks.get('name', '')
-            tracks = playlist_with_tracks.get('tracks', [])
-            author = playlist_with_tracks.get('owner', {}).get('id', '')
-            is_public = "spotify" in author  # TODO: improve
-            cover_url = playlist_with_tracks.get('images', [{}])[0].get('url', None)
+            # Liked Songs playlist (input is a list)
+            if isinstance(playlist_with_tracks, list):
+                playlist_name = "Liked Songs"
+                tracks = playlist_with_tracks
+                self.create_playlist(playlist_name, user_id, is_public=False,
+                                     cover_url="https://misc.scdn.co/liked-songs/liked-songs-300.png")
 
-            self.create_playlist(playlist_name, user_id, is_public, cover_url)
+            # Regular playlist (input is a dict)
+            elif isinstance(playlist_with_tracks, dict):
+                playlist_name = playlist_with_tracks.get('name', '')
+                tracks = playlist_with_tracks.get('tracks', [])
+                author = playlist_with_tracks.get('owner', {}).get('id', '')
+                is_public = "spotify" in author  # TODO: improve
+                cover_url = playlist_with_tracks.get('images', [{}])[0].get('url', None)
 
-        # Collect track IDs to add
-        for track in tracks:
-            track_data = track.get('track', track)
-            if tidal_manager and database:
-                track_id = database.get(track_data.get('id'))
-                if track_id:
-                    track_data = tidal_manager.get_track(track_id)
+                self.create_playlist(playlist_name, user_id, is_public, cover_url)
 
-            jellyfin_track = self.get_track_from_data(track_data)
-            if jellyfin_track:
-                tracks_id_to_add.append(jellyfin_track.get('Id', ''))
+            progress.update(task, description=f"Matching tracks for playlist '{playlist_name}'...", total=len(tracks))
 
-        # Add tracks to the playlist
-        if tracks_id_to_add and playlist_name:
-            playlist_id = self.get_playlist_id_from_name(playlist_name, user_id)
-            if playlist_id:
-                self.add_tracks_to_playlist(tracks_id_to_add, playlist_id, user_id)
+            # Collect track IDs to add
+            for track in tracks:
+                track_data = track.get('track', track)
+                if tidal_manager and database:
+                    track_id = database.get(track_data.get('id'))
+                    if track_id:
+                        track_data = tidal_manager.get_track(track_id)
+
+                jellyfin_track = self.get_track_from_data(track_data)
+                if jellyfin_track:
+                    tracks_id_to_add.append(jellyfin_track.get('Id', ''))
+
+                progress.advance(task, advance=1)
+
+            # Add tracks to the playlist
+            if tracks_id_to_add and playlist_name:
+                progress.update(task, description=f"Adding tracks to playlist '{playlist_name}'...")
+                playlist_id = self.get_playlist_id_from_name(playlist_name, user_id)
+                if playlist_id:
+                    self.add_tracks_to_playlist(tracks_id_to_add, playlist_id, user_id)
+
+    def download_artists_images(self, tidal_manager: TidalManager):
+        """
+        Download artist images from Jellyfin and save them to the metadata directory.
+
+        :return: None
+        """
+        artists = self.get_artists()
+        if not artists:
+            log.error("No artists found.")
+            return
+
+        for artist in artists:
+            name = artist.get('Name', '')
+            id = artist.get('Id', '')
+
+            tidal_artist = tidal_manager.search_artist(name)
+            if not tidal_artist:
+                log.warning(f"Artist '{name}' not found in Tidal.")
+                continue
+
+            image_url = tidal_artist.image(750)
+            image_data = get_as_base64(image_url)
+
+            if image_data:
+                self.change_primary_image(id, image_data)
+            else:
+                log.warning(f"Failed to download image for artist '{name}'.")
