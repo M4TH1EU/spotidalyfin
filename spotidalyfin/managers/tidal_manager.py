@@ -7,7 +7,7 @@ import requests
 import tidalapi
 from rich.progress import Progress
 from tidalapi import Track, media, Album
-from tidalapi.exceptions import MetadataNotAvailable
+from tidalapi.exceptions import MetadataNotAvailable, ObjectNotFound
 from tidalapi.session import SearchResults
 
 from spotidalyfin import cfg
@@ -63,21 +63,29 @@ class TidalManager:
     @cachebox.cached(cachebox.LRUCache(maxsize=256))
     @rate_limit
     def search_albums(self, album_name: str = None, artist_name: str = None, barcode=None) -> list[Album]:
-        if barcode:
-            res = self.client.get_albums_by_barcode(barcode)
-            return res or []
-        if album_name and artist_name:
-            res = self.search(f"{album_name} {artist_name}", models=[Album]).get('albums')
-            return res or []
+        try:
+            if barcode:
+                res = self.client.get_albums_by_barcode(barcode)
+                return res or []
+            if album_name and artist_name:
+                res = self.search(f"{album_name} {artist_name}", models=[Album]).get('albums')
+                return res or []
+        except ObjectNotFound:
+            return []
+
         return []
 
     @cachebox.cached(cachebox.LRUCache(maxsize=128))
     @rate_limit
     def search_tracks(self, track_name: str = None, artist_name: str = None, isrc: str = None) -> list[Track]:
-        if isrc:
-            return self.client.get_tracks_by_isrc(isrc.upper()) or []
-        if track_name and artist_name:
-            return self.search(f"{track_name} {artist_name}").get('tracks') or []
+        try:
+            if isrc:
+                return self.client.get_tracks_by_isrc(isrc.upper()) or []
+            if track_name and artist_name:
+                return self.search(f"{track_name} {artist_name}").get('tracks') or []
+        except ObjectNotFound:
+            return []
+
         return []
 
     def search_for_track_in_album(self, album: Album, spotify_track: dict) -> Optional[Track]:

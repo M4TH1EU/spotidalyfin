@@ -1,6 +1,7 @@
 rich~=13.8.0
 mutagen~=1.47.0
-tidalapi @ git+https://github.com/M4TH1EU/python-tidal.git
+# tidalapi @ git+https://github.com/M4TH1EU/python-tidal.git # merged
+tidalapi @ git+https://github.com/tamland/python-tidal.git
 requests~=2.32.3
 python-ffmpeg~=2.0.12
 typer~=0.12.5
