@@ -64,7 +64,7 @@ def download_playlist(playlist_id: Annotated[str, typer.Argument(help="Track ID 
 
 @download_app.command(name="file", help="Download a list of playlist from a file from Spotify")
 def download_from_file(file_path: Annotated[Path, typer.Argument(help="Path to file with playlist IDs")]):
-    entrypoint("download", "file", file_path=file_path)
+    entrypoint("download", "file", file_path=Path(file_path))
 
 
 @download_app.command(name="track", help="Download a single track from Spotify")

@@ -70,7 +70,7 @@ class TidalManager:
             if album_name and artist_name:
                 res = self.search(f"{album_name} {artist_name}", models=[Album]).get('albums')
                 return res or []
-        except ObjectNotFound:
+        except (ObjectNotFound, KeyError):
             return []
 
         return []
@@ -83,7 +83,7 @@ class TidalManager:
                 return self.client.get_tracks_by_isrc(isrc.upper()) or []
             if track_name and artist_name:
                 return self.search(f"{track_name} {artist_name}").get('tracks') or []
-        except ObjectNotFound:
+        except (ObjectNotFound, KeyError):
             return []
 
         return []
