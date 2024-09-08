@@ -10,7 +10,7 @@ from tidalapi import Track
 from spotidalyfin import cfg
 from spotidalyfin.utils.comparisons import weighted_word_overlap, close
 from spotidalyfin.utils.file_utils import resize_image, calculate_checksum, file_to_list, remove_line_from_file, \
-    write_line_to_file
+    write_line_to_file, get_as_base64
 from spotidalyfin.utils.formatting import format_artists, normalize_str
 from spotidalyfin.utils.logger import log
 
@@ -27,9 +27,12 @@ class JellyfinManager:
         self.checksum_file = self.metadata_dir / ".image_checksums_spotidalyfin_do_not_delete.txt"
         self.checksums = None
 
-    def request(self, path, method="GET", params: dict = {}) -> list:
+    def request(self, path, method="GET", params: dict = {}, image_data: bytes = None) -> list:
         url = f"{self.url}/{path.lstrip('/')}"
         headers = {"X-Emby-Token": self.api_key}
+
+        if image_data:
+            headers["Content-Type"] = "image/jpeg"
 
         # Fixes an issue with Jellyfin API where searching with apostrophes doesn't work
         if "searchTerm" in params:
@@ -39,7 +42,10 @@ class JellyfinManager:
             if method == "GET":
                 response = requests.get(url, headers=headers, params=params)
             elif method == "POST":
-                response = requests.post(url, headers=headers, params=params)
+                if image_data:
+                    response = requests.post(url, headers=headers, params=params, data=image_data)
+                else:
+                    response = requests.post(url, headers=headers, params=params)
             elif method == "DELETE":
                 response = requests.delete(url, headers=headers)
             elif method == "PUT":
@@ -387,7 +393,7 @@ class JellyfinManager:
 
         return None
 
-    def create_playlist(self, playlist_name: str, user_id: str, is_public: bool = False):
+    def create_playlist(self, playlist_name: str, user_id: str, is_public: bool = False, cover_url: str = None):
         playlist_id = self.get_playlist_id_from_name(playlist_name, user_id)
         if playlist_id:
             log.debug(f"Playlist '{playlist_name}' already exists. Deleting and recreating it.")
@@ -400,6 +406,12 @@ class JellyfinManager:
             # "Users": [{"UserId": user, "CanEdit": True} for user in users],
             "IsPublic": is_public
         })
+
+        if cover_url:
+            image_data = get_as_base64(cover_url)
+            if image_data:
+                playlist_id = self.get_playlist_id_from_name(playlist_name, user_id)
+                self.request(f"Items/{playlist_id}/Images/Primary", method="POST", image_data=image_data)
 
     def delete_playlist(self, playlist_id: str):
         self.request(f"Items/{playlist_id}", method="DELETE")
@@ -432,9 +444,11 @@ class JellyfinManager:
         if isinstance(playlist_with_tracks, list):
             # Liked Songs playlist
             playlist_name = "Liked Songs"
-            self.create_playlist(playlist_name, user, is_public=False)
+            self.create_playlist(playlist_name, user, is_public=False,
+                                 cover_url="https://misc.scdn.co/liked-songs/liked-songs-300.png")
 
             for track in playlist_with_tracks:
+                track = track.get('track')
                 jellyfin_track = self.get_track_from_data(track)
                 if jellyfin_track:
                     tracks_id_to_add.append(jellyfin_track.get('Id', ''))
@@ -445,8 +459,9 @@ class JellyfinManager:
             tracks = playlist_with_tracks.get('tracks', [])
             author = playlist_with_tracks.get('owner', {}).get('id', '')
             is_public = author == "spotify"
+            cover_url = playlist_with_tracks.get('images', [{}])[0].get('url', None)
 
-            self.create_playlist(playlist_name, user, is_public)
+            self.create_playlist(playlist_name, user, is_public, cover_url)
 
             for track in tracks:
                 track = track.get('track')

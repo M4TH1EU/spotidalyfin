@@ -1,3 +1,4 @@
+import base64
 import hashlib
 import shutil
 import subprocess
@@ -129,6 +130,14 @@ def open_image_url(url: str) -> bytes:
             f.write(chunk)
         f.seek(0)
         return f.read()
+
+
+def get_as_base64(url):
+    try:
+        return base64.b64encode(requests.get(url).content)
+    except:
+        log.warning(f"Failed to get base64 from {url}")
+        return None
 
 
 def extract_flac_from_mp4(file_path: Path, timeout=15) -> Path:
