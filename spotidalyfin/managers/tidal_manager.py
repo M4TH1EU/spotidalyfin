@@ -60,6 +60,8 @@ class TidalManager:
         if artists:
             return artists[0]
 
+        return None
+
     @rate_limit
     def search(self, query, models: Optional[List[Optional[Any]]] = None, limit=7) -> SearchResults:
         query = query[:99] if len(query) > 99 else query

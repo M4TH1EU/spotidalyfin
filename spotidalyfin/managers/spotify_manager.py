@@ -46,6 +46,20 @@ class SpotifyManager:
     def get_album(self, album_id):
         return self.client.album(album_id)
 
+    @cachebox.cached(cachebox.LRUCache(maxsize=256))
+    @rate_limit
+    def get_artist(self, artist_id):
+        return self.client.artist(artist_id)
+
+    @cachebox.cached(cachebox.LRUCache(maxsize=256))
+    @rate_limit
+    def search_artist(self, artist_name):
+        artist = self.client.search(q=artist_name, type='artist')
+        if artist['artists']['items']:
+            return artist['artists']['items'][0]
+
+        return None
+
     @cachebox.cached(cachebox.LRUCache(maxsize=16))
     @rate_limit
     def get_liked_songs(self):

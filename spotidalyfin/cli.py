@@ -211,7 +211,7 @@ def handle_jellyfin(action: str, spotify_manager: SpotifyManager, tidal_manager:
     elif action == "sync":
         sync_jellyfin_playlist(spotify_manager, jellyfin_manager, tidal_manager, db, **kwargs)
     elif action == "artists":
-        jellyfin_manager.download_artists_images(tidal_manager)
+        jellyfin_manager.download_artists_images(tidal_manager, spotify_manager)
 
 
 def compress_jellyfin_metadata(jellyfin_manager: JellyfinManager):
@@ -277,6 +277,7 @@ def sync_from_file(file_path: Annotated[Path, typer.Argument(help="Path to file 
 @jellyfin_app.command(name="artists", help="Downloads artists images from Tidal and uploads them to Jellyfin")
 def download_artists_images():
     entrypoint("jellyfin", "artists")
+
 
 if __name__ == '__main__':
     app()

@@ -1,5 +1,6 @@
 # jellyfin_manager.py
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional, List
 
 import cachebox
@@ -9,6 +10,7 @@ from tidalapi import Track
 
 from spotidalyfin import cfg
 from spotidalyfin.db.database import Database
+from spotidalyfin.managers.spotify_manager import SpotifyManager
 from spotidalyfin.managers.tidal_manager import TidalManager
 from spotidalyfin.utils.comparisons import weighted_word_overlap, close
 from spotidalyfin.utils.file_utils import resize_image, calculate_checksum, file_to_list, remove_line_from_file, \
@@ -495,7 +497,8 @@ class JellyfinManager:
                 tracks = playlist_with_tracks.get('tracks', [])
                 author = playlist_with_tracks.get('owner', {}).get('id', '')
                 is_public = "spotify" in author  # TODO: improve
-                cover_url = playlist_with_tracks.get('images', [{}])[0].get('url', None)
+                if "images" in playlist_with_tracks and playlist_with_tracks.get('images', [{}]):
+                    cover_url = playlist_with_tracks.get('images', [{}])[0].get('url', None)
 
                 self.create_playlist(playlist_name, user_id, is_public, cover_url)
 
@@ -522,30 +525,61 @@ class JellyfinManager:
                 if playlist_id:
                     self.add_tracks_to_playlist(tracks_id_to_add, playlist_id, user_id)
 
-    def download_artists_images(self, tidal_manager: TidalManager):
+    def download_artists_images(self, tidal_manager: TidalManager, spotify_manager: SpotifyManager = None):
         """
         Download artist images from Jellyfin and save them to the metadata directory.
 
+        :param tidal_manager: Instance of TidalManager
+        :param spotify_manager: (Optional) Instance of SpotifyManager
         :return: None
         """
         artists = self.get_artists()
+
         if not artists:
             log.error("No artists found.")
             return
 
-        for artist in artists:
-            name = artist.get('Name', '')
-            id = artist.get('Id', '')
+        def download_image(artist_name, artist_id):
+            """Helper function to download artist image from Tidal or Spotify."""
+            tidal_artist = tidal_manager.search_artist(artist_name)
 
-            tidal_artist = tidal_manager.search_artist(name)
-            if not tidal_artist:
-                log.warning(f"Artist '{name}' not found in Tidal.")
-                continue
-
-            image_url = tidal_artist.image(750)
-            image_data = get_as_base64(image_url)
-
-            if image_data:
-                self.change_primary_image(id, image_data)
+            if tidal_artist:
+                image_url = tidal_artist.image(750)
+            elif spotify_manager:
+                spotify_artist = spotify_manager.search_artist(artist_name)
+                if spotify_artist:
+                    images = spotify_artist.get('images')
+                    image_url = images[0].get('url') if images else None
+                else:
+                    log.warning(f"Artist '{artist_name}' not found in Spotify either.")
+                    return None
             else:
-                log.warning(f"Failed to download image for artist '{name}'.")
+                log.warning(f"Artist '{artist_name}' not found in Tidal and Spotify manager not available.")
+                return None
+
+            return get_as_base64(image_url) if image_url else None
+
+        with Progress() as progress:
+            task = progress.add_task("Downloading artist images...", total=len(artists))
+
+            # Use ThreadPoolExecutor to speed up downloading images concurrently
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                futures = {
+                    executor.submit(download_image, artist['Name'], artist['Id']): artist for artist in artists
+                }
+
+                for future in as_completed(futures):
+                    artist = futures[future]
+                    name = artist.get('Name', '')
+                    id = artist.get('Id', '')
+
+                    try:
+                        image_data = future.result()
+                        if image_data:
+                            self.change_primary_image(id, image_data)
+                        else:
+                            log.warning(f"Failed to download image for artist '{name}'.")
+                    except Exception as e:
+                        log.error(f"Error downloading image for artist '{name}': {e}")
+
+                    progress.advance(task, advance=1)
