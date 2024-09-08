@@ -219,6 +219,9 @@ class JellyfinManager:
 
         for item in response:
             jellyfin_track_name = normalize_str(item.get('Name', ''), try_fix_track_name=True)
+            if not item.get('Artists'):
+                continue
+
             jellyfin_artist_name = format_artists(item.get('Artists', [""]))[0]
             jellyfin_album_name = normalize_str(item.get('Album', ''))
             jellyfin_duration = item.get('RunTimeTicks', 0) / 10000000
