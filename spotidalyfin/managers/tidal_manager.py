@@ -196,6 +196,8 @@ class TidalManager:
             return lyrics.subtitles or lyrics.text
         except MetadataNotAvailable:
             return ""
+        except KeyError:
+            return ""
 
     def get_best_match(self, tidal_tracks: list[Track], spotify_track: dict, quality: int) -> Optional[Track]:
         """
