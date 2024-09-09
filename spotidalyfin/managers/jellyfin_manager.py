@@ -31,7 +31,7 @@ class JellyfinManager:
         self.checksum_file = self.metadata_dir / ".image_checksums_spotidalyfin_do_not_delete.txt"
         self.checksums = None
 
-    def request(self, path, method="GET", params: dict = {}, image_data: bytes = None) -> list:
+    def request(self, path, method="GET", params: dict = {}, json: dict = {}, image_data: bytes = None) -> list:
         url = f"{self.url}/{path.lstrip('/')}"
         headers = {"X-Emby-Token": self.api_key}
 
@@ -47,13 +47,11 @@ class JellyfinManager:
                 response = requests.get(url, headers=headers, params=params)
             elif method == "POST":
                 if image_data:
-                    response = requests.post(url, headers=headers, params=params, data=image_data)
+                    response = requests.post(url, headers=headers, json=json, params=params, data=image_data)
                 else:
-                    response = requests.post(url, headers=headers, params=params)
+                    response = requests.post(url, headers=headers, json=json, params=params)
             elif method == "DELETE":
                 response = requests.delete(url, headers=headers)
-            elif method == "PUT":
-                response = requests.put(url, headers=headers, params=params)
             else:
                 raise ValueError(f"Invalid method: {method}")
 
@@ -418,7 +416,7 @@ class JellyfinManager:
             log.debug(f"Playlist '{playlist_name}' already exists. Deleting and recreating it.")
             self.delete_playlist(playlist_id)
 
-        self.request("Playlists", method="POST", params={
+        self.request("Playlists", method="POST", json={
             "Name": playlist_name,
             "MediaType": "Audio",
             "UserId": user_id,
