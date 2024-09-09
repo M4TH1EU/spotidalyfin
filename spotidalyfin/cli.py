@@ -255,7 +255,7 @@ def handle_helpers(action: str, spotify_manager: SpotifyManager, tidal_manager: 
     if action == "playlists":
         playlists_from_user = spotify_manager.get_user_playlists(kwargs["user"])
         for playlist in playlists_from_user:
-            log.info(f"{playlist['id']} - {playlist['name']} - ({playlist['owner']['display_name']})")
+            print(f"{playlist['id']} # {playlist['name']} - ({playlist['owner']['display_name']})")
 
 
 # Jellyfin app commands

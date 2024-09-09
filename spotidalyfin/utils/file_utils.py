@@ -19,7 +19,7 @@ def file_to_list(file_path: Path) -> list:
         return []
 
     with open(file_path, 'r') as file:
-        return [line.strip() for line in file.readlines() if line.strip()]
+        return [line.split("#", maxsplit=1)[0].strip() for line in file.readlines() if line.strip()]
 
 
 def write_line_to_file(file_path: Path, line: str):
