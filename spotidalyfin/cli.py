@@ -24,6 +24,8 @@ jellyfin_app = typer.Typer()
 app.add_typer(jellyfin_app, name="jellyfin")
 jellyfin_app_sync = typer.Typer()
 jellyfin_app.add_typer(jellyfin_app_sync, name="sync")
+helpers_app = typer.Typer()
+app.add_typer(helpers_app, name="helpers")
 
 
 @app.callback()
@@ -72,7 +74,6 @@ def download_track(track_id: Annotated[str, typer.Argument(help="Track ID / URL"
     entrypoint("download", "track", track_id=track_id)
 
 
-# Entrypoint handlers for command actions
 def entrypoint(command: str, action: str, **kwargs):
     """Main entry point for commands."""
     setup_logger(cfg.get("debug"))
@@ -91,6 +92,8 @@ def entrypoint(command: str, action: str, **kwargs):
         handle_download(action, spotify_manager, tidal_manager, jellyfin_manager, db, **kwargs)
     elif command == "jellyfin":
         handle_jellyfin(action, spotify_manager, tidal_manager, jellyfin_manager, db, **kwargs)
+    elif command == "helpers":
+        handle_helpers(action, spotify_manager, tidal_manager, jellyfin_manager, db, **kwargs)
 
     log.info("Done!")
 
@@ -246,6 +249,15 @@ def sync_jellyfin_playlist(spotify_manager: SpotifyManager, jellyfin_manager: Je
                                    tidal_manager=tidal_manager, database=db)
 
 
+def handle_helpers(action: str, spotify_manager: SpotifyManager, tidal_manager: TidalManager,
+                   jellyfin_manager: JellyfinManager, db: Database, **kwargs):
+    """Handles helper commands."""
+    if action == "playlists":
+        playlists_from_user = spotify_manager.get_user_playlists(kwargs["user"])
+        for playlist in playlists_from_user:
+            log.info(f"{playlist['id']} - {playlist['name']} - ({playlist['owner']['display_name']})")
+
+
 # Jellyfin app commands
 @jellyfin_app.command(name="compress",
                       help="Compresses metadata (images) of entire Jellyfin library without much quality loss")
@@ -277,6 +289,11 @@ def sync_from_file(file_path: Annotated[Path, typer.Argument(help="Path to file 
 @jellyfin_app.command(name="artists", help="Downloads artists images from Tidal and uploads them to Jellyfin")
 def download_artists_images():
     entrypoint("jellyfin", "artists")
+
+
+@helpers_app.command(name="playlists", help="Print all playlists from a Spotify user")
+def print_playlists(user: Annotated[str, typer.Argument(help="Spotify user ID")]):
+    entrypoint("helpers", "playlists", user=user)
 
 
 if __name__ == '__main__':

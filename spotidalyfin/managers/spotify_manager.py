@@ -97,3 +97,10 @@ class SpotifyManager:
         tracks = self.get_playlist_tracks(playlist_id)
         playlist['tracks'] = tracks
         return playlist
+
+    def get_user_playlists(self, user_id):
+        playlists = self.client.user_playlists(user_id)
+        if 'items' not in playlists:
+            return []
+
+        return playlists['items']
