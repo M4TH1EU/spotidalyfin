@@ -292,7 +292,7 @@ def download_artists_images():
 
 
 @helpers_app.command(name="playlists", help="Print all playlists from a Spotify user")
-def print_playlists(user: Annotated[str, typer.Argument(help="Spotify user ID")]):
+def print_playlists(user: Annotated[str, typer.Argument(help="Spotify user ID")] = "me"):
     entrypoint("helpers", "playlists", user=user)
 
 

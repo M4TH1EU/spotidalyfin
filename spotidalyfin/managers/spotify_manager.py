@@ -101,7 +101,11 @@ class SpotifyManager:
     @cachebox.cached(cachebox.LRUCache(maxsize=32))
     @rate_limit
     def get_user_playlists(self, user_id):
-        playlists = self.client.user_playlists(user_id)
+        if user_id == 'me':
+            playlists = self.client.current_user_playlists()
+        else:
+            playlists = self.client.user_playlists(user_id)
+
         if 'items' not in playlists:
             return []
 
