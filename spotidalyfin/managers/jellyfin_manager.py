@@ -494,7 +494,7 @@ class JellyfinManager:
                 playlist_name = playlist_with_tracks.get('name', '')
                 tracks = playlist_with_tracks.get('tracks', [])
                 author = playlist_with_tracks.get('owner', {}).get('id', '')
-                is_public = "spotify" in author or not user in author
+                is_public = "spotify" in author or not user in author or "Your Top Songs" in playlist_name
                 if "images" in playlist_with_tracks and playlist_with_tracks.get('images', [{}]):
                     cover_url = playlist_with_tracks.get('images', [{}])[0].get('url', None)
 
