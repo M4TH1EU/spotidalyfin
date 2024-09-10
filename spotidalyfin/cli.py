@@ -143,15 +143,21 @@ def match_spotify_with_tidal(spotify_tracks: List[dict], tidal_manager: TidalMan
     for track in rich.progress.track(spotify_tracks, description="Matching tracks...", transient=True):
         if not track:
             continue
-
         if 'track' in track:
             track = track['track']
-
-        track_from_db = db.get_tidal_track_from_database(track['id'], tidal_manager)
-        if cfg.get("ignore-jellyfin") is False and jellyfin_manager.does_track_exist(track_from_db or track):
-            log.debug(f"Track {track['name']} already exists in Jellyfin")
-            already_on_jellyfin += 1
+        if not 'id' in track:
             continue
+
+        tidal_track_from_db = db.get_tidal_track_from_database(track['id'], tidal_manager)
+        if tidal_track_from_db:
+            if not cfg.get("ignore-jellyfin") and jellyfin_manager.does_track_exist(tidal_track_from_db or track):
+                log.debug(f"Track {track['name']} already exists in Jellyfin")
+                already_on_jellyfin += 1
+                continue
+            else:
+                log.debug(f"Track {track['name']} is not on Jellyfin but is in the database")
+                tidal_tracks_to_download.append(tidal_track_from_db)
+                continue
 
         # Add metadata and find track on Tidal
         track['album'] = spotify_manager.get_album(track['album']['id'])
