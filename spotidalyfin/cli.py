@@ -145,6 +145,8 @@ def match_spotify_with_tidal(spotify_tracks: List[dict], tidal_manager: TidalMan
             continue
         if 'track' in track:
             track = track['track']
+            if not track: # fix strange crash when track is None
+                continue
         if not 'id' in track:
             continue
 
