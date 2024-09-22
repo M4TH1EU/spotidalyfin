@@ -9,6 +9,7 @@ import requests
 from requests import Response
 from rich.progress import Progress
 from tidalapi import Track
+from tidalapi.exceptions import ObjectNotFound
 
 from spotidalyfin import cfg
 from spotidalyfin.db.database import Database
@@ -513,7 +514,10 @@ class JellyfinManager:
                 if tidal_manager and database:
                     track_id = database.get(track_data.get('id'))
                     if track_id:
-                        track_data = tidal_manager.get_track(track_id)
+                        try:
+                            track_data = tidal_manager.get_track(track_id)
+                        except ObjectNotFound:
+                            log.debug(f"Track '{track_data.get('id')}' not found on Tidal, resorting to dict data.")
 
                 jellyfin_track = self.get_track_from_data(track_data)
                 if jellyfin_track:
