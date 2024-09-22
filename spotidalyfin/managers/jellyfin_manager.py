@@ -1,10 +1,12 @@
 # jellyfin_manager.py
 import re
+import shutil
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional, List
 
 import cachebox
 import requests
+from requests import Response
 from rich.progress import Progress
 from tidalapi import Track
 
@@ -15,7 +17,7 @@ from spotidalyfin.managers.tidal_manager import TidalManager
 from spotidalyfin.utils.comparisons import weighted_word_overlap, close
 from spotidalyfin.utils.file_utils import resize_image, calculate_checksum, file_to_list, remove_line_from_file, \
     write_line_to_file, get_as_base64
-from spotidalyfin.utils.formatting import format_artists, normalize_str
+from spotidalyfin.utils.formatting import format_artists, normalize_str, remove_invalid_chars_from_str
 from spotidalyfin.utils.logger import log
 
 LIBRARY_MAX_SIZE = (1920, 1080)
@@ -31,7 +33,8 @@ class JellyfinManager:
         self.checksum_file = self.metadata_dir / ".image_checksums_spotidalyfin_do_not_delete.txt"
         self.checksums = None
 
-    def request(self, path, method="GET", params: dict = {}, json: dict = {}, image_data: bytes = None) -> list:
+    def request(self, path, method="GET", params: dict = {}, json: dict = {},
+                image_data: bytes = None, timeout: int = 30) -> list | Response:
         url = f"{self.url}/{path.lstrip('/')}"
         headers = {"X-Emby-Token": self.api_key}
 
@@ -52,6 +55,8 @@ class JellyfinManager:
                     response = requests.post(url, headers=headers, json=json, params=params)
             elif method == "DELETE":
                 response = requests.delete(url, headers=headers)
+            elif method == "DOWNLOAD_GET":
+                return requests.get(url, headers=headers, stream=True, timeout=timeout)
             else:
                 raise ValueError(f"Invalid method: {method}")
 
@@ -580,4 +585,47 @@ class JellyfinManager:
                     except Exception as e:
                         log.error(f"Error downloading image for artist '{name}': {e}")
 
+                    progress.advance(task, advance=1)
+
+    def download_track(self, track_id, file_path):
+        """
+        Download a track from Jellyfin to a file.
+
+        :param track_id: ID of the track :str
+        :param file_path: Path to save the track to :str
+        """
+        with self.request(f"Items/{track_id}/Download", method="DOWNLOAD_GET") as r:
+            if file_path.exists():
+                return
+
+            with open(file_path, "wb") as f:
+                shutil.copyfileobj(r.raw, f)
+
+    def download_playlist_songs(self, playlist_name, directory):
+        """
+        Download all songs from a playlist to a directory.
+
+        :param playlist_name: Name of the playlist :str
+        :param directory: Directory to save the songs to :str
+        """
+        user_id = self.get_user_id_from_username("admin")
+        playlist_id = self.get_playlist_id_from_name(playlist_name, user_id)
+
+        if not playlist_id:
+            log.error(f"Playlist '{playlist_name}' not found.")
+            return
+
+        tracks = self.search_by_parent_id(playlist_id, include_item_types="Audio", limit=999)
+
+        with Progress(transient=True) as progress:
+            task = progress.add_task(f"Total progress", total=len(tracks))
+
+            with ThreadPoolExecutor(max_workers=5) as executor:
+                # TODO: fix progress bar going to 100% real quick (due to stream=True)
+                for track in tracks:
+                    track_name = track.get('Name', '')
+                    file_path = directory / "Playlists" / f"{playlist_name}" / f"{remove_invalid_chars_from_str(track_name)}.flac"
+                    file_path.parent.mkdir(parents=True, exist_ok=True)
+                    log.info(f"Downloading track '{track_name}' to {file_path}")
+                    executor.submit(self.download_track, track.get('Id', ''), file_path)
                     progress.advance(task, advance=1)

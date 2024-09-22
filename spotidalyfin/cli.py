@@ -145,7 +145,7 @@ def match_spotify_with_tidal(spotify_tracks: List[dict], tidal_manager: TidalMan
             continue
         if 'track' in track:
             track = track['track']
-            if not track: # fix strange crash when track is None
+            if not track:  # fix strange crash when track is None
                 continue
         if not 'id' in track:
             continue
@@ -223,6 +223,8 @@ def handle_jellyfin(action: str, spotify_manager: SpotifyManager, tidal_manager:
         sync_jellyfin_playlist(spotify_manager, jellyfin_manager, tidal_manager, db, **kwargs)
     elif action == "artists":
         jellyfin_manager.download_artists_images(tidal_manager, spotify_manager)
+    elif action == "dl_playlist":
+        jellyfin_manager.download_playlist_songs(kwargs["playlist_name"], kwargs["out_dir"])
 
 
 def compress_jellyfin_metadata(jellyfin_manager: JellyfinManager):
@@ -297,6 +299,13 @@ def sync_from_file(file_path: Annotated[Path, typer.Argument(help="Path to file 
 @jellyfin_app.command(name="artists", help="Downloads artists images from Tidal and uploads them to Jellyfin")
 def download_artists_images():
     entrypoint("jellyfin", "artists")
+
+
+@jellyfin_app.command(name="dl_playlist", help="Download a playlist from Jellyfin into one folder (no subfolders)")
+def download_playlist(playlist_name,
+                      out_dir: Annotated[Path, typer.Option(help="Output directory for downloaded tracks")] = cfg.get(
+                          "out-dir")):
+    entrypoint("jellyfin", "dl_playlist", playlist_name=playlist_name, out_dir=out_dir)
 
 
 @helpers_app.command(name="playlists", help="Print all playlists from a Spotify user")

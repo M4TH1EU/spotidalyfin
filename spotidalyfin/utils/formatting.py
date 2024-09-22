@@ -111,3 +111,11 @@ def num(any):
         return int(any)
     except ValueError:
         return 0
+
+
+def remove_invalid_chars_from_str(str):
+    invalid_chars = ["<", ">", ":", "\"", "/", "\\", "|", "?", "*", "."]
+    for char in invalid_chars:
+        str = str.replace(char, "")
+
+    return str
