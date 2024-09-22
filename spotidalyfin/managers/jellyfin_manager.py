@@ -511,6 +511,10 @@ class JellyfinManager:
             # Collect track IDs to add
             for track in tracks:
                 track_data = track.get('track', track)
+                if not track_data:
+                    log.error(f"Track '{track}' not found.")
+                    continue
+
                 if tidal_manager and database:
                     track_id = database.get(track_data.get('id'))
                     if track_id:
