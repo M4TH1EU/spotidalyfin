@@ -486,14 +486,12 @@ class JellyfinManager:
         tracks_id_to_add = []
 
         with Progress() as progress:
-            task = progress.add_task(f"Syncing playlist '{playlist_with_tracks.get('name', '')}'...", total=1)
-
             # Liked Songs playlist (input is a list)
             if isinstance(playlist_with_tracks, list):
                 playlist_name = "Liked Songs"
                 tracks = playlist_with_tracks
-                self.create_playlist(playlist_name, user_id, is_public=False,
-                                     cover_url="https://misc.scdn.co/liked-songs/liked-songs-300.png")
+                is_public = False
+                cover_url = "https://misc.scdn.co/liked-songs/liked-songs-300.png"
 
             # Regular playlist (input is a dict)
             elif isinstance(playlist_with_tracks, dict):
@@ -504,7 +502,8 @@ class JellyfinManager:
                 if "images" in playlist_with_tracks and playlist_with_tracks.get('images', [{}]):
                     cover_url = playlist_with_tracks.get('images', [{}])[0].get('url', None)
 
-                self.create_playlist(playlist_name, user_id, is_public, cover_url)
+            task = progress.add_task(f"Syncing playlist '{playlist_name}'...", total=1)
+            self.create_playlist(playlist_name, user_id, is_public, cover_url)
 
             progress.update(task, description=f"Matching tracks for playlist '{playlist_name}'...", total=len(tracks))
 
