@@ -3,6 +3,7 @@ import unittest
 
 from spotidalyfin import cfg
 from spotidalyfin.managers.spotify_manager import SpotifyManager
+from spotidalyfin.managers.tidal_manager import TidalManager
 from spotidalyfin.managers.track import Album, Artist
 from spotidalyfin.utils.file_utils import parse_secrets_file
 
@@ -96,3 +97,25 @@ class SpotifyTests(unittest.TestCase):
             artist_id="2bToe6WyGvADJftreuXh2K"
         )
         self.assertEqual(artist, expected_artist)
+
+
+class TidalTests(unittest.TestCase):
+    def setUp(self):
+        cfg.get_config().update(parse_secrets_file(cfg.get("secrets").parent.parent / "spotidalyfin.secrets"))
+        self.tidal_manager = TidalManager()
+        self.track = self.tidal_manager.get_track("13857988")
+        self.album = self.tidal_manager.get_album("13857982")
+        self.artist = self.tidal_manager.get_artist("3643996")
+
+    def test_get_track(self):
+        self.assertEqual(self.track.name, "Wish You Were Here")
+
+    def test_get_album(self):
+        self.assertEqual(self.album.name, "Faithful Man")
+        self.assertEqual(self.album.release_date, datetime.datetime(2012, 3, 13))
+        self.assertEqual(self.album.tracks, [None for _ in range(10)])
+        self.assertEqual(self.album.album_id, "13857982")
+
+    def test_get_artist(self):
+        self.assertEqual(self.artist.name, "Lee Fields")
+        self.assertEqual(self.artist.artist_id, "3643996")

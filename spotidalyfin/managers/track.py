@@ -1,6 +1,8 @@
 from datetime import datetime
 from enum import Enum
 
+import tidalapi
+
 from spotidalyfin.utils.formatting import parse_date
 
 
@@ -92,6 +94,19 @@ def track_from_spotify_track(spotify_track) -> Track:
     )
 
 
+def track_from_tidal_track(tidal_track: tidalapi.Track) -> Track:
+    return Track(
+        name=tidal_track.full_name,
+        artist=artist_from_tidal_artist(tidal_track.artist),
+        album=album_from_tidal_album(tidal_track.album),
+        duration=tidal_track.duration,
+        artists=[artist_from_tidal_artist(artist) for artist in tidal_track.artists],
+        isrc=tidal_track.isrc,
+        platform=Platform.TIDAL,
+        track_id=tidal_track.id
+    )
+
+
 def album_from_spotify_album(spotify_album) -> Album:
     return Album(
         name=spotify_album['name'],
@@ -102,9 +117,31 @@ def album_from_spotify_album(spotify_album) -> Album:
     )
 
 
+def album_from_tidal_album(tidal_album: tidalapi.Album, load_tracks: bool = False) -> Album:
+    if load_tracks:
+        tracks = tidal_album.tracks()
+    else:
+        tracks = [None for _ in range(tidal_album.num_tracks)] if tidal_album.num_tracks else []
+
+    return Album(
+        name=tidal_album.name,
+        artists=[artist_from_tidal_artist(artist) for artist in tidal_album.artists],
+        release_date=tidal_album.release_date,
+        tracks=tracks,
+        album_id=str(tidal_album.id)
+    )
+
+
 def artist_from_spotify_artist(spotify_artist) -> Artist:
     return Artist(
         name=spotify_artist['name'],
         artist_id=spotify_artist['id'],
         genres=spotify_artist.get('genres', [])
+    )
+
+
+def artist_from_tidal_artist(tidal_artist: tidalapi.Artist) -> Artist:
+    return Artist(
+        name=tidal_artist.name,
+        artist_id=str(tidal_artist.id)
     )

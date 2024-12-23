@@ -1,5 +1,6 @@
 import datetime
 import re
+from typing import Optional
 
 from tidalapi import Artist
 
@@ -86,7 +87,7 @@ def format_artists(artists: list | str, lower: bool = True) -> list:
     return formatted_artists
 
 
-def parse_date(date_str: str) -> datetime:
+def parse_date(date_str: Optional[str]) -> datetime:
     """Parse a date string into a datetime object."""
     formats = {
         4: '%Y',
@@ -95,6 +96,9 @@ def parse_date(date_str: str) -> datetime:
         16: '%Y-%m-%d %H:%M',
         19: '%Y-%m-%d %H:%M:%S'
     }
+    if not date_str:
+        return datetime.datetime(1970, 1, 1)
+
     date_format = formats.get(len(date_str))
 
     if date_format:

@@ -6,11 +6,13 @@ import cachebox
 import requests
 import tidalapi
 from rich.progress import Progress
-from tidalapi import Track, media, Album, Artist
+from tidalapi import media
 from tidalapi.exceptions import MetadataNotAvailable, ObjectNotFound
 from tidalapi.session import SearchResults
 
 from spotidalyfin import cfg
+from spotidalyfin.managers import track
+from spotidalyfin.managers.track import Track, Album, Artist
 from spotidalyfin.utils.comparisons import weighted_word_overlap, close
 from spotidalyfin.utils.decorators import rate_limit
 from spotidalyfin.utils.file_utils import extract_flac_from_mp4, move_file, create_file
@@ -41,38 +43,48 @@ class TidalManager:
     @cachebox.cached(cachebox.LRUCache(maxsize=256))
     @rate_limit
     def get_track(self, track_id) -> Track:
-        return self.client.track(track_id)
+        try:
+            tidal_track = self.client.track(track_id)
+            return track.track_from_tidal_track(tidal_track)
+        except tidalapi.exceptions.ObjectNotFound:
+            raise ValueError(f"Failed to fetch track with ID {track_id}")
 
     @cachebox.cached(cachebox.LRUCache(maxsize=256))
     @rate_limit
-    def get_album(self, album_id) -> Album:
-        return self.client.album(album_id)
+    def get_album(self, album_id, load_tracks: bool = False) -> Album:
+        try:
+            tidal_album = self.client.album(album_id)
+            return track.album_from_tidal_album(tidal_album, load_tracks)
+        except tidalapi.exceptions.ObjectNotFound:
+            raise ValueError(f"Failed to fetch album with ID {album_id}")
 
     @cachebox.cached(cachebox.LRUCache(maxsize=256))
     @rate_limit
     def get_artist(self, artist_id) -> Artist:
-        return self.client.artist(artist_id)
+        try:
+            tidal_artist = self.client.artist(artist_id)
+            return track.artist_from_tidal_artist(tidal_artist)
+        except tidalapi.exceptions.ObjectNotFound:
+            raise ValueError(f"Failed to fetch artist with ID {artist_id}")
 
-    @cachebox.cached(cachebox.LRUCache(maxsize=256))
-    @rate_limit
-    def search_artist(self, artist_name: str) -> Optional[Artist]:
-        artists = self.search(artist_name, models=[Artist]).get('artists')
-        if artists:
-            return artists[0]
-
-        return None
-
+    # TODO: refactor
     @rate_limit
     def search(self, query, models: Optional[List[Optional[Any]]] = None, limit=7) -> SearchResults:
         query = query[:99] if len(query) > 99 else query
         models = models or [media.Track]
         return self.client.search(query, limit=limit, models=models)
 
+    # TODO: refactor
     @cachebox.cached(cachebox.LRUCache(maxsize=256))
     @rate_limit
-    def get_album_tracks(self, album: Album) -> list[Track]:
-        return album.tracks()
+    def search_artist(self, artist_name: str) -> Optional[Artist]:
+        artists = self.search(artist_name, models=[tidalapi.Artist]).get('artists')
+        if artists:
+            return track.artist_from_tidal_artist(artists[0])
 
+        return None
+
+    # TODO: refactor
     @cachebox.cached(cachebox.LRUCache(maxsize=256))
     @rate_limit
     def search_albums(self, album_name: str = None, artist_name: str = None, barcode=None) -> list[Album]:
@@ -88,6 +100,7 @@ class TidalManager:
 
         return []
 
+    # TODO: refactor
     @cachebox.cached(cachebox.LRUCache(maxsize=128))
     @rate_limit
     def search_tracks(self, track_name: str = None, artist_name: str = None, isrc: str = None) -> list[Track]:
@@ -101,12 +114,14 @@ class TidalManager:
 
         return []
 
+    # TODO: refactor
     def search_for_track_in_album(self, album: Album, spotify_track: dict) -> Optional[Track]:
         for track in self.get_album_tracks(album):
             if self.get_track_matching_score(track, spotify_track) >= 4:
                 return track
         return None
 
+    # TODO: refactor
     def search_spotify_track(self, spotify_track: dict, quality: int) -> Optional[Track]:
         """
         Search for a Spotify track on Tidal and return the best match using various search methods.
@@ -163,6 +178,7 @@ class TidalManager:
 
         return self.get_best_match(matches, spotify_track, quality) if matches else None
 
+    # TODO: refactor
     def get_real_audio_quality(self, track: Track) -> str:
         """Get the real audio quality of a track."""
         if cfg.get('debug'):
@@ -195,12 +211,14 @@ class TidalManager:
             log.warning(f"Unknown audio quality for track {track.id}")
             return "LOW"
 
+    # TODO: refactor
     @cachebox.cached(cachebox.LRUCache(maxsize=64))
     @rate_limit
     def get_stream(self, track: Track) -> media.Stream:
         """Get the stream of a track (uses caching)."""
         return track.get_stream()
 
+    # TODO: refactor
     @cachebox.cached(cachebox.LRUCache(maxsize=32))
     def get_lyrics(self, track: Track) -> str:
         """Get the lyrics of a track (uses caching)."""
@@ -212,6 +230,7 @@ class TidalManager:
         except KeyError:
             return ""
 
+    # TODO: refactor
     def get_best_match(self, tidal_tracks: list[Track], spotify_track: dict, quality: int) -> Optional[Track]:
         """
         Get the best match from a list of Tidal tracks based on a Spotify track.
@@ -248,6 +267,7 @@ class TidalManager:
         else:
             return None
 
+    # TODO: refactor
     def get_track_matching_score(self, track: Track, spotify_track: dict) -> float:
         """
         Calculate the matching score between a Tidal track and a Spotify track.
@@ -280,6 +300,7 @@ class TidalManager:
             score += 1
         return score
 
+    # TODO: refactor
     def download_track(self, track: Track, progress: Progress = None):
         # Retrive all the download urls
         stream_manifest = self.get_stream(track).get_stream_manifest()
