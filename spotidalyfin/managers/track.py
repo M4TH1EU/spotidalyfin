@@ -11,9 +11,10 @@ class Platform(Enum):
 
 
 class Artist:
-    def __init__(self, name: str, artist_id: str):
+    def __init__(self, name: str, artist_id: str, genres: list = list):
         self.name = name
         self.artist_id = artist_id
+        self.genres = genres
 
     def __str__(self):
         return self.name
@@ -22,12 +23,6 @@ class Artist:
         if isinstance(other, Artist):
             return self.artist_id == other.artist_id and self.name == other.name
         return False
-
-    def name(self) -> str:
-        return self.name
-
-    def id(self) -> str:
-        return self.artist_id
 
 
 class Album:
@@ -46,21 +41,6 @@ class Album:
             return self.album_id == other.album_id and self.name == other.name and self.artists == other.artists and self.release_date == other.release_date and self.tracks == other.tracks
         return False
 
-    def name(self) -> str:
-        return self.name
-
-    def artists(self) -> list[Artist]:
-        return self.artists
-
-    def release_date(self) -> datetime:
-        return self.release_date
-
-    def tracks(self) -> list:
-        return self.tracks
-
-    def id(self) -> str:
-        return self.album_id
-
 
 class Track:
     def __init__(self, name: str, artist: Artist, album: Album, duration: int, artists: list, isrc: str = None,
@@ -77,29 +57,26 @@ class Track:
     def __str__(self):
         return f"{self.name} by {self.artist} from {self.album.name}"
 
-    def name(self) -> str:
+
+class Playlist:
+    def __init__(self, name: str, image: str, playlist_id: str, tracks: list[Track | None] = list):
+        self.name = name
+        self.image = image
+        self.playlist_id = playlist_id
+        self.tracks = tracks
+        self.are_tracks_loaded = False
+
+    def __str__(self):
         return self.name
 
-    def artist(self) -> Artist:
-        return self.artist
+    def __eq__(self, other):
+        if isinstance(other, Playlist):
+            return self.playlist_id == other.playlist_id and self.name == other.name and self.image == other.image and self.tracks == other.tracks
+        return False
 
-    def album(self) -> Album:
-        return self.album
-
-    def duration(self) -> int:
-        return self.duration
-
-    def artists(self) -> list:
-        return self.artists
-
-    def isrc(self) -> str:
-        return self.isrc
-
-    def platform(self) -> Platform:
-        return self.platform
-
-    def id(self) -> str:
-        return self.id
+    def load_tracks(self, tracks: list[Track]):
+        self.tracks = tracks
+        self.are_tracks_loaded = True
 
 
 def track_from_spotify_track(spotify_track) -> Track:
@@ -128,5 +105,6 @@ def album_from_spotify_album(spotify_album) -> Album:
 def artist_from_spotify_artist(spotify_artist) -> Artist:
     return Artist(
         name=spotify_artist['name'],
-        artist_id=spotify_artist['id']
+        artist_id=spotify_artist['id'],
+        genres=spotify_artist.get('genres', [])
     )

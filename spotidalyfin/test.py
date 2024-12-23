@@ -88,3 +88,11 @@ class SpotifyTests(unittest.TestCase):
         )
         self.assertEqual(self.artist.name, expected_artist.name)
         self.assertEqual(self.artist.artist_id, expected_artist.artist_id)
+
+    def test_search_artist(self):
+        artist = self.spotify_manager.search_artist("Lee Fields & The Expressions")
+        expected_artist = Artist(
+            name="Lee Fields & The Expressions",
+            artist_id="2bToe6WyGvADJftreuXh2K"
+        )
+        self.assertEqual(artist, expected_artist)

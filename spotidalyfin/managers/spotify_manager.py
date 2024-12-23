@@ -8,7 +8,7 @@ from spotipy import SpotifyOAuth, CacheFileHandler
 
 from spotidalyfin import cfg
 from spotidalyfin.managers import track
-from spotidalyfin.managers.track import Track, Album, Artist
+from spotidalyfin.managers.track import Track, Album, Artist, Playlist
 from spotidalyfin.utils.decorators import rate_limit
 
 
@@ -23,38 +23,6 @@ class SpotifyManager:
                                                                 scope=scopes,
                                                                 cache_handler=CacheFileHandler(token_file),
                                                                 open_browser=False))
-
-    @cachebox.cached(cachebox.LRUCache(maxsize=128))
-    @rate_limit
-    def get_playlist_tracks(self, playlist_id: str) -> list[Track]:
-        tracks = []
-        offset = 0
-        limit = 50
-
-        while True:
-            # Fetch playlist items
-            results = self.client.playlist_items(
-                playlist_id,
-                limit=limit,
-                offset=offset,
-                additional_types='track'
-            )
-
-            # Extract and transform tracks
-            tracks.extend(
-                track.track_from_spotify_track(item['track'])
-                for item in results.get('items', [])
-                if item.get('track')
-            )
-
-            # Check if there's a next page
-            if not results.get('next'):
-                break
-
-            offset += limit
-            time.sleep(random.uniform(0.1, 0.3))
-
-        return tracks
 
     @cachebox.cached(cachebox.LRUCache(maxsize=256))
     @rate_limit
@@ -76,60 +44,111 @@ class SpotifyManager:
 
     @cachebox.cached(cachebox.LRUCache(maxsize=256))
     @rate_limit
-    def search_artist(self, artist_name):
+    def search_artist(self, artist_name) -> Artist | None:
         artist = self.client.search(q=artist_name, type='artist')
         if artist['artists']['items']:
-            return artist['artists']['items'][0]
+            return track.artist_from_spotify_artist(artist['artists']['items'][0])
 
         return None
 
     @cachebox.cached(cachebox.LRUCache(maxsize=16))
     @rate_limit
-    def get_liked_songs(self):
-        tracks = []
-        results = self.client.current_user_saved_tracks(limit=50)
-        tracks.extend(results.get('items'))
+    def get_liked_songs(self) -> Playlist:
+        tracks: list[Track] = []
+        offset = 0
+        limit = 50
 
-        while results.get('next'):
+        while True:
+            # Fetch playlist items
+            results = self.client.current_user_saved_tracks(
+                limit=limit,
+                offset=offset
+            )
+
+            # Extract and transform tracks
+            tracks.extend(
+                track.track_from_spotify_track(item['track'])
+                for item in results.get('items', [])
+                if item.get('track')
+            )
+
+            # Check if there's a next page
+            if not results.get('next'):
+                break
+
+            offset += limit
             time.sleep(random.uniform(0.1, 0.3))
-            results = self.client.current_user_saved_tracks(limit=50, offset=len(tracks))
-            tracks.extend(results.get('items'))
+
+        playlist = Playlist(
+            name="Liked Songs",
+            image="",
+            playlist_id="liked-songs",
+            tracks=tracks
+        )
+
+        return playlist
+
+    @cachebox.cached(cachebox.LRUCache(maxsize=128))
+    @rate_limit
+    def load_playlist_tracks(self, playlist: Playlist | str) -> list[Track]:
+        tracks = []
+        offset = 0
+        limit = 50
+
+        while True:
+            # Fetch playlist items
+            results = self.client.playlist_items(
+                playlist_id=playlist if isinstance(playlist, str) else playlist.playlist_id,
+                limit=limit,
+                offset=offset,
+                additional_types='track'
+            )
+
+            # Extract and transform tracks
+            tracks.extend(
+                track.track_from_spotify_track(item['track'])
+                for item in results.get('items', [])
+                if item.get('track')
+            )
+
+            # Check if there's a next page
+            if not results.get('next'):
+                break
+
+            offset += limit
+            time.sleep(random.uniform(0.1, 0.3))
 
         return tracks
 
-    @cachebox.cached(cachebox.LRUCache(maxsize=2))
+    @cachebox.cached(cachebox.LRUCache(maxsize=32))
     @rate_limit
-    def get_all_playlists_tracks(self):
-        playlists = self.client.current_user_playlists()
-        all_tracks = []
-        for playlist in playlists['items']:
-            tracks = self.get_playlist_tracks(playlist['id'])
-            all_tracks.extend(tracks)
-        return all_tracks
-
-    def get_playlist_name(self, playlist_id):
-        return self.get_playlist(playlist_id)['name']
+    def get_playlist(self, playlist_id, load_tracks: bool = False) -> Playlist:
+        spotipy_playlist = self.client.playlist(playlist_id)
+        return Playlist(
+            name=spotipy_playlist['name'],
+            image=spotipy_playlist['images'][0]['url'] if spotipy_playlist['images'] else "",
+            playlist_id=playlist_id,
+            tracks=[] if not load_tracks else self.load_playlist_tracks(playlist_id)
+        )
 
     @cachebox.cached(cachebox.LRUCache(maxsize=32))
     @rate_limit
-    def get_playlist(self, playlist_id):
-        return self.client.playlist(playlist_id)
+    def get_user_playlists(self, user_id: str) -> list[Playlist]:
+        # Fetch playlists based on user ID
+        playlists = (self.client.current_user_playlists() if user_id == 'me' else self.client.user_playlists(user_id))
 
-    def get_playlist_with_tracks(self, playlist_id):
-        playlist = self.get_playlist(playlist_id)
-        tracks = self.get_playlist_tracks(playlist_id)
-        playlist['tracks'] = tracks
-        return playlist
-
-    @cachebox.cached(cachebox.LRUCache(maxsize=32))
-    @rate_limit
-    def get_user_playlists(self, user_id):
-        if user_id == 'me':
-            playlists = self.client.current_user_playlists()
-        else:
-            playlists = self.client.user_playlists(user_id)
-
-        if 'items' not in playlists:
+        # Return an empty list if no 'items' key exists
+        items = playlists.get('items', [])
+        if not items:
             return []
 
-        return playlists['items']
+        # Construct the list of Playlist objects
+        return [
+            Playlist(
+                name=item['name'],
+                image=item['images'][0]['url'] if item.get('images') else "",
+                playlist_id=item['id'],
+                tracks=[None] * item['tracks']['total']
+            )
+            for item in items
+        ]
