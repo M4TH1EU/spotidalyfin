@@ -1,6 +1,9 @@
 # spotify_manager.py
+
 import random
 import time
+from pathlib import Path
+from typing import Optional, Union
 
 import cachebox
 import spotipy
@@ -13,142 +16,162 @@ from spotidalyfin.utils.decorators import rate_limit
 
 
 class SpotifyManager:
-    def __init__(self, client_id, client_secret):
+    """Manages interactions with the Spotify API, including fetching tracks, albums, artists, playlists, and liked songs."""
+
+    def __init__(self, client_id: str, client_secret: str):
+        """Initializes the SpotifyManager with API credentials and sets up the Spotipy client."""
         scopes = ['playlist-read-private', 'playlist-read-collaborative', 'user-library-read']
-        token_file = cfg.get("config-dir") / ".spotipy-token"
+        token_file = Path(cfg.get("config-dir")) / ".spotipy-token"
         token_file.parent.mkdir(parents=True, exist_ok=True)
 
-        self.client = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id=client_id, client_secret=client_secret,
-                                                                redirect_uri="http://127.0.0.1:6969",
-                                                                scope=scopes,
-                                                                cache_handler=CacheFileHandler(token_file),
-                                                                open_browser=False))
+        self.client = spotipy.Spotify(
+            auth_manager=SpotifyOAuth(
+                client_id=client_id,
+                client_secret=client_secret,
+                redirect_uri="http://127.0.0.1:6969",
+                scope=scopes,
+                cache_handler=CacheFileHandler(str(token_file)),
+                open_browser=False
+            )
+        )
 
     @cachebox.cached(cachebox.LRUCache(maxsize=256))
     @rate_limit
-    def get_track(self, track_id) -> Track:
-        spotipy_track = self.client.track(track_id)
-        return track.track_from_spotify_track(spotipy_track)
+    def get_track(self, track_id: str) -> Track:
+        """Fetches a single track by its ID."""
+        try:
+            spotipy_track = self.client.track(track_id)
+            return track.track_from_spotify_track(spotipy_track)
+        except spotipy.SpotifyException as e:
+            raise ValueError(f"Failed to fetch track with ID {track_id}: {e}")
 
     @cachebox.cached(cachebox.LRUCache(maxsize=256))
     @rate_limit
-    def get_album(self, album_id) -> Album:
-        spotipy_album = self.client.album(album_id)
-        return track.album_from_spotify_album(spotipy_album)
+    def get_album(self, album_id: str) -> Album:
+        """Fetches an album by its ID."""
+        try:
+            spotipy_album = self.client.album(album_id)
+            return track.album_from_spotify_album(spotipy_album)
+        except spotipy.SpotifyException as e:
+            raise ValueError(f"Failed to fetch album with ID {album_id}: {e}")
 
     @cachebox.cached(cachebox.LRUCache(maxsize=256))
     @rate_limit
-    def get_artist(self, artist_id) -> Artist:
-        spotipy_artist = self.client.artist(artist_id)
-        return track.artist_from_spotify_artist(spotipy_artist)
+    def get_artist(self, artist_id: str) -> Artist:
+        """Fetches an artist by their ID."""
+        try:
+            spotipy_artist = self.client.artist(artist_id)
+            return track.artist_from_spotify_artist(spotipy_artist)
+        except spotipy.SpotifyException as e:
+            raise ValueError(f"Failed to fetch artist with ID {artist_id}: {e}")
 
     @cachebox.cached(cachebox.LRUCache(maxsize=256))
     @rate_limit
-    def search_artist(self, artist_name) -> Artist | None:
-        artist = self.client.search(q=artist_name, type='artist')
-        if artist['artists']['items']:
-            return track.artist_from_spotify_artist(artist['artists']['items'][0])
-
-        return None
+    def search_artist(self, artist_name: str) -> Optional[Artist]:
+        """Searches for an artist by name and returns the first match, if any."""
+        try:
+            results = self.client.search(q=artist_name, type='artist')
+            artists = results.get('artists', {}).get('items', [])
+            if artists:
+                return track.artist_from_spotify_artist(artists[0])
+            return None
+        except spotipy.SpotifyException as e:
+            raise ValueError(f"Failed to search for artist '{artist_name}': {e}")
 
     @cachebox.cached(cachebox.LRUCache(maxsize=16))
     @rate_limit
     def get_liked_songs(self) -> Playlist:
+        """Fetches the user's liked songs as a playlist."""
         tracks: list[Track] = []
         offset = 0
         limit = 50
 
         while True:
-            # Fetch playlist items
-            results = self.client.current_user_saved_tracks(
-                limit=limit,
-                offset=offset
-            )
+            try:
+                results = self.client.current_user_saved_tracks(limit=limit, offset=offset)
+                items = results.get('items', [])
+                tracks.extend(
+                    track.track_from_spotify_track(item['track'])
+                    for item in items
+                    if item.get('track')
+                )
+                if not results.get('next'):
+                    break
+                offset += limit
+                time.sleep(random.uniform(0.1, 0.3))
+            except spotipy.SpotifyException as e:
+                raise ValueError(f"Failed to fetch liked songs: {e}")
 
-            # Extract and transform tracks
-            tracks.extend(
-                track.track_from_spotify_track(item['track'])
-                for item in results.get('items', [])
-                if item.get('track')
-            )
-
-            # Check if there's a next page
-            if not results.get('next'):
-                break
-
-            offset += limit
-            time.sleep(random.uniform(0.1, 0.3))
-
-        playlist = Playlist(
+        return Playlist(
             name="Liked Songs",
             image="",
             playlist_id="liked-songs",
             tracks=tracks
         )
 
-        return playlist
-
     @cachebox.cached(cachebox.LRUCache(maxsize=128))
     @rate_limit
-    def load_playlist_tracks(self, playlist: Playlist | str) -> list[Track]:
-        tracks = []
+    def load_playlist_tracks(self, playlist: Union[Playlist, str]) -> list[Track]:
+        """Loads all tracks from a given playlist."""
+        tracks: list[Track] = []
         offset = 0
         limit = 50
 
         while True:
-            # Fetch playlist items
-            results = self.client.playlist_items(
-                playlist_id=playlist if isinstance(playlist, str) else playlist.playlist_id,
-                limit=limit,
-                offset=offset,
-                additional_types='track'
-            )
-
-            # Extract and transform tracks
-            tracks.extend(
-                track.track_from_spotify_track(item['track'])
-                for item in results.get('items', [])
-                if item.get('track')
-            )
-
-            # Check if there's a next page
-            if not results.get('next'):
-                break
-
-            offset += limit
-            time.sleep(random.uniform(0.1, 0.3))
+            try:
+                playlist_id = playlist if isinstance(playlist, str) else playlist.playlist_id
+                results = self.client.playlist_items(
+                    playlist_id=playlist_id,
+                    limit=limit,
+                    offset=offset,
+                    additional_types='track'
+                )
+                tracks.extend(
+                    track.track_from_spotify_track(item['track'])
+                    for item in results.get('items', [])
+                    if item.get('track')
+                )
+                if not results.get('next'):
+                    break
+                offset += limit
+                time.sleep(random.uniform(0.1, 0.3))
+            except spotipy.SpotifyException as e:
+                raise ValueError(f"Failed to fetch tracks for playlist {playlist}: {e}")
 
         return tracks
 
     @cachebox.cached(cachebox.LRUCache(maxsize=32))
     @rate_limit
-    def get_playlist(self, playlist_id, load_tracks: bool = False) -> Playlist:
-        spotipy_playlist = self.client.playlist(playlist_id)
-        return Playlist(
-            name=spotipy_playlist['name'],
-            image=spotipy_playlist['images'][0]['url'] if spotipy_playlist['images'] else "",
-            playlist_id=playlist_id,
-            tracks=[] if not load_tracks else self.load_playlist_tracks(playlist_id)
-        )
+    def get_playlist(self, playlist_id: str, load_tracks: bool = False) -> Playlist:
+        """Fetches a playlist by its ID and optionally loads its tracks."""
+        try:
+            spotipy_playlist = self.client.playlist(playlist_id)
+            tracks = self.load_playlist_tracks(playlist_id) if load_tracks else []
+            return Playlist(
+                name=spotipy_playlist['name'],
+                image=spotipy_playlist['images'][0]['url'] if spotipy_playlist.get('images') else "",
+                playlist_id=playlist_id,
+                tracks=tracks
+            )
+        except spotipy.SpotifyException as e:
+            raise ValueError(f"Failed to fetch playlist with ID {playlist_id}: {e}")
 
     @cachebox.cached(cachebox.LRUCache(maxsize=32))
     @rate_limit
-    def get_user_playlists(self, user_id: str) -> list[Playlist]:
-        # Fetch playlists based on user ID
-        playlists = (self.client.current_user_playlists() if user_id == 'me' else self.client.user_playlists(user_id))
-
-        # Return an empty list if no 'items' key exists
-        items = playlists.get('items', [])
-        if not items:
-            return []
-
-        # Construct the list of Playlist objects
-        return [
-            Playlist(
-                name=item['name'],
-                image=item['images'][0]['url'] if item.get('images') else "",
-                playlist_id=item['id'],
-                tracks=[None] * item['tracks']['total']
-            )
-            for item in items
-        ]
+    def get_user_playlists(self, user_id: str = "me") -> list[Playlist]:
+        """Fetches all playlists for the given user."""
+        try:
+            playlists_data = self.client.current_user_playlists() if user_id == "me" else self.client.user_playlists(
+                user_id)
+            items = playlists_data.get('items', [])
+            return [
+                Playlist(
+                    name=item['name'],
+                    image=item['images'][0]['url'] if item.get('images') else "",
+                    playlist_id=item['id'],
+                    tracks=[None] * item['tracks']['total']  # Placeholder for track list
+                )
+                for item in items
+            ]
+        except spotipy.SpotifyException as e:
+            raise ValueError(f"Failed to fetch playlists for user '{user_id}': {e}")
