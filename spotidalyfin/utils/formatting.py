@@ -86,7 +86,7 @@ def format_artists(artists: list | str, lower: bool = True) -> list:
     return formatted_artists
 
 
-def parse_date(date_str: str):
+def parse_date(date_str: str) -> datetime:
     """Parse a date string into a datetime object."""
     formats = {
         4: '%Y',
@@ -96,7 +96,11 @@ def parse_date(date_str: str):
         19: '%Y-%m-%d %H:%M:%S'
     }
     date_format = formats.get(len(date_str))
-    return datetime.strptime(date_str, date_format) if date_format else None
+
+    if date_format:
+        return datetime.datetime.strptime(date_str, date_format)
+    else:
+        return None
 
 
 def not_none(any, default=None) -> str:

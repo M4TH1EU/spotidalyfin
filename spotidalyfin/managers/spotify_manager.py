@@ -7,6 +7,8 @@ import spotipy
 from spotipy import SpotifyOAuth, CacheFileHandler
 
 from spotidalyfin import cfg
+from spotidalyfin.managers import track
+from spotidalyfin.managers.track import Track, Album, Artist
 from spotidalyfin.utils.decorators import rate_limit
 
 
@@ -24,32 +26,53 @@ class SpotifyManager:
 
     @cachebox.cached(cachebox.LRUCache(maxsize=128))
     @rate_limit
-    def get_playlist_tracks(self, playlist_id: str):
+    def get_playlist_tracks(self, playlist_id: str) -> list[Track]:
         tracks = []
-        results = self.client.playlist_items(playlist_id, limit=50, additional_types='track')
-        tracks.extend(results.get('items'))
+        offset = 0
+        limit = 50
 
-        while results.get('next'):
+        while True:
+            # Fetch playlist items
+            results = self.client.playlist_items(
+                playlist_id,
+                limit=limit,
+                offset=offset,
+                additional_types='track'
+            )
+
+            # Extract and transform tracks
+            tracks.extend(
+                track.track_from_spotify_track(item['track'])
+                for item in results.get('items', [])
+                if item.get('track')
+            )
+
+            # Check if there's a next page
+            if not results.get('next'):
+                break
+
+            offset += limit
             time.sleep(random.uniform(0.1, 0.3))
-            results = self.client.playlist_items(playlist_id, limit=50, offset=len(tracks), additional_types='track')
-            tracks.extend(results.get('items'))
 
         return tracks
 
     @cachebox.cached(cachebox.LRUCache(maxsize=256))
     @rate_limit
-    def get_track(self, track_id):
-        return self.client.track(track_id)
+    def get_track(self, track_id) -> Track:
+        spotipy_track = self.client.track(track_id)
+        return track.track_from_spotify_track(spotipy_track)
 
     @cachebox.cached(cachebox.LRUCache(maxsize=256))
     @rate_limit
-    def get_album(self, album_id):
-        return self.client.album(album_id)
+    def get_album(self, album_id) -> Album:
+        spotipy_album = self.client.album(album_id)
+        return track.album_from_spotify_album(spotipy_album)
 
     @cachebox.cached(cachebox.LRUCache(maxsize=256))
     @rate_limit
-    def get_artist(self, artist_id):
-        return self.client.artist(artist_id)
+    def get_artist(self, artist_id) -> Artist:
+        spotipy_artist = self.client.artist(artist_id)
+        return track.artist_from_spotify_artist(spotipy_artist)
 
     @cachebox.cached(cachebox.LRUCache(maxsize=256))
     @rate_limit
