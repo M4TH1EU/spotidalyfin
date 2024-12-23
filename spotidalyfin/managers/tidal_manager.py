@@ -167,13 +167,13 @@ class TidalManager:
         """Get the real audio quality of a track."""
         if cfg.get('debug'):
             print(
-                f"{track.id} - Qly:{track.audio_quality} - Atmos:{track.is_DolbyAtmos} - Master:{track.is_Mqa} - HiRes:{track.is_HiRes} - {self.get_stream(track).get_audio_resolution()}")
+                f"{track.id} - Qly:{track.audio_quality} - Atmos:{track.is_dolby_atmos} - Master:{track.is_hi_res_lossless} - HiRes:{track.is_lossless} - {self.get_stream(track).get_audio_resolution()}")
 
-        if track.is_DolbyAtmos:
+        if track.is_dolby_atmos:
             return "DOLBY_ATMOS"
-        elif track.is_Mqa:
+        elif track.is_hi_res_lossless:
             return "HI_RES_LOSSLESS"
-        elif track.is_HiRes:
+        elif track.is_lossless:
             if cfg.get("quality") >= 3:
                 return "HI_RES_LOSSLESS"
             elif 'LOSSLESS' in track.media_metadata_tags:

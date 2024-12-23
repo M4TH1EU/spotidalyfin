@@ -80,6 +80,10 @@ def entrypoint(command: str, action: str, **kwargs):
     log.info("[bold]Starting [green]Spo[white]tidal[blue]yfin...", extra={"markup": True})
     log.info(f"Current action: {action}\n")
 
+    if not cfg.get("spotify_client_id") or not cfg.get("spotify_client_secret"):
+        log.error("Spotify client ID and secret are required. Please add them to the secrets file.")
+        return
+
     spotify_manager = SpotifyManager(cfg.get("spotify_client_id"), cfg.get("spotify_client_secret"))
     tidal_manager = TidalManager()
     jellyfin_manager = JellyfinManager(cfg.get("jellyfin_url"), cfg.get("jellyfin_api_key"))
