@@ -1,6 +1,6 @@
 import concurrent
 from concurrent.futures import ThreadPoolExecutor
-from typing import Optional, List, Any
+from typing import Optional, List
 
 import cachebox
 import requests
@@ -11,8 +11,8 @@ from tidalapi.exceptions import MetadataNotAvailable, ObjectNotFound
 from tidalapi.session import SearchResults
 
 from spotidalyfin import cfg
-from spotidalyfin.managers import track
-from spotidalyfin.managers.track import Track, Album, Artist
+from spotidalyfin.managers import types
+from spotidalyfin.managers.types import Track, Album, Artist
 from spotidalyfin.utils.comparisons import weighted_word_overlap, close
 from spotidalyfin.utils.decorators import rate_limit
 from spotidalyfin.utils.file_utils import extract_flac_from_mp4, move_file, create_file
@@ -45,7 +45,7 @@ class TidalManager:
     def get_track(self, track_id) -> Track:
         try:
             tidal_track = self.client.track(track_id)
-            return track.track_from_tidal_track(tidal_track)
+            return types.track_from_tidal_track(tidal_track)
         except tidalapi.exceptions.ObjectNotFound:
             raise ValueError(f"Failed to fetch track with ID {track_id}")
 
@@ -54,7 +54,7 @@ class TidalManager:
     def get_album(self, album_id, load_tracks: bool = False) -> Album:
         try:
             tidal_album = self.client.album(album_id)
-            return track.album_from_tidal_album(tidal_album, load_tracks)
+            return types.album_from_tidal_album(tidal_album, load_tracks)
         except tidalapi.exceptions.ObjectNotFound:
             raise ValueError(f"Failed to fetch album with ID {album_id}")
 
@@ -63,63 +63,70 @@ class TidalManager:
     def get_artist(self, artist_id) -> Artist:
         try:
             tidal_artist = self.client.artist(artist_id)
-            return track.artist_from_tidal_artist(tidal_artist)
+            return types.artist_from_tidal_artist(tidal_artist)
         except tidalapi.exceptions.ObjectNotFound:
             raise ValueError(f"Failed to fetch artist with ID {artist_id}")
 
-    # TODO: refactor
     @rate_limit
-    def search(self, query, models: Optional[List[Optional[Any]]] = None, limit=7) -> SearchResults:
+    def search(self, query: str, models: List[tidalapi.Album or tidalapi.Track or tidalapi.Artist] = None,
+               limit=7) -> SearchResults:
         query = query[:99] if len(query) > 99 else query
         models = models or [media.Track]
         return self.client.search(query, limit=limit, models=models)
 
-    # TODO: refactor
     @cachebox.cached(cachebox.LRUCache(maxsize=256))
     @rate_limit
-    def search_artist(self, artist_name: str) -> Optional[Artist]:
+    def search_artists(self, artist_name: str) -> list[Artist]:
         artists = self.search(artist_name, models=[tidalapi.Artist]).get('artists')
         if artists:
-            return track.artist_from_tidal_artist(artists[0])
+            return [types.artist_from_tidal_artist(artist) for artist in artists]
 
-        return None
+        return []
 
-    # TODO: refactor
     @cachebox.cached(cachebox.LRUCache(maxsize=256))
     @rate_limit
     def search_albums(self, album_name: str = None, artist_name: str = None, barcode=None) -> list[Album]:
         try:
+            res = []
             if barcode:
                 res = self.client.get_albums_by_barcode(barcode)
-                return res or []
             if album_name and artist_name:
-                res = self.search(f"{album_name} {artist_name}", models=[Album]).get('albums')
-                return res or []
+                res = self.search(f"{album_name} {artist_name}", models=[tidalapi.Album]).get('albums')
+
+            if res:
+                return [types.album_from_tidal_album(album) for album in res]
         except (ObjectNotFound, KeyError):
             return []
 
         return []
 
-    # TODO: refactor
     @cachebox.cached(cachebox.LRUCache(maxsize=128))
     @rate_limit
     def search_tracks(self, track_name: str = None, artist_name: str = None, isrc: str = None) -> list[Track]:
         try:
+            res = []
             if isrc:
-                return self.client.get_tracks_by_isrc(isrc.upper()) or []
+                res = self.client.get_tracks_by_isrc(isrc.upper())
             if track_name and artist_name:
-                return self.search(f"{track_name} {artist_name}").get('tracks') or []
+                res = self.search(f"{track_name} {artist_name}").get('tracks')
+
+            if res:
+                return [types.track_from_tidal_track(track) for track in res]
+
         except (ObjectNotFound, KeyError):
             return []
 
         return []
 
     # TODO: refactor
-    def search_for_track_in_album(self, album: Album, spotify_track: dict) -> Optional[Track]:
-        for track in self.get_album_tracks(album):
-            if self.get_track_matching_score(track, spotify_track) >= 4:
-                return track
-        return None
+    # def search_for_track_in_album(self, album: Album, spotify_track: dict) -> Optional[Track]:
+    #     for track in self.get_album_tracks(album):
+    #         if self.get_track_matching_score(track, spotify_track) >= 4:
+    #             return track
+    #     return None
+
+    def match_spotify_track(self, spotify_track: dict, quality: int) -> Optional[Track]:
+        pass
 
     # TODO: refactor
     def search_spotify_track(self, spotify_track: dict, quality: int) -> Optional[Track]:
@@ -177,58 +184,6 @@ class TidalManager:
                                     matches.append(track)
 
         return self.get_best_match(matches, spotify_track, quality) if matches else None
-
-    # TODO: refactor
-    def get_real_audio_quality(self, track: Track) -> str:
-        """Get the real audio quality of a track."""
-        if cfg.get('debug'):
-            print(
-                f"{track.id} - Qly:{track.audio_quality} - Atmos:{track.is_dolby_atmos} - Master:{track.is_hi_res_lossless} - HiRes:{track.is_lossless} - {self.get_stream(track).get_audio_resolution()}")
-
-        if track.is_dolby_atmos:
-            return "DOLBY_ATMOS"
-        elif track.is_hi_res_lossless:
-            return "HI_RES_LOSSLESS"
-        elif track.is_lossless:
-            if cfg.get("quality") >= 3:
-                return "HI_RES_LOSSLESS"
-            elif 'LOSSLESS' in track.media_metadata_tags:
-                return "LOSSLESS"
-            else:
-                return "LOW"
-        elif track.audio_quality == 'LOSSLESS':
-            return "LOSSLESS"
-
-        elif track.audio_quality == 'HIGH':
-            if cfg.get("quality") >= 2:
-                res = self.get_stream(track).get_audio_resolution()
-                if res[0] >= 16 and res[1] >= 44100:
-                    return "LOSSLESS"
-
-            log.warning(f"Strange audio quality for track {track.id}")
-            return "LOW"
-        else:
-            log.warning(f"Unknown audio quality for track {track.id}")
-            return "LOW"
-
-    # TODO: refactor
-    @cachebox.cached(cachebox.LRUCache(maxsize=64))
-    @rate_limit
-    def get_stream(self, track: Track) -> media.Stream:
-        """Get the stream of a track (uses caching)."""
-        return track.get_stream()
-
-    # TODO: refactor
-    @cachebox.cached(cachebox.LRUCache(maxsize=32))
-    def get_lyrics(self, track: Track) -> str:
-        """Get the lyrics of a track (uses caching)."""
-        try:
-            lyrics = track.lyrics()
-            return lyrics.subtitles or lyrics.text
-        except MetadataNotAvailable:
-            return ""
-        except KeyError:
-            return ""
 
     # TODO: refactor
     def get_best_match(self, tidal_tracks: list[Track], spotify_track: dict, quality: int) -> Optional[Track]:

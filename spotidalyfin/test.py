@@ -4,7 +4,7 @@ import unittest
 from spotidalyfin import cfg
 from spotidalyfin.managers.spotify_manager import SpotifyManager
 from spotidalyfin.managers.tidal_manager import TidalManager
-from spotidalyfin.managers.track import Album, Artist
+from spotidalyfin.managers.types import Album, Artist
 from spotidalyfin.utils.file_utils import parse_secrets_file
 
 
@@ -119,3 +119,18 @@ class TidalTests(unittest.TestCase):
     def test_get_artist(self):
         self.assertEqual(self.artist.name, "Lee Fields")
         self.assertEqual(self.artist.artist_id, "3643996")
+
+    def test_search_artist(self):
+        artist = self.tidal_manager.search_artists("Lee Fields")[0]
+        expected_artist = self.artist
+        self.assertEqual(artist, expected_artist)
+
+    def test_search_albums(self):
+        albums = self.tidal_manager.search_albums("Faithful", "Lee Fields")
+        self.assertTrue(len(albums) > 0)
+        self.assertTrue(self.album in albums)
+
+    def test_search_tracks(self):
+        tracks = self.tidal_manager.search_tracks("Wish You Were Here", "Lee Fields")
+        self.assertTrue(len(tracks) > 0)
+        self.assertTrue(self.track in tracks)

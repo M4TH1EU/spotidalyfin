@@ -10,8 +10,8 @@ import spotipy
 from spotipy import SpotifyOAuth, CacheFileHandler
 
 from spotidalyfin import cfg
-from spotidalyfin.managers import track
-from spotidalyfin.managers.track import Track, Album, Artist, Playlist
+from spotidalyfin.managers import types
+from spotidalyfin.managers.types import Track, Album, Artist, Playlist, Platform
 from spotidalyfin.utils.decorators import rate_limit
 
 
@@ -41,7 +41,7 @@ class SpotifyManager:
         """Fetches a single track by its ID."""
         try:
             spotipy_track = self.client.track(track_id)
-            return track.track_from_spotify_track(spotipy_track)
+            return types.track_from_spotify_track(spotipy_track)
         except spotipy.SpotifyException as e:
             raise ValueError(f"Failed to fetch track with ID {track_id}: {e}")
 
@@ -51,7 +51,7 @@ class SpotifyManager:
         """Fetches an album by its ID."""
         try:
             spotipy_album = self.client.album(album_id)
-            return track.album_from_spotify_album(spotipy_album)
+            return types.album_from_spotify_album(spotipy_album)
         except spotipy.SpotifyException as e:
             raise ValueError(f"Failed to fetch album with ID {album_id}: {e}")
 
@@ -61,7 +61,7 @@ class SpotifyManager:
         """Fetches an artist by their ID."""
         try:
             spotipy_artist = self.client.artist(artist_id)
-            return track.artist_from_spotify_artist(spotipy_artist)
+            return types.artist_from_spotify_artist(spotipy_artist)
         except spotipy.SpotifyException as e:
             raise ValueError(f"Failed to fetch artist with ID {artist_id}: {e}")
 
@@ -73,7 +73,7 @@ class SpotifyManager:
             results = self.client.search(q=artist_name, type='artist')
             artists = results.get('artists', {}).get('items', [])
             if artists:
-                return track.artist_from_spotify_artist(artists[0])
+                return types.artist_from_spotify_artist(artists[0])
             return None
         except spotipy.SpotifyException as e:
             raise ValueError(f"Failed to search for artist '{artist_name}': {e}")
@@ -91,7 +91,7 @@ class SpotifyManager:
                 results = self.client.current_user_saved_tracks(limit=limit, offset=offset)
                 items = results.get('items', [])
                 tracks.extend(
-                    track.track_from_spotify_track(item['track'])
+                    types.track_from_spotify_track(item['track'])
                     for item in items
                     if item.get('track')
                 )
@@ -103,6 +103,7 @@ class SpotifyManager:
                 raise ValueError(f"Failed to fetch liked songs: {e}")
 
         return Playlist(
+            platform=Platform.SPOTIFY,
             name="Liked Songs",
             image="",
             playlist_id="liked-songs",
@@ -111,8 +112,8 @@ class SpotifyManager:
 
     @cachebox.cached(cachebox.LRUCache(maxsize=128))
     @rate_limit
-    def load_playlist_tracks(self, playlist: Union[Playlist, str]) -> list[Track]:
-        """Loads all tracks from a given playlist."""
+    def retrieve_playlist_tracks(self, playlist: Union[Playlist, str], load_albums: bool = False) -> list[Track]:
+        """Retrieve all tracks from a given playlist (spotify id)."""
         tracks: list[Track] = []
         offset = 0
         limit = 50
@@ -126,8 +127,15 @@ class SpotifyManager:
                     offset=offset,
                     additional_types='track'
                 )
+
+                # TODO: make it change results to add album details
+                if load_albums:
+                    for result in results['items']:
+                        album = self.client.album(result['track']['album']['id'])
+                        result['album'] = album
+
                 tracks.extend(
-                    track.track_from_spotify_track(item['track'])
+                    types.track_from_spotify_track(item['track'])
                     for item in results.get('items', [])
                     if item.get('track')
                 )
@@ -142,16 +150,18 @@ class SpotifyManager:
 
     @cachebox.cached(cachebox.LRUCache(maxsize=32))
     @rate_limit
-    def get_playlist(self, playlist_id: str, load_tracks: bool = False) -> Playlist:
-        """Fetches a playlist by its ID and optionally loads its tracks."""
+    def get_playlist(self, playlist_id: str, retrieve_tracks: bool = False, retrieve_albums: bool = False) -> Playlist:
+        """Fetches a playlist by its ID and optionally retrieve its tracks and eventually the album details (retrieve_tracks must be True)."""
         try:
             spotipy_playlist = self.client.playlist(playlist_id)
-            tracks = self.load_playlist_tracks(playlist_id) if load_tracks else []
+            tracks = self.retrieve_playlist_tracks(playlist=playlist_id,
+                                                   load_albums=retrieve_albums) if retrieve_tracks else []
             return Playlist(
+                platform=Platform.SPOTIFY,
                 name=spotipy_playlist['name'],
                 image=spotipy_playlist['images'][0]['url'] if spotipy_playlist.get('images') else "",
                 playlist_id=playlist_id,
-                tracks=tracks
+                tracks=tracks,
             )
         except spotipy.SpotifyException as e:
             raise ValueError(f"Failed to fetch playlist with ID {playlist_id}: {e}")
@@ -166,10 +176,11 @@ class SpotifyManager:
             items = playlists_data.get('items', [])
             return [
                 Playlist(
+                    platform=Platform.SPOTIFY,
                     name=item['name'],
                     image=item['images'][0]['url'] if item.get('images') else "",
                     playlist_id=item['id'],
-                    tracks=[None] * item['tracks']['total']  # Placeholder for track list
+                    tracks=[]
                 )
                 for item in items
             ]
