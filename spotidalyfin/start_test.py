@@ -9,8 +9,9 @@ if __name__ == '__main__':
     cfg.get_config().update(parse_secrets_file(cfg.get("secrets").parent.parent / "spotidalyfin.secrets"))
     tidal_manager = TidalManager()
 
+    print("Fetching playlist songs")
     spotify_playlist = spotify_manager.get_playlist("5eJ5L8cS2iGsbEu47YWKvK", retrieve_tracks=True,
-                                                    retrieve_albums=True)
+                                                    retrieve_albums=False)
 
     for spotify_track in spotify_playlist.tracks:
         print(f"Searching for : {spotify_track.name} by {spotify_track.artist.name} from {spotify_track.album.name}")

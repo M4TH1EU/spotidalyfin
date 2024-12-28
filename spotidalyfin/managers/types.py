@@ -209,13 +209,17 @@ class Playlist:
 def track_from_spotify_track(spotify_track: dict) -> Track:
     return Track(
         platform=Platform.SPOTIFY,
-        name=spotify_track['name'],
-        artist=artist_from_spotify_artist(spotify_track['artists'][0]),
-        album=album_from_spotify_album(spotify_track['album']),
-        duration=int(spotify_track['duration_ms'] / 1000),
-        artists=[artist_from_spotify_artist(artist) for artist in spotify_track['artists']],
-        isrc=spotify_track['external_ids'].get('isrc'),
-        track_id=spotify_track['id']
+        name=spotify_track.get('name'),
+        artist=artist_from_spotify_artist(spotify_track.get('artists')[0]),
+        album=album_from_spotify_album(spotify_track.get('album')),
+        duration=int(spotify_track.get('duration_ms', 0) / 1000),
+        artists=[artist_from_spotify_artist(artist) for artist in spotify_track.get('artists', [])],
+        isrc=spotify_track.get('external_ids', {}).get('isrc'),
+        track_id=spotify_track.get('id'),
+        cover_url=spotify_track.get('album', {}).get('images', [{}])[0].get('url'),
+        track_number=spotify_track.get('track_number'),
+        disc_number=spotify_track.get('disc_number'),
+        release_date=parse_date(spotify_track.get('album', {}).get('release_date'))
     )
 
 
@@ -258,15 +262,15 @@ def track_from_tidal_track(tidal_track: tidalapi.Track) -> Track:
     )
 
 
-def album_from_spotify_album(spotify_album) -> Album:
+def album_from_spotify_album(spotify_album: dict) -> Album:
     return Album(
         platform=Platform.SPOTIFY,
-        name=spotify_album['name'],
-        artists=[artist_from_spotify_artist(artist) for artist in spotify_album['artists']],
-        release_date=parse_date(spotify_album['release_date']),
-        tracks=[None for _ in range(spotify_album['total_tracks'])],
-        album_id=spotify_album['id'],
-        barcode=spotify_album['external_ids']['upc'] or None
+        name=spotify_album.get('name', ''),
+        artists=[artist_from_spotify_artist(artist) for artist in spotify_album.get('artists', [])],
+        release_date=parse_date(spotify_album.get('release_date')),
+        tracks=[None for _ in range(spotify_album.get('total_tracks', 0))],
+        album_id=spotify_album.get('id'),
+        barcode=spotify_album.get('external_ids', {}).get('upc')
     )
 
 
@@ -290,8 +294,8 @@ def album_from_tidal_album(tidal_album: tidalapi.Album, load_tracks: bool = Fals
 def artist_from_spotify_artist(spotify_artist) -> Artist:
     return Artist(
         platform=Platform.SPOTIFY,
-        name=spotify_artist['name'],
-        artist_id=spotify_artist['id'],
+        name=spotify_artist.get('name', ''),
+        artist_id=spotify_artist.get('id', ''),
         genres=spotify_artist.get('genres', [])
     )
 

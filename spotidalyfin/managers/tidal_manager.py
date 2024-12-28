@@ -105,9 +105,13 @@ class TidalManager:
     def search_tracks(self, track_name: str = None, artist_name: str = None, isrc: str = None) -> list[Track]:
         try:
             res = []
+
+            # First search by ISRC
             if isrc:
                 res = self.client.get_tracks_by_isrc(isrc.upper())
-            if track_name and artist_name:
+
+            # If no results, search by track name and artist name
+            if not res and track_name and artist_name:
                 res = self.search(f"{track_name} {artist_name}").get('tracks')
 
             if res:
