@@ -125,8 +125,8 @@ class TidalManager:
     #             return track
     #     return None
 
-    def match_spotify_track(self, spotify_track: dict, quality: int) -> Optional[Track]:
-        pass
+    # def match_spotify_track(self, spotify_track: dict, quality: int) -> Optional[Track]:
+    #     pass
 
     # TODO: refactor
     def search_spotify_track(self, spotify_track: dict, quality: int) -> Optional[Track]:

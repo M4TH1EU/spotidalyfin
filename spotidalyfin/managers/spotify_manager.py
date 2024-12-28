@@ -128,11 +128,10 @@ class SpotifyManager:
                     additional_types='track'
                 )
 
-                # TODO: make it change results to add album details
                 if load_albums:
-                    for result in results['items']:
-                        album = self.client.album(result['track']['album']['id'])
-                        result['album'] = album
+                    for _ in range(len(results['items'])):
+                        album = self.client.album(results['items'][_]['track']['album']['id'])
+                        results['items'][_]['track']['album'] = album
 
                 tracks.extend(
                     types.track_from_spotify_track(item['track'])

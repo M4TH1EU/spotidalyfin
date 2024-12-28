@@ -2,8 +2,10 @@ from datetime import datetime
 from enum import Enum
 from typing import Self
 
+import requests
 import tidalapi
 from tidalapi.exceptions import MetadataNotAvailable
+from tidalapi.media import StreamManifest
 
 from spotidalyfin.utils.comparisons import close, weighted_word_overlap
 from spotidalyfin.utils.formatting import parse_date
@@ -20,6 +22,29 @@ class TrackQuality(Enum):
     LOW = 1
     LOSSLESS = 2
     HI_RES_LOSSLESS = 3
+
+
+class Metadata:
+    def __init__(self, title: str = "", album: str = "", albumartist: str = "", artist: str = "", copy_right: str = "",
+                 tracknumber: int = 1,
+                 discnumber: int = 1, totaldiscs: int = 1, totaltracks: int = 1, date: datetime = datetime.now(),
+                 isrc: str = "", lyrics: str = "", cover_url: str = "",
+                 spotify_id: str = "", tidal_id: str = ""):
+        self.title = title
+        self.album = album
+        self.albumartist = albumartist
+        self.artist = artist
+        self.copy_right = copy_right
+        self.tracknumber = tracknumber
+        self.discnumber = discnumber
+        self.totaldiscs = totaldiscs
+        self.totaltracks = totaltracks
+        self.date = date.strftime("%Y-%m-%d")
+        self.isrc = isrc
+        self.lyrics = lyrics
+        self.cover_url = cover_url
+        self.spotify_id = spotify_id
+        self.tidal_id = tidal_id
 
 
 class Artist:
@@ -40,7 +65,7 @@ class Artist:
 
 class Album:
     def __init__(self, platform: Platform, name: str, artists: list[Artist], release_date: datetime, tracks: list,
-                 album_id: str | int, barcode: str | int):
+                 album_id: str | int, barcode: str | int, cover_url: str = None, num_volumes: int = None):
         self.platform = platform
         self.name = name
         self.artists = artists
@@ -48,6 +73,8 @@ class Album:
         self.tracks = tracks
         self.album_id = str(album_id).lower()
         self.barcode = str(barcode).lower()
+        self.cover_url = cover_url
+        self.num_volumes = num_volumes
 
     def __str__(self):
         return f"{self.name} by {self.artists[0]} released on {self.release_date.date()}"
@@ -64,7 +91,9 @@ class Album:
 
 class Track:
     def __init__(self, platform: Platform, name: str, artist: Artist, album: Album, duration: int, artists: list,
-                 isrc: str = None, track_id: str = None, lyrics: str = None, quality: TrackQuality = None):
+                 isrc: str = None, track_id: str = None, lyrics: str = None, quality: TrackQuality = None,
+                 stream_manifest: StreamManifest = None, copyright: str = None, track_number: int = None,
+                 disc_number: int = None, release_date: datetime = None, cover_url: str = None):
         self.platform = platform
         self.name = name
         self.artist = artist
@@ -75,6 +104,12 @@ class Track:
         self.id = track_id
         self.lyrics = lyrics
         self.quality = quality
+        self.stream_manifest = stream_manifest
+        self.copyright = copyright
+        self.track_number = track_number
+        self.disc_number = disc_number
+        self.release_date = release_date
+        self.cover_url = cover_url
 
     def __str__(self):
         return f"{self.name} by {self.artist} from {self.album.name}"
@@ -91,7 +126,25 @@ class Track:
                     and self.platform == other.platform)
         return False
 
+    def metadata(self) -> Metadata:
+        return Metadata(
+            title=self.name,
+            album=self.album.name,
+            albumartist=self.album.artists[0].name,
+            artist=self.artist.name,
+            copy_right=self.copyright,
+            tracknumber=self.track_number,
+            discnumber=self.disc_number,
+            totaldiscs=self.album.num_volumes,
+            totaltracks=len(self.album.tracks),
+            date=self.release_date,
+            isrc=self.isrc,
+            lyrics=self.lyrics,
+            cover_url=self.cover_url
+        )
+
     def matches(self, other: Self) -> bool:
+        """Check if two tracks object represent the same track regardless of the platform"""
         if not isinstance(other, Track):
             return False
 
@@ -112,6 +165,25 @@ class Track:
                 same_artists = False
         if same_artists:
             score += 1
+
+        other.score = score
+
+        return score >= 3.5
+
+    def download(self) -> bytes:
+        if self.platform == Platform.SPOTIFY:
+            raise NotImplementedError("Downloading from Spotify is not supported")
+        elif self.platform == Platform.TIDAL:
+            download_urls = self.stream_manifest.get_urls()
+            mimetype = self.stream_manifest.mime_type.split("/")[-1]
+
+            bytes_response = b""
+            for url in download_urls:
+                response = requests.get(url, stream=True, timeout=10)
+                response.raise_for_status()
+                bytes_response += response.content
+
+            return bytes_response
 
 
 class Playlist:
@@ -163,7 +235,7 @@ def track_from_tidal_track(tidal_track: tidalapi.Track) -> Track:
         try:
             result = track.lyrics()
             return result.subtitles or result.text
-        except MetadataNotAvailable | KeyError:
+        except MetadataNotAvailable:
             return ""
 
     return Track(
@@ -176,7 +248,13 @@ def track_from_tidal_track(tidal_track: tidalapi.Track) -> Track:
         isrc=tidal_track.isrc,
         track_id=tidal_track.id,
         quality=real_quality(tidal_track),
-        lyrics=lyrics(tidal_track)
+        # lyrics=lyrics(tidal_track), # really slow
+        stream_manifest=tidal_track.get_stream().get_stream_manifest(),
+        copyright=tidal_track.copyright,
+        track_number=tidal_track.track_num,
+        disc_number=tidal_track.volume_num,
+        release_date=tidal_track.tidal_release_date,
+        cover_url=tidal_track.album.image(1280)
     )
 
 
