@@ -56,5 +56,9 @@ if __name__ == '__main__':
             with open(out_file, "wb") as file:
                 file.write(raw_data)
 
-            print("Saved. Done!")
+            print("Saved. Writing metadata...")
+
+            metadata.write_to_file(out_file)
+
+            print("Done.")
             print("")
