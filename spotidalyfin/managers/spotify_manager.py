@@ -3,7 +3,7 @@
 import random
 import time
 from pathlib import Path
-from typing import Optional, Union
+from typing import Optional
 
 import cachebox
 import spotipy
@@ -110,57 +110,48 @@ class SpotifyManager:
             tracks=tracks
         )
 
-    @cachebox.cached(cachebox.LRUCache(maxsize=128))
-    @rate_limit
-    def retrieve_playlist_tracks(self, playlist: Union[Playlist, str], load_albums: bool = False) -> list[Track]:
-        """Retrieve all tracks from a given playlist (spotify id)."""
-        tracks: list[Track] = []
-        offset = 0
-        limit = 50
-
-        while True:
-            try:
-                playlist_id = playlist if isinstance(playlist, str) else playlist.playlist_id
-                results = self.client.playlist_items(
-                    playlist_id=playlist_id,
-                    limit=limit,
-                    offset=offset,
-                    additional_types='track'
-                )
-
-                if load_albums:
-                    for _ in range(len(results['items'])):
-                        album = self.client.album(results['items'][_]['track']['album']['id'])
-                        results['items'][_]['track']['album'] = album
-
-                tracks.extend(
-                    types.track_from_spotify_track(item['track'])
-                    for item in results.get('items', [])
-                    if item.get('track')
-                )
-                if not results.get('next'):
-                    break
-                offset += limit
-                time.sleep(random.uniform(0.1, 0.3))
-            except spotipy.SpotifyException as e:
-                raise ValueError(f"Failed to fetch tracks for playlist {playlist}: {e}")
-
-        return tracks
-
     @cachebox.cached(cachebox.LRUCache(maxsize=32))
     @rate_limit
-    def get_playlist(self, playlist_id: str, retrieve_tracks: bool = False, retrieve_albums: bool = False) -> Playlist:
+    def get_playlist(self, playlist_id: str, retrieve_all_tracks: bool = False,
+                     retrieve_all_albums_details: bool = False) -> Playlist:
         """Fetches a playlist by its ID and optionally retrieve its tracks and eventually the album details (retrieve_tracks must be True)."""
         try:
-            spotipy_playlist = self.client.playlist(playlist_id)
-            tracks = self.retrieve_playlist_tracks(playlist=playlist_id,
-                                                   load_albums=retrieve_albums) if retrieve_tracks else []
+            spotipy_playlist = self.client.playlist(playlist_id)  # already loads the first 100 tracks
+
+            if retrieve_all_tracks:
+                while True:
+                    try:
+                        results = self.client.playlist_items(
+                            playlist_id=playlist_id,
+                            limit=100,
+                            offset=len(spotipy_playlist['tracks']['items']),
+                            additional_types='track'
+                        )
+
+                        spotipy_playlist['tracks']['items'].extend(results['items'])
+
+                        if not results.get('next'):
+                            break
+
+                        # time.sleep(random.uniform(0.1, 0.3))
+                    except spotipy.SpotifyException as e:
+                        raise ValueError(f"Failed to fetch tracks for playlist {playlist_id}: {e}")
+
+            if retrieve_all_albums_details:
+                for _ in range(len(spotipy_playlist['tracks']['items'])):
+                    album = self.client.album(spotipy_playlist['tracks']['items'][_]['track']['album']['id'])
+                    spotipy_playlist['tracks']['items'][_]['track']['album'] = album
+
             return Playlist(
                 platform=Platform.SPOTIFY,
                 name=spotipy_playlist['name'],
                 image=spotipy_playlist['images'][0]['url'] if spotipy_playlist.get('images') else "",
                 playlist_id=playlist_id,
-                tracks=tracks,
+                tracks=[
+                    types.track_from_spotify_track(item['track'])
+                    for item in spotipy_playlist['tracks']['items']
+                    if item.get('track')
+                ]
             )
         except spotipy.SpotifyException as e:
             raise ValueError(f"Failed to fetch playlist with ID {playlist_id}: {e}")

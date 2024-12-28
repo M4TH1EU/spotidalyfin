@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from spotidalyfin import cfg
 from spotidalyfin.managers.spotify_manager import SpotifyManager
 from spotidalyfin.managers.tidal_manager import TidalManager
@@ -10,8 +12,8 @@ if __name__ == '__main__':
     tidal_manager = TidalManager()
 
     print("Fetching playlist songs")
-    spotify_playlist = spotify_manager.get_playlist("5eJ5L8cS2iGsbEu47YWKvK", retrieve_tracks=True,
-                                                    retrieve_albums=False)
+    spotify_playlist = spotify_manager.get_playlist("0ubAoSc3fASZQOcKNlVCzd", retrieve_all_tracks=True,
+                                                    retrieve_all_albums_details=False)
 
     for spotify_track in spotify_playlist.tracks:
         print(f"Searching for : {spotify_track.name} by {spotify_track.artist.name} from {spotify_track.album.name}")
@@ -36,6 +38,23 @@ if __name__ == '__main__':
             list_of_matches.sort(key=lambda x: x.quality.value + x.score, reverse=True)
             print(
                 f"Best match : {list_of_matches[0].name} by {list_of_matches[0].artist.name} from {list_of_matches[0].album.name} - {list_of_matches[0].quality.name} - {list_of_matches[0].score}")
-            print("")
+
+            print("Downloading...")
+
+            path = Path(cfg.get("out-dir"))
+            path.mkdir(parents=True, exist_ok=True)
 
             raw_data = list_of_matches[0].download()
+
+            print("Downloaded, saving...")
+
+            metadata = list_of_matches[0].metadata()
+
+            out_file = metadata.generate_path(base_path=path, extension="flac")
+            out_file.parent.mkdir(parents=True, exist_ok=True)
+
+            with open(out_file, "wb") as file:
+                file.write(raw_data)
+
+            print("Saved. Done!")
+            print("")

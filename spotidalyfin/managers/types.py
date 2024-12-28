@@ -1,13 +1,18 @@
 from datetime import datetime
 from enum import Enum
+from pathlib import Path
 from typing import Self
 
 import requests
 import tidalapi
+from mutagen.flac import FLAC, Picture
+from mutagen.id3 import TALB, TCOP, TDRC, TIT2, TOPE, TPE1, TRCK, TSRC, USLT, ID3, APIC
+from mutagen.mp3 import MP3
 from tidalapi.exceptions import MetadataNotAvailable
 from tidalapi.media import StreamManifest
 
 from spotidalyfin.utils.comparisons import close, weighted_word_overlap
+from spotidalyfin.utils.file_utils import open_image_url
 from spotidalyfin.utils.formatting import parse_date
 
 
@@ -45,6 +50,69 @@ class Metadata:
         self.cover_url = cover_url
         self.spotify_id = spotify_id
         self.tidal_id = tidal_id
+
+    def write_to_file(self, path: Path):
+        if not path.exists():
+            raise FileNotFoundError(f"File {path} does not exist")
+
+        if "flac" in path.suffix.lower():
+            audio = FLAC(path)
+            audio.clear()
+            audio["title"] = self.title
+            audio["album"] = self.album
+            audio["albumartist"] = self.albumartist
+            audio["artist"] = self.artist
+            audio["copy_right"] = self.copy_right
+            audio["tracknumber"] = self.tracknumber
+            audio["discnumber"] = self.discnumber
+            audio["totaldiscs"] = self.totaldiscs
+            audio["totaltrack"] = self.totaltracks
+            audio["date"] = self.date
+            audio["isrc"] = self.isrc
+            audio["lyrics"] = self.lyrics
+            if hasattr(self, "spotify_id"):
+                audio["spotify_id"] = self.spotify_id
+            if hasattr(self, "tidal_id"):
+                audio["tidal_id"] = self.tidal_id
+
+            cover = Picture()
+            cover.type = 3
+            cover.mime = "image/jpeg" if self.cover_url.endswith(".jpg") else "image/png"
+            cover.desc = "front cover"
+            cover.data = open_image_url(self.cover_url)
+            audio.add_picture(cover)
+            audio.save()
+        elif "mp3" in path.suffix.lower():
+            audio = MP3(path, ID3=ID3)
+            audio.clear()
+            audio.tags.add(TIT2(encoding=3, text=self.title))
+            audio.tags.add(TALB(encoding=3, text=self.album))
+            audio.tags.add(TPE1(encoding=3, text=self.artist))
+            audio.tags.add(TOPE(encoding=3, text=self.albumartist))
+            audio.tags.add(TCOP(encoding=3, text=self.copy_right))
+            audio.tags.add(TRCK(encoding=3, text=self.tracknumber))
+            audio.tags.add(TRCK(encoding=3, text=self.discnumber))
+            audio.tags.add(TDRC(encoding=3, text=self.date))
+            audio.tags.add(TSRC(encoding=3, text=self.isrc))
+            audio.tags.add(USLT(encoding=3, text=self.lyrics))
+            audio.tags.add(
+                APIC(encoding=3, mime="image/jpeg", type=3, desc="Cover", data=open_image_url(self.cover_url)))
+            audio.save()
+
+    def generate_path(self, base_path: Path, extension: str = "flac") -> Path:
+        # Format track number and disc number with leading zeros
+        track_number_str = f"{int(self.tracknumber):02}" if self.tracknumber else "00"
+
+        # Sanitize strings to avoid invalid characters in file paths
+        def sanitize(value):
+            return "".join(c if c.isalnum() or c in " _-()" else "_" for c in value)
+
+        sanitized_albumartist = sanitize(self.albumartist or "Unknown Artist")
+        sanitized_album = sanitize(self.album or "Unknown Album")
+        sanitized_title = sanitize(self.title or "Untitled")
+
+        # Create path structure: base_dir/AlbumArtist/Album/TrackNumber - Title
+        return base_path / sanitized_albumartist / sanitized_album / f"{track_number_str} - {sanitized_title}.{extension}"
 
 
 class Artist:
