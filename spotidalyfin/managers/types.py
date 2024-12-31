@@ -14,13 +14,16 @@ import tidalapi
 from mutagen.flac import FLAC, Picture
 from mutagen.id3 import TALB, TCOP, TDRC, TIT2, TOPE, TPE1, TRCK, TSRC, USLT, ID3, APIC
 from mutagen.mp3 import MP3
+from requests import ReadTimeout
 from tidalapi import Role
 from tidalapi.exceptions import MetadataNotAvailable
 from tidalapi.media import StreamManifest, AudioExtensions
+from unidecode import unidecode
 
 from spotidalyfin.utils.comparisons import weighted_word_overlap
 from spotidalyfin.utils.file_utils import open_image_url
 from spotidalyfin.utils.formatting import parse_date
+from spotidalyfin.utils.logger import log
 
 
 class Platform(Enum):
@@ -63,6 +66,7 @@ def get_acoustid_fingerprint(file: Path) -> str:
 
 def query_musicbrainz(irsc: str) -> dict:
     """Query MusicBrainz for additional metadata based on the ISRC."""
+    musicbrainzngs.set_useragent("spotidalyfin", "0.1")
     result = musicbrainzngs.get_recordings_by_isrc(irsc, includes=["artists", "releases"])
 
     artist_ids = [
@@ -149,6 +153,10 @@ class Metadata:
         audio["isrc"] = self.track.isrc or ""
         audio["lyrics"] = self.track.lyrics or ""
 
+        if self.track.isrc:  # TODO: add option to disable this
+            for k, v in query_musicbrainz(self.track.isrc).items():
+                audio[k] = v
+
         # Add cover art
         if self.track.cover_url:
             cover = Picture()
@@ -196,12 +204,12 @@ class Metadata:
         track_number_str = f"{int(self.track.track_number):02}" if self.track.track_number else "00"
 
         # Sanitize strings to avoid invalid characters in file paths
-        def sanitize(value: str) -> str:
-            return "".join(c if c.isalnum() or c in " _-()" else "_" for c in value)
+        # def sanitize(value: str) -> str:
+        #     return "".join(c if c.isalnum() or c in " _-()" else "_" for c in value)
 
-        sanitized_albumartist = sanitize(self.track.album.artists[0].name or "Unknown Artist")
-        sanitized_album = sanitize(self.track.album.name or "Unknown Album")
-        sanitized_title = sanitize(self.track.name or "Untitled")
+        sanitized_albumartist = unidecode(self.track.album.artists[0].name or "Unknown Artist")
+        sanitized_album = unidecode(self.track.album.name or "Unknown Album")
+        sanitized_title = unidecode(self.track.name or "Untitled")
 
         # Construct the path: base_dir/AlbumArtist/Album/TrackNumber - Title
         return base_path / sanitized_albumartist / sanitized_album / f"{track_number_str} - {sanitized_title}.{extension}"
@@ -222,6 +230,7 @@ class Artist:
     def __post_init__(self):
         # Normalize artist ID to lowercase
         self.artist_id = str(self.artist_id).lower()
+        self.name = unidecode(self.name)
 
     def __str__(self) -> str:
         return self.name
@@ -229,7 +238,7 @@ class Artist:
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Artist):
             return False
-        return self.artist_id == other.artist_id and self.name == other.name
+        return self.name == other.name
 
 
 @dataclass
@@ -249,6 +258,7 @@ class Album:
 
     def __post_init__(self):
         # Normalize album ID and barcode to lowercase strings
+        self.name = unidecode(self.name)
         self.album_id = str(self.album_id).lower()
         self.barcode = str(self.barcode).lower()
 
@@ -294,6 +304,7 @@ class Track:
     def __post_init__(self):
         if self.isrc:
             self.isrc = self.isrc.upper()
+        self.name = unidecode(self.name)
 
     def __str__(self) -> str:
         return f"{self.name} by {self.artist} from {self.album.name}"
@@ -344,6 +355,8 @@ class Track:
             score += 1
         if weighted_word_overlap(self.album.name, other.album.name) > 0.35:
             score += 1.5
+        if other.album.name == self.name:  # If the album name is the same as the track name (e.g. singles)
+            score += 0.5
         if all(artist in self.artists for artist in other.artists):
             score += 1
 
@@ -352,7 +365,7 @@ class Track:
 
         return score >= 3.5, score
 
-    def download(self) -> (bytes, str):
+    def download(self, retry_count=3) -> (bytes, str):
         """
         Downloads the track's audio file based on the platform and manifest.
 
@@ -364,33 +377,45 @@ class Track:
             NotImplementedError: If the platform does not support downloading.
             requests.HTTPError: For HTTP-related errors during download.
         """
-        if self.platform == Platform.SPOTIFY:
-            raise NotImplementedError("Downloading from Spotify is not supported.")
-        elif self.platform == Platform.TIDAL:
-            if not self.stream_manifest:
-                raise ValueError("Stream manifest is missing.")
-            download_urls = self.stream_manifest.get_urls()
 
-            match self.stream_manifest.file_extension:
-                case AudioExtensions.M4A:
-                    file_extension = "m4a"
-                case AudioExtensions.FLAC:
-                    file_extension = "flac"
-                case AudioExtensions.MP4:
-                    raise ValueError("Video files are not supported.")
-                case _:
-                    raise ValueError(f"Unsupported file extension: {self.stream_manifest.file_extension}")
+        def _download():
+            if self.platform == Platform.SPOTIFY:
+                raise NotImplementedError("Downloading from Spotify is not supported.")
+            elif self.platform == Platform.TIDAL:
+                if not self.stream_manifest:
+                    raise ValueError("Stream manifest is missing.")
+                download_urls = self.stream_manifest.get_urls()
 
-            # Use bytearray for efficient byte concatenation
-            bytes_response = bytearray()
-            for url in download_urls:
-                response = requests.get(url, stream=True, timeout=10)
-                response.raise_for_status()
-                bytes_response.extend(response.content)
+                match self.stream_manifest.file_extension:
+                    case AudioExtensions.M4A:
+                        file_extension = "m4a"
+                    case AudioExtensions.FLAC:
+                        file_extension = "flac"
+                    case AudioExtensions.MP4:
+                        raise ValueError("Video files are not supported.")
+                    case _:
+                        raise ValueError(f"Unsupported file extension: {self.stream_manifest.file_extension}")
 
-            return bytes(bytes_response), file_extension
-        else:
-            raise NotImplementedError(f"Downloading is not supported for {self.platform}.")
+                # Use bytearray for efficient byte concatenation
+                bytes_response = bytearray()
+
+                for url in download_urls:
+                    response = requests.get(url, stream=True, timeout=30)
+                    response.raise_for_status()
+                    for chunk in response.iter_content(chunk_size=8192):
+                        bytes_response.extend(chunk)
+
+                return bytes(bytes_response), file_extension
+            else:
+                raise NotImplementedError(f"Downloading is not supported for {self.platform}.")
+
+        try:
+            return _download()
+        except ReadTimeout as e:
+            if retry_count <= 0:
+                raise e
+            log.warning(f"Download failed: {e}. Retrying {retry_count} more times.")
+            return self.download(retry_count - 1)
 
 
 @dataclass
