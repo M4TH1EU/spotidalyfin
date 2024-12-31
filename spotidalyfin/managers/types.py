@@ -67,19 +67,28 @@ def get_acoustid_fingerprint(file: Path) -> str:
 def query_musicbrainz(irsc: str) -> dict:
     """Query MusicBrainz for additional metadata based on the ISRC."""
     musicbrainzngs.set_useragent("spotidalyfin", "0.1")
-    result = musicbrainzngs.get_recordings_by_isrc(irsc, includes=["artists", "releases"])
+    result: dict = musicbrainzngs.get_recordings_by_isrc(irsc, includes=["artists", "releases"])
+
+    if not result.get("isrc", {}).get("recording-list"):
+        return {}
 
     artist_ids = [
-        artist["artist"]["id"] for artist in result["isrc"]["recording-list"][0]["artist-credit"]
-        if "artist" in artist and "id" in artist["artist"]
+        artist.get('artist', {}).get('id') for artist in
+        result.get('isrc', {}).get('recording-list', [{}])[0].get('artist-credit', [])
+        if artist.get('artist', {}).get('id')
     ]
 
     return {
-        "MUSICBRAINZ_TRACKID": result["isrc"]["recording-list"][0]["id"],
-        "MUSICBRAINZ_ALBUMID": result["isrc"]["recording-list"][0]["release-list"][0]["id"],
-        "BARCODE": result["isrc"]["recording-list"][0]["release-list"][0]["barcode"],
+        "MUSICBRAINZ_TRACKID": result.get("isrc", {}).get("recording-list", [{}])[0].get("id"),
+        "MUSICBRAINZ_ALBUMID": result.get("isrc", {}).get("recording-list", [{}])[0].get("release-list", [{}])[0].get(
+            "id"),
+        "BARCODE": result.get("isrc", {}).get("recording-list", [{}])[0].get("release-list", [{}])[0].get("barcode"),
         "MUSICBRAINZ_ARTISTID": artist_ids,
-        "MUSICBRAINZ_ALBUMARTISTID": artist_ids
+        "MUSICBRAINZ_ALBUMARTISTID": artist_ids,
+        "DATE": result.get("isrc", {}).get("recording-list", [{}])[0].get("release-list", [{}])[0].get("date"),
+        "ORIGINALDATE": result.get("isrc", {}).get("recording-list", [{}])[0].get("release-list", [{}])[0].get("date"),
+        "ORIGINALYEAR": result.get("isrc", {}).get("recording-list", [{}])[0].get("release-list", [{}])[0].get("date")[
+                        :4],
     }
 
 
@@ -155,7 +164,8 @@ class Metadata:
 
         if self.track.isrc:  # TODO: add option to disable this
             for k, v in query_musicbrainz(self.track.isrc).items():
-                audio[k] = v
+                if v:
+                    audio[k] = v
 
         # Add cover art
         if self.track.cover_url:
