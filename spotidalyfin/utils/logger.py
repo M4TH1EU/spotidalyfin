@@ -9,7 +9,7 @@ def setup_logger(debug: bool = False):
     log.handlers.clear()
 
     # Prevent tidalapi from logging
-    logging.getLogger('tidalapi.request').disabled = True
+    logging.getLogger('tidalapi.settings').disabled = True
     logging.getLogger('tidalapi.session').disabled = True
 
     # Prevent rich from propagating logs to root logger
