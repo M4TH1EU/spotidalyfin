@@ -140,7 +140,7 @@ def get_as_base64(url: str) -> bytes:
         return b""
 
 
-def convert_m4a_bytes_to_flac(input_bytes: bytes, timeout=25) -> bytes:
+def convert_m4a_bytes_to_flac(input_bytes: bytes, timeout=10) -> bytes:
     """
     Convert an M4A byte stream with a FLAC audio stream to a FLAC byte stream.
 
@@ -156,9 +156,9 @@ def convert_m4a_bytes_to_flac(input_bytes: bytes, timeout=25) -> bytes:
         process = subprocess.run(
             [
                 "ffmpeg",
-                "-y",  # Overwrite existing files (not needed for bytes but safe to include)
                 "-i", "pipe:0",  # Use pipe as input (stdin)
                 "-f", "flac",  # Specify output format as FLAC
+                "-c:a", "copy",  # Copy audio codec (no re-encoding it's already FLAC inside M4A)
                 "pipe:1"  # Use pipe as output (stdout)
             ],
             input=input_bytes,  # Provide the byte array as input

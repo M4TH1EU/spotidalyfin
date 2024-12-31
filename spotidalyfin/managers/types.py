@@ -412,8 +412,7 @@ class Track:
                 for url in download_urls:
                     response = requests.get(url, stream=True, timeout=30)
                     response.raise_for_status()
-                    for chunk in response.iter_content(chunk_size=8192):
-                        bytes_response.extend(chunk)
+                    bytes_response.extend(response.content)
 
                 return bytes(bytes_response), file_extension
             else:
