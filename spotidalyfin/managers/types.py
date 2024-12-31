@@ -7,6 +7,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Optional, List
 
+import acoustid
+import musicbrainzngs
 import requests
 import tidalapi
 from mutagen.flac import FLAC, Picture
@@ -46,6 +48,35 @@ def _generate_artists_string(artists: list[Artist]) -> str:
                 output += f"& {artist.name} "  # If there are multiple featured artists
 
     return output.strip()
+
+
+def get_acoustid_fingerprint(file: Path) -> str:
+    """Query AcoustID for metadata based on the audio file."""
+    duration, fingerprint = acoustid.fingerprint_file(file)
+    duration = 170
+    print(f"Fingerprint: {fingerprint}, Duration: {duration}")
+
+    res = acoustid.lookup("YjwCJxwC0r", fingerprint, duration)  # public key for testing, please don't abuse
+
+    return res['results'][0]['id'] if res['results'] else ""
+
+
+def query_musicbrainz(irsc: str) -> dict:
+    """Query MusicBrainz for additional metadata based on the ISRC."""
+    result = musicbrainzngs.get_recordings_by_isrc(irsc, includes=["artists", "releases"])
+
+    artist_ids = [
+        artist["artist"]["id"] for artist in result["isrc"]["recording-list"][0]["artist-credit"]
+        if "artist" in artist and "id" in artist["artist"]
+    ]
+
+    return {
+        "MUSICBRAINZ_TRACKID": result["isrc"]["recording-list"][0]["id"],
+        "MUSICBRAINZ_ALBUMID": result["isrc"]["recording-list"][0]["release-list"][0]["id"],
+        "BARCODE": result["isrc"]["recording-list"][0]["release-list"][0]["barcode"],
+        "MUSICBRAINZ_ARTISTID": artist_ids,
+        "MUSICBRAINZ_ALBUMARTISTID": artist_ids
+    }
 
 
 @dataclass
@@ -262,7 +293,7 @@ class Track:
 
     def __post_init__(self):
         if self.isrc:
-            self.isrc = self.isrc.lower()
+            self.isrc = self.isrc.upper()
 
     def __str__(self) -> str:
         return f"{self.name} by {self.artist} from {self.album.name}"
