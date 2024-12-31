@@ -8,7 +8,6 @@ from pathlib import Path
 import requests
 from PIL import Image
 from PIL.Image import Resampling
-from ffmpeg import FFmpeg, FFmpegError
 
 from spotidalyfin.utils.logger import log
 
@@ -132,29 +131,74 @@ def open_image_url(url: str) -> bytes:
         return f.read()
 
 
-def get_as_base64(url):
+def get_as_base64(url: str) -> bytes:
+    """Get a URL content as base64. Useful for images."""
     try:
         return base64.b64encode(requests.get(url).content)
-    except:
+    except requests.RequestException:
         log.warning(f"Failed to get base64 from {url}")
-        return None
+        return b""
 
 
-def extract_flac_from_mp4(file_path: Path, timeout=25) -> Path:
-    """Extract a FLAC audio file from an MP4 file."""
-    file_out = file_path.with_suffix(".flac")
+def convert_m4a_bytes_to_flac(input_bytes: bytes, timeout=25) -> bytes:
+    """
+    Convert an M4A byte stream with a FLAC audio stream to a FLAC byte stream.
 
+    Args:
+        input_bytes (bytes): Input M4A data as a byte array.
+        timeout (int): Timeout for the conversion process.
+
+    Returns:
+        bytes: Output FLAC data as a byte array.
+    """
     try:
-        FFmpeg().option("y").input(str(file_path)).output(str(file_out), {"f": "flac"}).execute(timeout=timeout)
-    except FFmpegError as e:
-        log.error(f"Error extracting FLAC from MP4 {file_path} : {e}")
-        return file_path
+        # Run FFmpeg with stdin (input) and stdout (output)
+        process = subprocess.run(
+            [
+                "ffmpeg",
+                "-y",  # Overwrite existing files (not needed for bytes but safe to include)
+                "-i", "pipe:0",  # Use pipe as input (stdin)
+                "-f", "flac",  # Specify output format as FLAC
+                "pipe:1"  # Use pipe as output (stdout)
+            ],
+            input=input_bytes,  # Provide the byte array as input
+            stdout=subprocess.PIPE,  # Capture stdout for the FLAC output
+            stderr=subprocess.PIPE,  # Capture errors for debugging
+            timeout=timeout
+        )
+
+        # Check if FFmpeg succeeded
+        if process.returncode != 0:
+            raise subprocess.SubprocessError(f"FFmpeg error: {process.stderr.decode()}")
+
+        return process.stdout  # Return FLAC audio as bytes
     except subprocess.TimeoutExpired:
-        log.error(f"Timeout extracting FLAC from MP4 {file_path}")
-        return file_path
+        raise RuntimeError("FFmpeg process timed out")
+    except subprocess.SubprocessError as e:
+        raise RuntimeError(f"Error during FFmpeg conversion: {e}")
+
+
+def replace_m4a_by_flac(file_path: Path, timeout=25) -> Path:
+    """
+    Convert an M4A file to a FLAC file and replace the original file. Returns the new FLAC file path.
+    The original M4A file is deleted. This operation is irreversible!
+
+    Args:
+        file_path (Path): Path to the M4A file.
+        timeout (int): Timeout for the conversion process.
+
+    Returns:
+        Path: Path to the new FLAC file.
+    """
+    m4a_bytes = file_path.read_bytes()
+    flac_bytes = convert_m4a_bytes_to_flac(m4a_bytes, timeout)
+
+    new_path = file_path.with_suffix(".flac")
+    new_path.write_bytes(flac_bytes)
 
     file_path.unlink()
-    return file_out
+
+    return new_path
 
 
 def get_size_of_folder(folder: Path) -> int:
