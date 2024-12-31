@@ -12,8 +12,9 @@ import tidalapi
 from mutagen.flac import FLAC, Picture
 from mutagen.id3 import TALB, TCOP, TDRC, TIT2, TOPE, TPE1, TRCK, TSRC, USLT, ID3, APIC
 from mutagen.mp3 import MP3
+from tidalapi import Role
 from tidalapi.exceptions import MetadataNotAvailable
-from tidalapi.media import StreamManifest
+from tidalapi.media import StreamManifest, AudioExtensions
 
 from spotidalyfin.utils.comparisons import weighted_word_overlap
 from spotidalyfin.utils.file_utils import open_image_url
@@ -33,65 +34,97 @@ class TrackQuality(Enum):
     HI_RES_LOSSLESS = 3
 
 
+def _generate_artists_string(artists: list[Artist]) -> str:
+    output = ""
+    for artist in artists:
+        if artist.role == Role.main:
+            output += f"{artist.name} "
+        elif artist.role == Role.featured:
+            if "feat." not in output:
+                output += f"feat. {artist.name} "
+            else:
+                output += f"& {artist.name} "  # If there are multiple featured artists
+
+    return output.strip()
+
+
 @dataclass
 class Metadata:
-    title: str = ""
-    album: str = ""
-    albumartist: str = ""
-    artist: str = ""
-    copy_right: str = ""
-    tracknumber: int = 1
-    discnumber: int = 1
-    totaldiscs: int = 1
-    totaltracks: int = 1
-    date: Optional[datetime] = field(default_factory=datetime.now)
-    isrc: str = ""
-    lyrics: str = ""
-    cover_url: str = ""
-    spotify_id: str = ""
-    tidal_id: str = ""
+    track: Track
 
     def write_to_file(self, path: Path) -> None:
-        """Write metadata to a FLAC or MP3 file."""
+        """Write metadata to a FLAC, M4A or MP3 file."""
         if not path.exists():
             raise FileNotFoundError(f"File {path} does not exist")
 
         extension = path.suffix.lower()
         if "flac" in extension:
             self._write_flac_metadata(path)
+        elif "m4a" in extension:
+            # self._write_m4a_metadata(path)
+            raise NotImplementedError("M4A metadata writing is not supported yet.")
         elif "mp3" in extension:
             self._write_mp3_metadata(path)
         else:
             raise ValueError(f"Unsupported file format: {extension}")
 
+    # TODO: Implement M4A metadata writing (not perfect yet (isrc/cover))
+    # def _write_m4a_metadata(self, path: Path) -> None:
+    #     """Write metadata to a M4A file."""
+    #     audio = MP4(path)
+    #     tags = MP4Tags()
+    #     tags["\xa9nam"] = self.title or "Untitled"
+    #     tags["\xa9alb"] = self.album or "Unknown Album"
+    #     tags["\xa9ART"] = self.artist or self.albumartist or "Unknown Artist"
+    #     tags["aART"] = self.albumartist or "Unknown Artist"
+    #     tags["cprt"] = self.copy_right or ""
+    #     tags["trkn"] = [(self.tracknumber or 1, self.totaltracks or 1)]
+    #     tags["disk"] = [(self.discnumber or 1, self.totaldiscs or 1)]
+    #     tags["\xa9day"] = self.date.strftime("%Y-%m-%d") if self.date else ""
+    #     audio['\xa9isrc'] = self.isrc or ""
+    #     # audio["----:com.apple.iTunes:ISRC"] = [self.isrc or ""]
+    #     audio["\xa9lyr"] = self.lyrics or ""
+    #     if self.spotify_id:
+    #         audio["spotify_id"] = self.spotify_id
+    #     if self.tidal_id:
+    #         audio["tidal_id"] = self.tidal_id
+    #     audio["covr"] = [
+    #         MP4Cover(open_image_url(self.cover_url), imageformat=MP4Cover.FORMAT_JPEG if self.cover_url.endswith(
+    #             ".jpg") else MP4Cover.FORMAT_PNG)]
+    #     audio.tags = tags
+    #     audio.save()
+
     def _write_flac_metadata(self, path: Path) -> None:
         """Write metadata to a FLAC file."""
+
         audio = FLAC(path)
         audio.clear()  # Clear existing tags
-        audio["title"] = self.title
-        audio["album"] = self.album
-        audio["albumartist"] = self.albumartist
-        audio["artist"] = self.artist
-        audio["copy_right"] = self.copy_right
-        audio["tracknumber"] = str(self.tracknumber)
-        audio["discnumber"] = str(self.discnumber)
-        audio["totaldiscs"] = str(self.totaldiscs)
-        audio["totaltracks"] = str(self.totaltracks)
-        audio["date"] = self.date.strftime("%Y-%m-%d") if self.date else ""
-        audio["isrc"] = self.isrc
-        audio["lyrics"] = self.lyrics
-        if self.spotify_id:
-            audio["spotify_id"] = self.spotify_id
-        if self.tidal_id:
-            audio["tidal_id"] = self.tidal_id
+        audio["title"] = self.track.name or "Untitled"
+        audio["album"] = self.track.album.name or "Unknown Album"
+        audio["albumartist"] = _generate_artists_string(self.track.album.artists) or "Unknown Artist"
+        audio["albumartistsort"] = audio["albumartist"]
+        audio["barcode"] = ""  # TODO: Add barcode
+        audio["artist"] = _generate_artists_string([self.track.artist]) or "Unknown Artist"
+        audio["artistsort"] = _generate_artists_string(self.track.artists) or "Unknown Artist"
+        audio["artists"] = [x.name for x in self.track.artists]
+        audio["copy_right"] = self.track.copyright or ""
+        audio["tracknumber"] = str(self.track.track_number) or "1"
+        audio["discnumber"] = str(self.track.disc_number) or "1"
+        audio["totaldiscs"] = str(self.track.album.num_volumes) or "1"
+        audio["totaltracks"] = str(len(self.track.album.tracks)) or "1"
+        audio["date"] = self.track.release_date.strftime("%Y-%m-%d") if self.track.release_date else ""
+        audio["originaldate"] = audio["date"]
+        audio["originalyear"] = self.track.release_date.strftime("%Y") if self.track.release_date else ""
+        audio["isrc"] = self.track.isrc or ""
+        audio["lyrics"] = self.track.lyrics or ""
 
         # Add cover art
-        if self.cover_url:
+        if self.track.cover_url:
             cover = Picture()
             cover.type = 3  # Front cover
-            cover.mime = "image/jpeg" if self.cover_url.endswith(".jpg") else "image/png"
+            cover.mime = "image/jpeg" if self.track.cover_url.endswith(".jpg") else "image/png"
             cover.desc = "front cover"
-            cover.data = open_image_url(self.cover_url)
+            cover.data = open_image_url(self.track.cover_url)
             audio.add_picture(cover)
 
         audio.save()
@@ -101,27 +134,26 @@ class Metadata:
         audio = MP3(path, ID3=ID3)
         audio.delete()  # Clear existing tags
 
-        audio.tags.add(TIT2(encoding=3, text=self.title))  # Title
-        audio.tags.add(TALB(encoding=3, text=self.album))  # Album
-        audio.tags.add(TPE1(encoding=3, text=self.artist))  # Artist
-        audio.tags.add(TOPE(encoding=3, text=self.albumartist))  # Album Artist
-        audio.tags.add(TCOP(encoding=3, text=self.copy_right))  # Copyright
-        audio.tags.add(TRCK(encoding=3, text=str(self.tracknumber)))  # Track Number
-        audio.tags.add(TDRC(encoding=3, text=self.date.strftime("%Y-%m-%d") if self.date else ""))  # Release Date
-        audio.tags.add(TSRC(encoding=3, text=self.isrc))  # ISRC
-        audio.tags.add(USLT(encoding=3, text=self.lyrics))  # Lyrics
+        audio.tags.add(TIT2(encoding=3, text=self.track.name))  # Title
+        audio.tags.add(TALB(encoding=3, text=self.track.album.name))  # Album
+        audio.tags.add(TPE1(encoding=3, text=self.track.artist.name))  # Artist
+        audio.tags.add(TOPE(encoding=3, text=self.track.album.artists[0].name))  # Album Artist
+        audio.tags.add(TCOP(encoding=3, text=self.track.copyright))  # Copyright
+        audio.tags.add(TRCK(encoding=3, text=str(self.track.track_number)))  # Track Number
+        audio.tags.add(
+            TDRC(encoding=3, text=self.track.release_date.strftime("%Y-%m-%d") if self.track.release_date else ""))
+        audio.tags.add(TSRC(encoding=3, text=self.track.isrc))
+        audio.tags.add(USLT(encoding=3, text=self.track.lyrics))  # Lyrics
 
         # Add cover art
-        if self.cover_url:
-            audio.tags.add(
-                APIC(
-                    encoding=3,
-                    mime="image/jpeg" if self.cover_url.endswith(".jpg") else "image/png",
-                    type=3,  # Cover art
-                    desc="Cover",
-                    data=open_image_url(self.cover_url)
-                )
-            )
+        if self.track.cover_url:
+            audio.tags.add(APIC(
+                encoding=3,
+                mime="image/jpeg" if self.track.cover_url.endswith(".jpg") else "image/png",
+                type=3,  # Cover art
+                desc="Cover",
+                data=open_image_url(self.track.cover_url)
+            ))
 
         audio.save()
 
@@ -130,15 +162,15 @@ class Metadata:
         Generate a sanitized file path based on metadata.
         """
         # Format track number with leading zeros
-        track_number_str = f"{int(self.tracknumber):02}" if self.tracknumber else "00"
+        track_number_str = f"{int(self.track.track_number):02}" if self.track.track_number else "00"
 
         # Sanitize strings to avoid invalid characters in file paths
         def sanitize(value: str) -> str:
             return "".join(c if c.isalnum() or c in " _-()" else "_" for c in value)
 
-        sanitized_albumartist = sanitize(self.albumartist or "Unknown Artist")
-        sanitized_album = sanitize(self.album or "Unknown Album")
-        sanitized_title = sanitize(self.title or "Untitled")
+        sanitized_albumartist = sanitize(self.track.album.artists[0].name or "Unknown Artist")
+        sanitized_album = sanitize(self.track.album.name or "Unknown Album")
+        sanitized_title = sanitize(self.track.name or "Untitled")
 
         # Construct the path: base_dir/AlbumArtist/Album/TrackNumber - Title
         return base_path / sanitized_albumartist / sanitized_album / f"{track_number_str} - {sanitized_title}.{extension}"
@@ -153,6 +185,8 @@ class Artist:
     name: str
     artist_id: str
     genres: List[str] = field(default_factory=list)
+    role: Role = Role.artist
+    picture: Optional[str] = None
 
     def __post_init__(self):
         # Normalize artist ID to lowercase
@@ -224,6 +258,7 @@ class Track:
     disc_number: Optional[int] = None
     release_date: Optional[datetime] = None
     cover_url: Optional[str] = None
+    score: Optional[float] = None
 
     def __post_init__(self):
         if self.isrc:
@@ -250,23 +285,9 @@ class Track:
         """
         Converts track metadata into a Metadata object for further use.
         """
-        return Metadata(
-            title=self.name,
-            album=self.album.name,
-            albumartist=self.album.artists[0].name,
-            artist=self.artist.name,
-            copy_right=self.copyright,
-            tracknumber=self.track_number,
-            discnumber=self.disc_number,
-            totaldiscs=self.album.num_volumes,
-            totaltracks=len(self.album.tracks),
-            date=self.release_date,
-            isrc=self.isrc,
-            lyrics=self.lyrics,
-            cover_url=self.cover_url,
-        )
+        return Metadata(self)
 
-    def matches(self, other: Track) -> bool:
+    def matches(self, other: Track) -> (bool, float):
         """
         Checks if two Track objects represent the same track across platforms.
 
@@ -275,6 +296,10 @@ class Track:
         - ISRC match
         - Title and album name similarity
         - Artist overlap
+
+        Returns:
+            bool: True if the tracks are considered a match, False otherwise.
+            float: The match score as a float between
         """
         if not isinstance(other, Track):
             return False
@@ -291,14 +316,18 @@ class Track:
         if all(artist in self.artists for artist in other.artists):
             score += 1
 
-        return score >= 3.5
+        # Save the score in the other track for reference
+        other.score = score
 
-    def download(self) -> bytes:
+        return score >= 3.5, score
+
+    def download(self) -> (bytes, str):
         """
         Downloads the track's audio file based on the platform and manifest.
 
         Returns:
             bytes: The audio file as a byte stream.
+            str: The file extension of the audio file.
 
         Raises:
             NotImplementedError: If the platform does not support downloading.
@@ -310,7 +339,16 @@ class Track:
             if not self.stream_manifest:
                 raise ValueError("Stream manifest is missing.")
             download_urls = self.stream_manifest.get_urls()
-            mimetype = self.stream_manifest.mime_type.split("/")[-1]
+
+            match self.stream_manifest.file_extension:
+                case AudioExtensions.M4A:
+                    file_extension = "m4a"
+                case AudioExtensions.FLAC:
+                    file_extension = "flac"
+                case AudioExtensions.MP4:
+                    raise ValueError("Video files are not supported.")
+                case _:
+                    raise ValueError(f"Unsupported file extension: {self.stream_manifest.file_extension}")
 
             # Use bytearray for efficient byte concatenation
             bytes_response = bytearray()
@@ -319,7 +357,7 @@ class Track:
                 response.raise_for_status()
                 bytes_response.extend(response.content)
 
-            return bytes(bytes_response)
+            return bytes(bytes_response), file_extension
         else:
             raise NotImplementedError(f"Downloading is not supported for {self.platform}.")
 
@@ -460,5 +498,7 @@ def artist_from_tidal_artist(tidal_artist: tidalapi.Artist) -> Artist:
     return Artist(
         platform=Platform.TIDAL,
         name=tidal_artist.name,
-        artist_id=str(tidal_artist.id)
+        artist_id=str(tidal_artist.id),
+        role=tidal_artist.role,
+        picture=tidal_artist.picture
     )

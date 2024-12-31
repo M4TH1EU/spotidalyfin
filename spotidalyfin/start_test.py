@@ -3,7 +3,8 @@ from pathlib import Path
 from spotidalyfin import cfg
 from spotidalyfin.managers.spotify_manager import SpotifyManager
 from spotidalyfin.managers.tidal_manager import TidalManager
-from spotidalyfin.utils.file_utils import parse_secrets_file
+from spotidalyfin.managers.types import Track
+from spotidalyfin.utils.file_utils import parse_secrets_file, convert_m4a_bytes_to_flac
 
 if __name__ == '__main__':
     cfg.get_config().update(parse_secrets_file(cfg.get("secrets").parent.parent / "spotidalyfin.secrets"))
@@ -19,16 +20,18 @@ if __name__ == '__main__':
         print(f"Searching for : {spotify_track.name} by {spotify_track.artist.name} from {spotify_track.album.name}")
         tidal_search = tidal_manager.search_tracks(track_name=spotify_track.name, artist_name=spotify_track.artist.name,
                                                    isrc=spotify_track.isrc)
-        list_of_matches = []
+        list_of_matches: list[Track] = []
         for tidal_track in tidal_search:
-            if spotify_track.matches(other=tidal_track):
+            match, score = spotify_track.matches(other=tidal_track)
+
+            if match:
                 print(
-                    f"Matched : {tidal_track.name} by {tidal_track.artist.name} from {tidal_track.album.name} - {tidal_track.quality.name} - {tidal_track.score}")
+                    f"Matched : {tidal_track.name} by {tidal_track.artist.name} from {tidal_track.album.name} - {tidal_track.quality.name} - {score}")
                 list_of_matches.append(tidal_track)
                 # break
             else:
                 print(
-                    f"Failed to match : {tidal_track.name} by {tidal_track.artist.name} from {tidal_track.album.name} - {tidal_track.quality.name} - {tidal_track.score}")
+                    f"Failed to match : {tidal_track.name} by {tidal_track.artist.name} from {tidal_track.album.name} - {tidal_track.quality.name} - {score}")
 
         if not list_of_matches:
             print("No matches found")
@@ -41,18 +44,27 @@ if __name__ == '__main__':
 
             print("Downloading...")
 
+            # Create the output directory if it doesn't exist
             path = Path(cfg.get("out-dir"))
             path.mkdir(parents=True, exist_ok=True)
 
-            raw_data = list_of_matches[0].download()
+            # Download the raw data and get the filetype
+            raw_data, filetype = list_of_matches[0].download()
 
             print("Downloaded, saving...")
 
+            # Convert m4a to flac # TODO: add config option to enable/disable this
+            if filetype == "m4a":
+                print("Converting m4a to flac...")
+                raw_data = convert_m4a_bytes_to_flac(raw_data)
+                filetype = "flac"
+
+            # Get the metadata and generate the output file path
             metadata = list_of_matches[0].metadata()
+            out_file = metadata.generate_path(base_path=path, extension=filetype)
 
-            out_file = metadata.generate_path(base_path=path, extension="flac")
+            # Save the raw data to a file
             out_file.parent.mkdir(parents=True, exist_ok=True)
-
             with open(out_file, "wb") as file:
                 file.write(raw_data)
 
