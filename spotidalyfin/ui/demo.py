@@ -1,14 +1,11 @@
-import time
-
 import streamlit as st
-import numpy as np
-import pandas as pd
 
 # Title of the page
 st.title("Streamlit Component Demo")
 
 # Displaying basic text
-st.write("This page demonstrates a variety of Streamlit components to help you build interactive and visually appealing applications.")
+st.write(
+    "This page demonstrates a variety of Streamlit components to help you build interactive and visually appealing applications.")
 
 # === Text Components ===
 # Displaying Markdown
@@ -77,23 +74,23 @@ if uploaded_file is not None:
     st.write(f"File {uploaded_file.name} uploaded.")
     if uploaded_file.name.endswith("csv"):
         # Read the file into a DataFrame
-        df = pd.read_csv(uploaded_file)
-        st.write(df.head())  # Display the first few rows of the DataFrame
+        # df = pd.read_csv(uploaded_file)
+        # st.write(df.head())  # Display the first few rows of the DataFrame
+        pass
 
 # === Date Input ===
 st.subheader("Date Input")
-date_input = st.date_input("Pick a date", pd.to_datetime('2024-01-01'))
-st.write(f"Selected date: {date_input}")
+# date_input = st.date_input("Pick a date", pd.to_datetime('2024-01-01'))
+# st.write(f"Selected date: {date_input}")
 
 # === Time Input ===
 st.subheader("Time Input")
-time_input = st.time_input("Pick a time", pd.to_datetime('12:30').time())
-st.write(f"Selected time: {time_input}")
+# time_input = st.time_input("Pick a time", pd.to_datetime('12:30').time())
+# st.write(f"Selected time: {time_input}")
 
 # === Progress Bar ===
 st.subheader("Progress Bar")
 progress = st.progress(45)
-
 
 # === File Download ===
 st.subheader("Download a File")
@@ -109,10 +106,10 @@ st.write("Click the button to download a sample CSV file.")
 # === Maps ===
 st.subheader("Maps")
 st.write("You can display **maps** using latitude and longitude.")
-st.map(pd.DataFrame({
-    'lat': [37.7749, 40.7128],
-    'lon': [-122.4194, -74.0060]
-}, columns=["lat", "lon"]))
+# st.map(pd.DataFrame({
+#     'lat': [37.7749, 40.7128],
+#     'lon': [-122.4194, -74.0060]
+# }, columns=["lat", "lon"]))
 
 # === Audio Player ===
 st.subheader("Audio Player")
@@ -136,7 +133,8 @@ st.markdown("""
 # === Expander ===
 st.subheader("Expander")
 with st.expander("Click to Expand"):
-    st.write("This section is hidden until you click to expand it. It's useful for adding extra details or content that isn't immediately needed.")
+    st.write(
+        "This section is hidden until you click to expand it. It's useful for adding extra details or content that isn't immediately needed.")
     st.write("You can also include interactive elements here, like sliders, buttons, or graphs.")
 
 # === Columns Layout ===
@@ -152,4 +150,5 @@ multi_select = st.multiselect("Select multiple options", ["Apple", "Banana", "Ch
 st.write(f"Selected options: {multi_select}")
 
 # Final note
-st.write("This demo includes many useful Streamlit components. Explore the official Streamlit documentation to discover even more components and customization options!")
+st.write(
+    "This demo includes many useful Streamlit components. Explore the official Streamlit documentation to discover even more components and customization options!")

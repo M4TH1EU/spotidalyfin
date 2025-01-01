@@ -19,7 +19,7 @@ account_settings = st.Page(
 )
 settings_pages = [account_settings]
 
-st.logo("images/logo.webp", icon_image="images/icon.png", size="large")
+st.logo("assets/ui/images/logo.webp", icon_image="assets/ui/images/icon.png", size="large")
 
 page_dict = {
     "Home": home_pages,

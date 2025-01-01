@@ -22,7 +22,7 @@ def connect_to_spotify(client_id, client_secret, username):
             redirect_uri="http://127.0.0.1:6969",
             scope=scopes,
             open_browser=False,
-            cache_handler=SpotidalyfinSpotifyDatabaseCache(db, client_id, client_secret, username)
+            cache_handler=SpotidalyfinSpotifyDatabaseCache(None, client_id, client_secret, username)
         )
     )
 
