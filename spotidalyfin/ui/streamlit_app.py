@@ -1,5 +1,23 @@
 import streamlit as st
 
+from spotidalyfin.db.database import Database
+
+
+def setup_storage():
+    """
+    Initialize the main session state variables. This function should be called at the start of the app to ensure
+    that all required session state variables are initialized.
+    """
+    if "spotify_managers" not in st.session_state:
+        st.session_state.spotify_managers = {}
+    if "tidal_managers" not in st.session_state:
+        st.session_state.tidal_managers = {}
+    if "database" not in st.session_state:
+        st.session_state.database = Database()
+
+
+setup_storage()
+
 home = st.Page("home.py", title="Home", icon=":material/home:", default=True)
 demo = st.Page("demo.py", title="Demo", icon=":material/insert_emoticon:")
 

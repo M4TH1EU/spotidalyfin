@@ -1,11 +1,9 @@
 import streamlit as st
 
-from spotidalyfin.ui import api
-
 st.header("Download playlist")
 st.write("Uses the Tidal API to download a playlist from Spotify in lossless quality.")
 
-spotify_accounts = api.get_spotify_account()
+spotify_accounts = []
 if not spotify_accounts:
     st.error("No Spotify accounts found. Please add one in the settings.")
     st.stop()
@@ -13,7 +11,7 @@ if not spotify_accounts:
 account = st.selectbox("Select a Spotify account", spotify_accounts)
 
 st.subheader("Choose a playlist")
-playlist = st.selectbox("Select a playlist", api.get_spotify_playlists(account))
+playlist = st.selectbox("Select a playlist", [])
 
 st.subheader("Quality")
 quality = st.radio(
