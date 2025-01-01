@@ -1,13 +1,7 @@
 import streamlit as st
 
-from spotidalyfin.db.database import Database
 from spotidalyfin.managers.spotify_manager import SpotifyManager
-
-
-def get_database():
-    if "database" not in st.session_state:
-        st.session_state.database = Database()
-    return st.session_state.database
+from spotidalyfin.ui.helpers.database import get_database
 
 
 def get_spotify_manager(client_id: str, client_secret: str, username: str) -> SpotifyManager:
