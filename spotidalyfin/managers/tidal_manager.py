@@ -1,3 +1,4 @@
+import json
 from typing import List, Optional
 
 import cachebox
@@ -7,9 +8,38 @@ from tidalapi.exceptions import ObjectNotFound
 from tidalapi.session import SearchResults
 
 from spotidalyfin import cfg
+from spotidalyfin.db.database import Database
+from spotidalyfin.db.helpers import save_tidal_info_to_db, get_tidal_login_info, get_authenticated_tidal_profiles
 from spotidalyfin.managers import types
 from spotidalyfin.managers.types import Track, Album, Artist, TrackQuality
 from spotidalyfin.utils.decorators import rate_limit
+
+
+def create_temporary_session(config: tidalapi.Config = tidalapi.Config()) -> tidalapi.Session:
+    """Get the URL for logging in with TIDAL using PKCE flow."""
+    return tidalapi.Session(config=config)
+
+
+def try_to_authenticate_with_tidal(session: tidalapi.Session(), redirect_url: str, db: Database = None) -> (bool, str):
+    """Try to authenticate with TIDAL using the given redirect URL. Optionally save the account into the database."""
+    try:
+        response: dict = session.pkce_get_auth_token(redirect_url)
+        if db and "user" in response:
+            if response.get("user").get("username") in get_authenticated_tidal_profiles(db):
+                return False, "This account is already authenticated, please remove it and try again."
+
+            save_tidal_info_to_db(db, response)
+
+        return True, ""
+    except Exception as e:
+        try:
+            error = json.loads(e.response.content.decode()).get("error_description")
+            if error:
+                return False, f"Failed to authenticate with TIDAL: {error}"
+        except Exception:
+            pass
+
+    return False, f"Failed to authenticate with TIDAL. Please try again."
 
 
 class TidalManager:
@@ -18,7 +48,7 @@ class TidalManager:
     and supporting search functionality.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, username: str, db: Database) -> None:
         """
         Initializes the TIDAL manager, ensuring session setup and audio quality configuration.
         """
@@ -26,7 +56,7 @@ class TidalManager:
         session_file.parent.mkdir(parents=True, exist_ok=True)
 
         self.client = tidalapi.Session()
-        self.client.login_session_file(session_file, do_pkce=True)
+        self.client.load_oauth_session(**get_tidal_login_info(db, username), token_type="Bearer", is_pkce=True)
         self.client.audio_quality = TrackQuality.HI_RES_LOSSLESS.name  # TODO: allow configuration
 
     @cachebox.cached(cachebox.LRUCache(maxsize=256))

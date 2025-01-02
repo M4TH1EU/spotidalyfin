@@ -29,10 +29,20 @@ class Database:
         self.con.execute("DROP TABLE IF EXISTS spotify_accounts;")
         self.con.execute("""
             CREATE TABLE IF NOT EXISTS spotify_accounts (
-                client_id TEXT,
-                client_secret TEXT,
-                username TEXT,
-                data TEXT
+                username TEXT PRIMARY KEY,
+                client_id TEXT NOT NULL,
+                client_secret TEXT NOT NULL,
+                access_token TEXT NOT NULL,
+                expires_at INTEGER NOT NULL,
+                refresh_token TEXT NOT NULL
+            );
+        """)
+        self.con.execute("DROP TABLE IF EXISTS tidal_accounts;")
+        self.con.execute("""
+            CREATE TABLE IF NOT EXISTS tidal_accounts (
+                username TEXT PRIMARY KEY,
+                access_token TEXT NOT NULL,
+                refresh_token TEXT NOT NULL
             );
         """)
         self.con.commit()

@@ -29,6 +29,7 @@ class DialogContext:
                 st.write(f"Age: {context.get('user_age')}")
         ```
     """
+
     def __init__(self):
         self._data = {}
 

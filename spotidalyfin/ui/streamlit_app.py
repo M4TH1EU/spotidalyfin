@@ -1,6 +1,6 @@
 import streamlit as st
 
-from spotidalyfin.db.database import Database
+from spotidalyfin.ui.helpers.getters import get_database
 
 
 def setup_storage():
@@ -12,8 +12,8 @@ def setup_storage():
         st.session_state.spotify_managers = {}
     if "tidal_managers" not in st.session_state:
         st.session_state.tidal_managers = {}
-    if "database" not in st.session_state:
-        st.session_state.database = Database()
+
+    get_database()  # Initializes the database and returns it
 
 
 setup_storage()

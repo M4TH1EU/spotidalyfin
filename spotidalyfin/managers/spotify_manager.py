@@ -1,87 +1,68 @@
-import json
+from pathlib import Path
 from pathlib import Path
 from typing import Optional, List
 
 import cachebox
 import spotipy
-from spotipy import SpotifyOAuth, CacheHandler, SpotifyOauthError
+from spotipy import SpotifyOAuth, SpotifyOauthError, MemoryCacheHandler
 from spotipy.exceptions import SpotifyException
 
-from spotidalyfin import cfg
+from spotidalyfin import cfg, SPOTIFY_SCOPES, SPOTIFY_REDIRECT_URI
 from spotidalyfin.db.database import Database
+from spotidalyfin.db.helpers import get_authenticated_spotify_profiles, \
+    save_spotify_into_db, get_spotify_oauth
 from spotidalyfin.managers import types
 from spotidalyfin.managers.types import Track, Album, Artist, Playlist, Platform
 from spotidalyfin.utils.decorators import rate_limit
 
-class CacheDatabaseHandler(CacheHandler):
-    """
-    Handles reading and writing cached Spotify authorization tokens
-    in the Spotidalyfin database.
-    """
 
-    def __init__(self, db: Database, client_id: str, client_secret: str, username: str):
-        self.client_id = client_id
-        self.client_secret = client_secret
-        self.username = username
-        self.db = db
+def create_temporary_oauth(client_id: str, client_secret: str) -> SpotifyOAuth:
+    """Create a SpotifyOAuth object with the given parameters."""
+    return SpotifyOAuth(
+        client_id=client_id,
+        client_secret=client_secret,
+        redirect_uri=SPOTIFY_REDIRECT_URI,
+        scope=SPOTIFY_SCOPES,
+        cache_handler=MemoryCacheHandler(),  # don't cache anything
+        open_browser=False
+    )
 
-    def get_cached_token(self) -> dict:
-        cursor = self.db.execute(
-            "SELECT data FROM spotify_accounts WHERE client_id = ? AND client_secret = ? AND username = ?",
-            (self.client_id, self.client_secret, self.username)
-        )
-        row = cursor.fetchone()
-        if row:
-            return json.loads(row[0])
 
-        return {}
+def try_to_authenticate_with_spotify(oauth: SpotifyOAuth, redirect_url: str, db: Database = None) -> (bool, str):
+    """Try to authenticate with Spotify using the given redirect URL."""
+    try:
+        code = oauth.parse_response_code(redirect_url)
+        if code:
+            oauth.get_access_token(code, check_cache=False)
 
-    def save_token_to_cache(self, token_info) -> None:
-        self.db.execute(
-            "INSERT OR REPLACE INTO spotify_accounts (client_id, client_secret, username, data) VALUES (?, ?, ?, ?)",
-            (self.client_id, self.client_secret, self.username, json.dumps(token_info))
-        )
-        self.db.commit()
+            if db:
+                username = spotipy.Spotify(auth_manager=oauth).current_user()["id"]
+                if username in get_authenticated_spotify_profiles(db):
+                    return False, "This account is already authenticated, please remove it and try again."
+
+                save_spotify_into_db(db, username, oauth)
+            return True, ""
+    except SpotifyOauthError as e:
+        if hasattr(e, "error_description"):
+            return False, f"Failed to authenticate with Spotify: {e.error_description}"
+
+    return False, "Failed to authenticate with Spotify. Please try again."
+
 
 class SpotifyManager:
     """Manages interactions with the Spotify API, including tracks, albums, artists, playlists, and liked songs."""
 
-    def __init__(self, client_id: str, client_secret: str, username: str, db: Database):
+    def __init__(self, username: str, db: Database):
         """Initialize the SpotifyManager with API credentials."""
-        scopes = [
-            'playlist-read-private',
-            'playlist-read-collaborative',
-            'user-library-read'
-        ]
         token_file = Path(cfg.get("config-dir")) / ".spotipy-token"
         token_file.parent.mkdir(parents=True, exist_ok=True)
 
-        self.oauth = SpotifyOAuth(
-            client_id=client_id,
-            client_secret=client_secret,
-            redirect_uri="http://127.0.0.1:6969",
-            scope=scopes,
-            cache_handler=CacheDatabaseHandler(db, client_id, client_secret, username),
-            open_browser=False
-        )
-        self.authorize_url = self.oauth.get_authorize_url()
+        self.oauth = get_spotify_oauth(db, username)
         self.client = spotipy.Spotify(auth_manager=self.oauth)
 
-    def authenticate(self, redirect_url: str) -> bool:
-        """Try to authenticate the user with the given redirect URL and return whether it was successful."""
-        try:
-            code = self.oauth.parse_response_code(redirect_url)
-            if code:
-                self.oauth.get_access_token(code, check_cache=False)
-                return True
-        except SpotifyOauthError as e:
-            print(f"Failed to authenticate with Spotify: {e}")
-
-        return False
-
-    def is_authenticated(self) -> bool:
-        """Check if the user has already authenticated with Spotify and has a valid token."""
-        return self.oauth.validate_token(self.oauth.get_cached_token())
+    # def is_authenticated(self) -> bool:
+    #     """Check if the user has already authenticated with Spotify and has a valid token."""
+    #     return self.oauth.validate_token(self.oauth.get_cached_token())
 
     @cachebox.cached(cachebox.LRUCache(maxsize=256))
     @rate_limit
