@@ -7,10 +7,12 @@ from streamlit.elements.lib.dialog import DialogWidth
 from spotidalyfin.ui.helpers.ui import create_aligned_columns
 
 
+@dataclass
 class DialogStep:
-    def __init__(self, title: str, content: Callable):
-        self.title = title
-        self.content = content
+    title: str
+    content: Callable
+    next_button_text: str = None
+    next_button_icon: str = None
 
     def render(self):
         self.content()
@@ -69,16 +71,16 @@ class MultiStepDialog:
 
     def _render_progress(self):
         """Render the progress bar or step count."""
-        current_step = self.get_current_step() + 1
+        current_step = self.get_current_step()
         total_steps = len(self.steps)
 
         if self.show_progress_bar:
-            st.progress(current_step / total_steps,
-                        text=f"Step {current_step}/{total_steps}" if self.show_progress_steps else "")
+            st.progress(current_step / (total_steps - 1),
+                        text=f"Step {current_step + 1}/{total_steps}" if self.show_progress_steps else "")
         elif self.show_progress_steps:
-            st.write(f"Step {current_step} of {total_steps}")
+            st.write(f"Step {current_step + 1} of {total_steps}")
 
-    def _render_buttons(self):
+    def _render_buttons(self, step: DialogStep):
         """Render navigation buttons (Back, Next, Done)."""
         can_go_next = self.get_current_step() < (len(self.steps) - 1)
         can_go_back = self.allow_back and self.get_current_step() >= 1
@@ -92,7 +94,10 @@ class MultiStepDialog:
 
         # Next button, only rendered if 0 <= current_step < total_steps, we don't want it on finish step
         if can_go_next:
-            col2.button("Next", icon=":material/arrow_forward_ios:", on_click=self.next_step, use_container_width=True)
+            next_label = step.next_button_text or "Next"
+            next_icon = step.next_button_icon or ":material/arrow_forward_ios:"
+
+            col2.button(next_label, icon=next_icon, on_click=self.next_step, use_container_width=True)
 
         # Done button, only rendered on last step
         if can_go_back and not can_go_next:  # Render Done button on the last step
@@ -122,7 +127,7 @@ class MultiStepDialog:
                     self._render_progress()
 
                 # Render navigation buttons
-                self._render_buttons()
+                self._render_buttons(step)
 
                 # Render progress bar at the bottom, if configured
                 if self.progress_bar_position == "bottom":
