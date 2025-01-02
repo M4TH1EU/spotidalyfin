@@ -1,6 +1,8 @@
 # Function to display subheader with icon on either side
 import base64
 from pathlib import Path
+from typing import Iterable, List
+from uuid import uuid4
 
 import streamlit as st
 
@@ -36,7 +38,7 @@ def display_subheader_with_icon(text, icon_path, icon_position='left', img_size=
     st.markdown(subheader_html, unsafe_allow_html=True)
 
 
-def create_aligned_columns(spec=3, horizontal_alignment="center", vertical_alignment="center", **kwargs):
+def create_aligned_columns(spec=3, horizontal_alignment="center", vertical_alignment="center", **kwargs) -> List:
     """Create centered columns in Streamlit.
 
     Parameters
@@ -74,11 +76,24 @@ def create_aligned_columns(spec=3, horizontal_alignment="center", vertical_align
     col1, col2, col3 = create_aligned_columns(3, border=True, vertical_alignment="center")
     """
 
-    # Generate the CSS to center content in each column
+    # Generate a unique key for the container
+    container_key = f"aligned_{uuid4().hex}"
+
+    # Generate the CSS scoped to this container
     style = f"""
     <style>
-        {"".join([f'div[data-testid="stColumn"]:nth-of-type({i}) {{ text-align: {horizontal_alignment}; }} ' for i in range(1, 1 + (len(spec) if isinstance(spec, list) else spec))])}
+        .st-key-{container_key} > div:nth-child(1) > div:nth-child(n) {{
+            text-align: {horizontal_alignment};
+        }}
     </style>
+    """
+
+    # Apply the scoped CSS
+    st.markdown(style, unsafe_allow_html=True)
+
+    # Create the container and columns
+    with st.container(key=container_key):
+        return st.columns(spec, vertical_alignment=vertical_alignment, **kwargs)
     """
     # Apply the CSS to the app
     st.markdown(style, unsafe_allow_html=True)
