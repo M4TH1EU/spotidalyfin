@@ -94,9 +94,61 @@ def create_aligned_columns(spec=3, horizontal_alignment="center", vertical_align
     # Create the container and columns
     with st.container(key=container_key):
         return st.columns(spec, vertical_alignment=vertical_alignment, **kwargs)
-    """
-    # Apply the CSS to the app
-    st.markdown(style, unsafe_allow_html=True)
 
-    # Create the columns and return them
-    return st.columns(spec, vertical_alignment=vertical_alignment, **kwargs)
+
+def display_table(
+        data: List[List],
+        columns: int | Iterable[int] = None,
+        text: str = "",
+        border: bool = True,
+        header: bool = True,
+        align: str = "left",
+        gap: str = "small",
+        vertical_alignment: str = "center"
+) -> None:
+    """Enhanced table display with more formatting options.
+
+    Args:
+        data: List of rows containing either strings/numbers or callable factory functions for streamlit objects
+        columns: Number of columns or list of column widths
+        text: Header text
+        border: Show border around table
+        header: First row is header row
+        align: Text alignment ("left", "center", "right")
+        gap: Gap between columns ("small", "medium", "large")
+        vertical_alignment: Vertical alignment of columns ("top", "center", "bottom")
+    """
+    with st.container(border=border):
+        if text:
+            st.write(text)
+
+        # Determine columns setup
+        if not columns:
+            num_columns = len(data[0]) if data else 1
+            columns = [1] * num_columns
+        elif isinstance(columns, int):
+            num_columns = columns
+            columns = [1] * num_columns
+        else:
+            num_columns = len(columns)
+
+        cols = create_aligned_columns(
+            spec=columns,
+            horizontal_alignment=align,
+            vertical_alignment=vertical_alignment,
+            gap=gap
+        )
+
+        # Display data
+        for row_idx, row in enumerate(data):
+            for col_idx, value in enumerate(row):
+                if col_idx < num_columns:
+                    with cols[col_idx]:
+                        if callable(value):
+                            # Execute the factory function to create and render the streamlit element
+                            value()
+                        elif isinstance(value, (str, int, float)):
+                            if header and row_idx == 0:
+                                st.markdown(f"**{value}**")
+                            else:
+                                st.write(value)
