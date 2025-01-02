@@ -17,3 +17,10 @@ def get_authenticated_spotify_profiles() -> List[tuple[str, str]]:
     db = get_database()
     cursor = db.execute("SELECT client_id, username FROM spotify_accounts")
     return cursor.fetchall()
+
+
+def remove_spotify_profile(username: str) -> None:
+    """Remove a Spotify profile from the database."""
+    db = get_database()
+    db.execute("DELETE FROM spotify_accounts WHERE username=?", (username,))
+    db.commit()

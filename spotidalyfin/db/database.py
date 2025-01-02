@@ -31,7 +31,7 @@ class Database:
             CREATE TABLE IF NOT EXISTS spotify_accounts (
                 client_id TEXT,
                 client_secret TEXT,
-                username TEXT PRIMARY KEY,
+                username TEXT,
                 data TEXT
             );
         """)
