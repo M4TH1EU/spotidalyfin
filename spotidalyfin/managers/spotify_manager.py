@@ -1,4 +1,5 @@
-from pathlib import Path
+import random
+import time
 from pathlib import Path
 from typing import Optional, List
 
@@ -6,6 +7,7 @@ import cachebox
 import spotipy
 from spotipy import SpotifyOAuth, SpotifyOauthError, MemoryCacheHandler
 from spotipy.exceptions import SpotifyException
+from spotipy_anon import SpotifyAnon
 
 from spotidalyfin import cfg, SPOTIFY_SCOPES, SPOTIFY_REDIRECT_URI
 from spotidalyfin.db.database import Database
@@ -59,6 +61,7 @@ class SpotifyManager:
 
         self.oauth = get_spotify_oauth(db, username)
         self.client = spotipy.Spotify(auth_manager=self.oauth)
+        self.anonymous_client = spotipy.Spotify(auth_manager=SpotifyAnon())
 
     # def is_authenticated(self) -> bool:
     #     """Check if the user has already authenticated with Spotify and has a valid token."""
@@ -145,10 +148,20 @@ class SpotifyManager:
                      retrieve_all_albums_details: bool = False) -> Playlist:
         """Fetch a playlist by its ID and optionally retrieve all tracks and album details."""
         try:
-            playlist = self.client.playlist(playlist_id)
+            try:
+                playlist = self.client.playlist(playlist_id)
+                anonymous = False
+            except SpotifyException as e:
+                # Due to Spotify API limitations, if the specified playlist is from Spotify we cannot retrieve its details
+                # A workaround is to use the anonymous client to fetch the playlist, but this might be patched in the future
+                if "404" in str(e):
+                    playlist = self.anonymous_client.playlist(playlist_id)
+                    anonymous = True
+                else:
+                    raise e
 
             if retrieve_all_tracks:
-                self._fetch_all_playlist_tracks(playlist, playlist_id)
+                self._fetch_all_playlist_tracks(playlist, playlist_id, anonymous or False)
 
             if retrieve_all_albums_details:
                 for item in playlist['tracks']['items']:
@@ -170,18 +183,28 @@ class SpotifyManager:
         except SpotifyException as e:
             raise ValueError(f"Failed to fetch playlist with ID {playlist_id}: {e}")
 
-    def _fetch_all_playlist_tracks(self, playlist: dict, playlist_id: str) -> None:
+    def _fetch_all_playlist_tracks(self, playlist: dict, playlist_id: str, anonymous: bool = True) -> None:
         """Helper method to fetch all tracks in a playlist."""
         offset = len(playlist['tracks']['items'])
 
         while True:
             try:
-                results = self.client.playlist_items(
-                    playlist_id=playlist_id,
-                    limit=100,
-                    offset=offset,
-                    additional_types='track'
-                )
+                if not anonymous:
+                    results = self.client.playlist_items(
+                        playlist_id=playlist_id,
+                        limit=100,
+                        offset=offset,
+                        additional_types='track'
+                    )
+                else:
+                    results = self.anonymous_client.playlist_items(
+                        playlist_id=playlist_id,
+                        limit=100,
+                        offset=offset,
+                        additional_types='track'
+                    )
+                    time.sleep(
+                        random.uniform(0.5, 1))  # throttle due to anonymous client potentially being rate-limited
 
                 playlist['tracks']['items'].extend(results['items'])
                 if not results.get('next'):

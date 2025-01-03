@@ -265,26 +265,29 @@ class TidalManager:
         :param status: The status container to update, if any.
         """
 
-        if quality:
-            self.client.audio_quality = quality.name
+        try:
+            if quality:
+                self.client.audio_quality = quality.name
 
-        if destination:
-            destination = Path(destination).expanduser()
+            if destination:
+                destination = Path(destination).expanduser()
 
-        raw_data, filetype = track.raw_data()
+            raw_data, filetype = track.raw_data()
 
-        if filetype == "m4a" and output_type == "flac":
-            raw_data = convert_m4a_bytes_to_flac(raw_data)
-            filetype = "flac"
+            if filetype == "m4a" and output_type == "flac":
+                raw_data = convert_m4a_bytes_to_flac(raw_data)
+                filetype = "flac"
 
-        metadata = track.metadata()
-        out_file = metadata.generate_path(base_path=destination, extension=filetype)
-        out_file.parent.mkdir(parents=True, exist_ok=True)
+            metadata = track.metadata()
+            out_file = metadata.generate_path(base_path=destination, extension=filetype)
+            out_file.parent.mkdir(parents=True, exist_ok=True)
 
-        with open(out_file, "wb") as f:
-            f.write(raw_data)
+            with open(out_file, "wb") as f:
+                f.write(raw_data)
 
-        metadata.write_to_file(out_file)
+            metadata.write_to_file(out_file)
+        except Exception as e:
+            raise ValueError(f"Failed to download track {track.name}: {e}")
 
     def download_playlist(self,
                           playlist: Playlist,

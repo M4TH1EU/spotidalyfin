@@ -72,11 +72,15 @@ def query_musicbrainz(irsc: str) -> dict:
     if not result.get("isrc", {}).get("recording-list"):
         return {}
 
-    artist_ids = [
-        artist.get('artist', {}).get('id') for artist in
-        result.get('isrc', {}).get('recording-list', [{}])[0].get('artist-credit', [])
-        if artist.get('artist', {}).get('id')
-    ]
+    artist_ids = []
+    for artist in result.get('isrc', {}).get('recording-list', [{}])[0].get('artist-credit', []):
+        # TOOD: investigate why when artist is a string and it causes an AtributeError it is not caught by the except
+        # and just skips the rest of the metadata writing in download_track ???
+        if isinstance(artist, str):
+            continue
+
+        if artist.get('artist', {}).get('id'):
+            artist_ids.append(artist.get('artist', {}).get('id'))
 
     return {
         "MUSICBRAINZ_TRACKID": result.get("isrc", {}).get("recording-list", [{}])[0].get("id"),

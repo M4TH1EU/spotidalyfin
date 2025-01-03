@@ -69,4 +69,4 @@ def download_playlist(playlist_id: str, spotify_account_username: str, tidal_acc
             )
             return
 
-        _update("Download complete!", state="success", expanded=False)
+        _update("Download complete!", state="complete", expanded=False)

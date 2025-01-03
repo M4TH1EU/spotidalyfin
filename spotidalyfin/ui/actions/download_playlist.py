@@ -25,8 +25,13 @@ if not st.session_state["currently_downloading"]:
     tidal_account = st.selectbox("Select a TIDAL account", tidal_accounts)
 
     st.subheader("Choose a playlist")
-    playlist = st.selectbox("Select a playlist", options=get_user_playlists(spotify_account),
+    list_of_playlists_choices = get_user_playlists(spotify_account)
+    list_of_playlists_choices.insert(0, ("", ""))
+    list_of_playlists_choices.insert(1, ("⚙️️️ Enter playlist ID manually", "other"))
+    playlist = st.selectbox("Select a playlist", options=list_of_playlists_choices,
                             format_func=lambda x: x[0])
+    if playlist[1] == "other":
+        playlist = ("", st.text_input("Enter the playlist ID", value=""))
 
     st.subheader("Quality")
     quality = st.radio(
@@ -51,15 +56,16 @@ if not st.session_state["currently_downloading"]:
     st.write("Choose a folder to save the downloaded playlist.")
     destination = st.text_input("Destination", os.path.expanduser("~/Music/Spotidalyfin"))
 
-
-    def _download_callback():
-        st.session_state["currently_downloading"] = True
-        download_playlist(playlist_id=playlist[1], spotify_account_username=spotify_account,
-                          tidal_account_username=tidal_account,
-                          quality=quality[1], output_type=output_type[1], destination=destination)
-
-
-    st.button("Download playlist", on_click=_download_callback)
+    download_button = st.button("Download playlist")
+    if download_button:
+        if playlist[1]:
+            st.session_state["currently_downloading"] = True
+            download_playlist(playlist_id=playlist[1], spotify_account_username=spotify_account,
+                              tidal_account_username=tidal_account,
+                              quality=quality[1], output_type=output_type[1], destination=destination)
+            st.session_state["currently_downloading"] = False
+        else:
+            st.error("Please select a playlist to download.")
 
 else:
     st.write("Currently downloading a playlist, please wait...")
