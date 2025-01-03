@@ -21,6 +21,7 @@ class SpotipyCacheDatabaseHandler(CacheHandler):
     def get_cached_token(self) -> dict:
         cursor = self.db.execute(
             "SELECT access_token, expires_at, refresh_token FROM spotify_accounts WHERE username=?",
+            (self.username,)
         )
         token_info = cursor.fetchone()
         if token_info:
@@ -30,14 +31,14 @@ class SpotipyCacheDatabaseHandler(CacheHandler):
                 # "expires_in": 0,
                 "expires_at": token_info[1],
                 "refresh_token": token_info[2],
-                "scope": SPOTIFY_SCOPES
+                "scope": " ".join(SPOTIFY_SCOPES)
             }
 
         return {}
 
     def save_token_to_cache(self, token_info) -> None:
         self.db.execute(
-            "INSERT INTO spotify_accounts (username, client_id, client_secret, access_token, expires_at, refresh_token) VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT OR REPLACE INTO spotify_accounts (username, client_id, client_secret, access_token, expires_at, refresh_token) VALUES (?, ?, ?, ?, ?, ?)",
             (self.username, self.client_id, self.client_secret, token_info["access_token"], token_info["expires_at"],
              token_info["refresh_token"])
         )
@@ -59,7 +60,8 @@ def get_spotify_oauth(db: Database, username: str) -> SpotifyOAuth:
     cursor = db.execute(
         "SELECT client_id, client_secret FROM spotify_accounts WHERE username=?", (username,)
     )
-    client_id, client_secret = cursor
+    client_id, client_secret = cursor.fetchone()
+
     return SpotifyOAuth(
         client_id=client_id,
         client_secret=client_secret,
@@ -91,7 +93,7 @@ def save_tidal_info_to_db(db: Database, login_info: dict) -> None:
     db.commit()
 
 
-def get_tidal_login_info(db: Database, username: str) -> dict:
+def get_tidal_login_info(db: Database, username: str) -> tuple[str, str]:
     """Get the TIDAL login information for the given username."""
     cursor = db.execute("SELECT access_token, refresh_token FROM tidal_accounts WHERE username=?", (username,))
     return cursor.fetchone()
