@@ -375,7 +375,7 @@ class Track:
 
         return score >= 3.5, score
 
-    def download(self, retry_count=3) -> (bytes, str):
+    def raw_data(self, retry_count=3) -> (bytes, str):
         """
         Downloads the track's audio file based on the platform and manifest.
 
@@ -424,7 +424,7 @@ class Track:
             if retry_count <= 0:
                 raise e
             log.warning(f"Download failed: {e}. Retrying {retry_count} more times.")
-            return self.download(retry_count - 1)
+            return self.raw_data(retry_count - 1)
 
 
 @dataclass
@@ -454,15 +454,6 @@ class Playlist:
                 and self.image == other.image
                 and self.tracks == other.tracks
         )
-
-    def load_tracks(self, tracks: List[Track]) -> None:
-        """
-        Loads a list of tracks into the playlist.
-
-        Args:
-            tracks (List[Track]): The list of tracks to load.
-        """
-        self.tracks = tracks
 
 
 def track_from_spotify_track(spotify_track: dict) -> Track:

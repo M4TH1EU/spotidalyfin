@@ -1,4 +1,6 @@
 import json
+from concurrent.futures.thread import ThreadPoolExecutor
+from pathlib import Path
 from typing import List, Optional
 
 import cachebox
@@ -11,8 +13,9 @@ from spotidalyfin import cfg
 from spotidalyfin.db.database import Database
 from spotidalyfin.db.helpers import save_tidal_info_to_db, get_tidal_login_info, get_authenticated_tidal_profiles
 from spotidalyfin.managers import types
-from spotidalyfin.managers.types import Track, Album, Artist, TrackQuality
+from spotidalyfin.managers.types import Track, Album, Artist, TrackQuality, Playlist, Platform
 from spotidalyfin.utils.decorators import rate_limit
+from spotidalyfin.utils.file_utils import convert_m4a_bytes_to_flac
 
 
 def create_temporary_session(config: tidalapi.Config = tidalapi.Config()) -> tidalapi.Session:
@@ -200,3 +203,112 @@ class TidalManager:
             return [types.track_from_tidal_track(track) for track in tracks]
         except (ObjectNotFound, KeyError):
             return []
+
+    def convert_spotify_track(self, spotify_track: Track) -> Optional[Track]:
+        """
+        Converts a Spotify track to a TIDAL track.
+
+        :param spotify_track: The Spotify track to convert.
+        :return: A TIDAL track.
+        """
+        tidal_search = self.search_tracks(track_name=spotify_track.name, artist_name=spotify_track.artist.name,
+                                          isrc=spotify_track.isrc)
+        list_of_matches: list[Track] = []
+        for tidal_track in tidal_search:
+            match, score = spotify_track.matches(other=tidal_track)
+
+            if match:
+                list_of_matches.append(tidal_track)
+
+        if not list_of_matches:
+            return None
+
+        list_of_matches.sort(key=lambda x: x.quality.value + x.score, reverse=True)
+        return list_of_matches[0]
+
+    def convert_spotify_playlist(self, spotify_playlist: Playlist):
+        """
+        Converts a Spotify playlist to a TIDAL playlist.
+
+        :param spotify_playlist: The Spotify playlist to convert.
+        :return: A TIDAL playlist.
+        """
+        tidal_playlist = Playlist(
+            platform=Platform.TIDAL,
+            name=spotify_playlist.name,
+            image=spotify_playlist.image,
+            playlist_id=spotify_playlist.playlist_id
+        )
+
+        for spotify_track in spotify_playlist.tracks:
+            tidal_track = self.convert_spotify_track(spotify_track)
+            if tidal_track:
+                tidal_playlist.tracks.append(tidal_track)
+            else:
+                pass  # TODO: handle unmatched tracks
+
+        return tidal_playlist
+
+    def download_track(self,
+                       track: Track,
+                       quality: TrackQuality = TrackQuality.HI_RES_LOSSLESS,
+                       output_type: str = "flac",
+                       destination: str = "~/Music/Spotidalyfin"
+                       ):
+        """
+        Downloads a track to the given destination.
+
+        :param track: The track to download.
+        :param quality: The quality of the downloaded track.
+        :param output_type: The output file type.
+        :param destination: The destination folder.
+        :param status: The status container to update, if any.
+        """
+
+        if quality:
+            self.client.audio_quality = quality.name
+
+        if destination:
+            destination = Path(destination).expanduser()
+
+        raw_data, filetype = track.raw_data()
+
+        if filetype == "m4a" and output_type == "flac":
+            raw_data = convert_m4a_bytes_to_flac(raw_data)
+            filetype = "flac"
+
+        metadata = track.metadata()
+        out_file = metadata.generate_path(base_path=destination, extension=filetype)
+        out_file.parent.mkdir(parents=True, exist_ok=True)
+
+        with open(out_file, "wb") as f:
+            f.write(raw_data)
+
+        metadata.write_to_file(out_file)
+
+    def download_playlist(self,
+                          playlist: Playlist,
+                          quality: TrackQuality = TrackQuality.HI_RES_LOSSLESS,
+                          output_type: str = "flac",
+                          destination: str = "~/Music/Spotidalyfin",
+                          ):
+        """
+        Downloads a playlist to the given destination.
+
+        :param playlist: The playlist to download.
+        :param quality: The quality of the downloaded tracks.
+        :param output_type: The output file type.
+        :param destination: The destination folder.
+        """
+
+        if quality:
+            self.client.audio_quality = quality.name
+
+        if destination:
+            destination = Path(destination).expanduser()
+
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            futures = [
+                executor.submit(self.download_track, track, quality, output_type, destination)
+                for track in playlist.tracks
+            ]
