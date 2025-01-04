@@ -1,10 +1,15 @@
 import json
+import threading
+import time
 from concurrent.futures.thread import ThreadPoolExecutor
 from pathlib import Path
 from typing import List, Optional
 
 import cachebox
 import tidalapi
+from streamlit.elements.lib.mutable_status_container import StatusContainer
+from streamlit.elements.progress import ProgressMixin
+from streamlit.runtime.scriptrunner_utils.script_run_context import add_script_run_ctx
 from tidalapi import media
 from tidalapi.exceptions import ObjectNotFound
 from tidalapi.session import SearchResults
@@ -226,11 +231,14 @@ class TidalManager:
         list_of_matches.sort(key=lambda x: x.quality.value + x.score, reverse=True)
         return list_of_matches[0]
 
-    def convert_spotify_playlist(self, spotify_playlist: Playlist):
+    def convert_spotify_playlist(self, spotify_playlist: Playlist,
+                                 status_container: StatusContainer = None) -> Playlist:
         """
         Converts a Spotify playlist to a TIDAL playlist.
 
         :param spotify_playlist: The Spotify playlist to convert.
+        :param status_container: The streamlit status container to update, if any.
+
         :return: A TIDAL playlist.
         """
         tidal_playlist = Playlist(
@@ -241,10 +249,15 @@ class TidalManager:
         )
 
         for spotify_track in spotify_playlist.tracks:
+            if status_container:
+                status_container.write(f"*-> Matching track: {spotify_track.name} - {spotify_track.artist.name}*")
+
             tidal_track = self.convert_spotify_track(spotify_track)
             if tidal_track:
                 tidal_playlist.tracks.append(tidal_track)
             else:
+                if status_container:
+                    status_container.write(f"Failed to match track: {spotify_track.name} - {spotify_track.artist.name}")
                 pass  # TODO: handle unmatched tracks
 
         return tidal_playlist
@@ -262,7 +275,6 @@ class TidalManager:
         :param quality: The quality of the downloaded track.
         :param output_type: The output file type.
         :param destination: The destination folder.
-        :param status: The status container to update, if any.
         """
 
         try:
@@ -289,11 +301,14 @@ class TidalManager:
         except Exception as e:
             raise ValueError(f"Failed to download track {track.name}: {e}")
 
+    ### OLD BUT GOLD (WORKS)
     def download_playlist(self,
                           playlist: Playlist,
                           quality: TrackQuality = TrackQuality.HI_RES_LOSSLESS,
                           output_type: str = "flac",
                           destination: str = "~/Music/Spotidalyfin",
+                          status_container: StatusContainer = None,
+                          progress_bar: ProgressMixin = None
                           ):
         """
         Downloads a playlist to the given destination.
@@ -302,6 +317,8 @@ class TidalManager:
         :param quality: The quality of the downloaded tracks.
         :param output_type: The output file type.
         :param destination: The destination folder.
+        :param status_container: The status container to update, if any.
+        :param progress_bar: A Streamlit progress bar widget.
         """
 
         if quality:
@@ -310,8 +327,110 @@ class TidalManager:
         if destination:
             destination = Path(destination).expanduser()
 
+        # Total number of tracks to download
+        total_tracks = len(playlist.tracks)
+
+        # Initialize the progress bar
+        if progress_bar is not None:
+            progress_bar.progress(0)
+
+        # Track progress in the main thread using a shared variable
+        def _execute_download(_track, _progress_tracker, attempts=0):
+            if not "streamlit_script_run_ctx" in threading.current_thread().__dict__:
+                if attempts < 10:
+                    time.sleep(0.1)
+                    attempts += 1
+                    return _execute_download(_track, _progress_tracker, attempts)
+                else:
+                    raise ValueError("Failed to download track due to missing script run context.")
+
+            # Create an st.empty() container to write status messages (no spamming logs)
+            track_empty = status_container.empty() if status_container else None
+
+            try:
+                if track_empty:
+                    track_empty.write(f"*-> Downloading track: {_track.name}*")
+
+                self.download_track(_track, quality, output_type, destination)
+
+                # Update progress in the main thread safely
+                if progress_bar is not None:
+                    _progress_tracker[0] += 1
+                    progress_bar.progress(_progress_tracker[0] / total_tracks)
+
+                if track_empty:
+                    track_empty.write(f"*:green[-> Downloaded track: {_track.name}]*")
+
+            except Exception as e:
+                if track_empty:
+                    track_empty.write(f"**:red[-> {e}]**")
+                raise ValueError(e)
+
+        # Shared progress tracker (using list to ensure it's mutable)
+        progress_tracker = [0]
+
+        # Use ThreadPoolExecutor to download tracks in parallel
         with ThreadPoolExecutor(max_workers=4) as executor:
-            futures = [
-                executor.submit(self.download_track, track, quality, output_type, destination)
-                for track in playlist.tracks
-            ]
+            results = executor.map(lambda track: _execute_download(track, progress_tracker), playlist.tracks)
+
+            for t in executor._threads:
+                add_script_run_ctx(t)
+
+            for result in results:
+                pass
+
+    # #### LOOKS NICE BUT MISSING SCRIPT CONTEXT STILL
+    # def download_playlist(
+    #         self,
+    #         playlist: Playlist,
+    #         quality: TrackQuality = TrackQuality.HI_RES_LOSSLESS,
+    #         output_type: str = "flac",
+    #         destination: str = "~/Music/Spotidalyfin",
+    #         status_container=None,
+    #         progress_bar=None
+    # ):
+    #     """Downloads a playlist to the given destination."""
+    #     # Setup
+    #     self.client.audio_quality = quality.name if quality else None
+    #     dest_path = str(Path(destination).expanduser())
+    #     total_tracks = len(playlist.tracks)
+    #     progress = [0]  # Mutable counter for tracking progress
+    #
+    #     if progress_bar:
+    #         progress_bar.progress(0)
+    #
+    #     def _execute_download(track):
+    #         # Ensure Streamlit context exists
+    #         for _ in range(10):
+    #             if "streamlit_script_run_ctx" in threading.current_thread().__dict__:
+    #                 break
+    #             time.sleep(0.1)
+    #         else:
+    #             raise ValueError("Missing script run context")
+    #
+    #         try:
+    #             # Update status and download
+    #             track_log_text = status_container.empty() if status_container else None
+    #             if track_log_text:
+    #                 track_log_text.write(f"*-> Downloading: {track.name}*")
+    #
+    #             self.download_track(track, quality, output_type, dest_path)
+    #
+    #             # Update progress
+    #             if progress_bar:
+    #                 progress[0] += 1
+    #                 progress_bar.progress(progress[0] / total_tracks)
+    #
+    #             if track_log_text:
+    #                 track_log_text.write(f"*:green[✓ {track.name}]*")
+    #
+    #         except Exception as e:
+    #             if track_log_text:
+    #                 track_log_text.write(f"**:red[Error: {e}]**")
+    #             raise
+    #
+    #     # Download tracks in parallel
+    #     with ThreadPoolExecutor(max_workers=1) as executor:
+    #         executor.map(lambda track: _execute_download(track), playlist.tracks)
+    #         for t in executor._threads:
+    #             add_script_run_ctx(t)

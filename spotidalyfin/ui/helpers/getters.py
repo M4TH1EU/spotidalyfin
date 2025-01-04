@@ -11,6 +11,12 @@ def get_database():
     return st.session_state.database
 
 
+def create_state_if_missing(key: str, value: any):
+    if key not in st.session_state:
+        st.session_state[key] = value
+    # return st.session_state[key]
+
+
 def get_spotify_manager(username: str) -> SpotifyManager:
     key = f"spotify_manager_{username}"
     if key not in st.session_state:

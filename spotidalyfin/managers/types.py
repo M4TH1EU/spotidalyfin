@@ -67,7 +67,11 @@ def get_acoustid_fingerprint(file: Path) -> str:
 def query_musicbrainz(irsc: str) -> dict:
     """Query MusicBrainz for additional metadata based on the ISRC."""
     musicbrainzngs.set_useragent("spotidalyfin", "0.1")
-    result: dict = musicbrainzngs.get_recordings_by_isrc(irsc, includes=["artists", "releases"])
+    try:
+        result: dict = musicbrainzngs.get_recordings_by_isrc(irsc, includes=["artists", "releases"])
+    except Exception as e:
+        log.error(f"Failed to query MusicBrainz: {e}")
+        return {}
 
     if not result.get("isrc", {}).get("recording-list"):
         return {}
