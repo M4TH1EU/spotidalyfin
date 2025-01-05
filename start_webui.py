@@ -18,6 +18,12 @@ if __name__ == "__main__":
         "--client.toolbarMode=viewer",
         "--client.showErrorDetails=none",
         "--browser.gatherUsageStats=false",
+
+        "--theme.primaryColor=#924BD1",
+        "--theme.backgroundColor=#FFFFFF",
+        "--theme.secondaryBackgroundColor=#FBF9FF",
+        # "--theme.textColor=#000000",
+        "--theme.font=sans serif",
     ]
 
     cli.main()

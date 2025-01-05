@@ -8,7 +8,7 @@ from spotidalyfin.managers.spotify_manager import create_temporary_oauth, try_to
 from spotidalyfin.managers.tidal_manager import try_to_authenticate_with_tidal, create_temporary_session
 from spotidalyfin.ui.helpers.dialogs import DialogContext, DialogStep, MultiStepDialog
 from spotidalyfin.ui.helpers.getters import get_database
-from spotidalyfin.ui.helpers.ui import subheader_custom_icon, display_table
+from spotidalyfin.ui.helpers.ui import subheader_custom_icon, display_table, inline_code_html
 
 
 # Callback to update the current step
@@ -76,7 +76,6 @@ def create_and_add_spotify_dialog():
         context.set("redirect_url", "")
         context.set("oauth", None)
 
-
     # Create the dialog steps
     step1 = DialogStep(
         title="Step 1: Provide Spotify App Details",
@@ -122,7 +121,7 @@ def spotify_accounts_table():
 
         for username in profiles:
             data.append([
-                f"`{username}`",  # Display username in bold
+                inline_code_html(username, "primary"),  # Display username
                 lambda u=username: st.button("Remove", key=u, on_click=remove_spotify_profile,
                                              args=(get_database(), u,))  # Remove button (attention late-binding)
             ])
@@ -193,6 +192,7 @@ def create_and_add_tidal_dialog():
 
     # Show the dialog
     if st.button("Connect TIDAL Account"):
+        # Create a temporary session for the dialog to use
         tidal_dialog.get_context().set("session", create_temporary_session())
         tidal_dialog.render()
 
@@ -209,7 +209,7 @@ def tidal_accounts_table():
 
         for username in profiles:
             data.append([
-                f"`{username}`",  # Display username in bold
+                inline_code_html(username, "primary"),  # Display username in red
                 lambda u=username: st.button("Remove", key=u, on_click=remove_tidal_profile,
                                              args=(get_database(), u,))  # Remove button (attention late-binding)
             ])
@@ -231,7 +231,7 @@ def tidal_accounts_table():
 
 
 # Main Page Layout
-st.title("Accounts Settings")
+st.title(":material/manage_accounts: Accounts Settings")
 st.write("Here you can manage all the accounts that you have added to Spotidalyfin.")
 
 # Spotify Section

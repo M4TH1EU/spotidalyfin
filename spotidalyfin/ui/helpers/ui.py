@@ -7,35 +7,45 @@ from uuid import uuid4
 import streamlit as st
 
 
-def subheader_custom_icon(text, icon_path, icon_position='left', img_size=24) -> None:
-    """Display a subheader with an icon (supported: svg/png/jpeg) on either side.
+def _element_custom_icon(element: str, text, icon_path, icon_position='left', img_size=24) -> None:
+    """Display a title/text element with an icon (supported: svg/png/jpeg) on either side.
 
     Parameters
     ----------
+    element : str
+        The HTML element to use for the text, one of 'h1', 'h2', 'h3', 'p', etc.
     text : str
         The text to display in the subheader.
     icon_path : str
-        The path to the icon image file.
+        The path to the icon image file. Supported formats: svg, png, jpeg.
     icon_position : str, optional
         The position of the icon relative to the text, either 'left' or 'right', by default 'left'.
     img_size : int, optional
         The size of the icon image in pixels, by default 24.
     """
-
-    # Generate the base64-encoded icon HTML (for SVG and PNG support)
     suffix = Path(icon_path).suffix[1:]
     img_base64 = base64.b64encode(Path(icon_path).read_bytes()).decode()
     img_html = f"<img src='data:image/{'svg+xml' if suffix == "svg" else suffix};base64,{img_base64}' height='{img_size}px'>"
 
     # HTML code for the subheader with icon and text
     subheader_html = f"""
-    <h3 style="display: flex; align-items: center; gap: 10px;">
-        {img_html if icon_position == 'left' else ""}{text}{img_html if icon_position == 'right' else ""}
-    </h3>
-    """
+        <{element} style="display: flex; align-items: center; gap: 10px;">
+            {img_html if icon_position == 'left' else ""}{text}{img_html if icon_position == 'right' else ""}
+        </{element}>
+        """
 
     # Display the HTML using Streamlit
     st.markdown(subheader_html, unsafe_allow_html=True)
+
+
+def title_custom_icon(text, icon_path, icon_position='left', img_size=24) -> None:
+    """Display a title with an icon (supported: svg/png/jpeg) on either side. See _element_custom_icon for more details."""
+    _element_custom_icon('h1', text, icon_path, icon_position, img_size)
+
+
+def subheader_custom_icon(text, icon_path, icon_position='left', img_size=24) -> None:
+    """Display a subheader with an icon (supported: svg/png/jpeg) on either side. See _element_custom_icon for more details."""
+    _element_custom_icon('h3', text, icon_path, icon_position, img_size)
 
 
 def create_aligned_columns(spec=3, horizontal_alignment="center", vertical_alignment="center", **kwargs) -> List:
@@ -151,4 +161,29 @@ def display_table(
                             if header and row_idx == 0:
                                 st.markdown(f"**{value}**")
                             else:
-                                st.write(value)
+                                if "<" in value and ">" in value:
+                                    st.html(value)
+                                else:
+                                    st.write(value)
+
+
+def inline_code_html(text: str, color: str) -> str:
+    """Create an inline code HTML element with custom color. Recreates the Streamlit `st.code` element.
+
+    Args:
+        text: The text to display in the inline code block.
+        color: The color of the text in the inline code block.
+
+    Returns:
+        str: The HTML code for the inline code block.
+    """
+    if color == "primary":
+        color = st.get_option("theme.primaryColor")
+    elif color == "secondary":
+        color = st.get_option("theme.secondaryColor")
+
+    return """
+    <code style="color: {color}; font-family: 'Source Code Pro'; font-size: 0.75em; background: rgb(252,251,254); border-radius: 0.25em; margin: 0px;">
+        {text}
+        </code>
+    """.format(text=text, color=color)

@@ -14,12 +14,11 @@ import tidalapi
 from mutagen.flac import FLAC, Picture
 from mutagen.id3 import TALB, TCOP, TDRC, TIT2, TOPE, TPE1, TRCK, TSRC, USLT, ID3, APIC
 from mutagen.mp3 import MP3
-from requests import ReadTimeout
 from tidalapi import Role
-from tidalapi.exceptions import MetadataNotAvailable
 from tidalapi.media import StreamManifest, AudioExtensions
 from unidecode import unidecode
 
+from spotidalyfin.exceptions import DownloadTrackException
 from spotidalyfin.utils.comparisons import weighted_word_overlap
 from spotidalyfin.utils.file_utils import open_image_url
 from spotidalyfin.utils.formatting import parse_date
@@ -70,7 +69,7 @@ def query_musicbrainz(irsc: str) -> dict:
     try:
         result: dict = musicbrainzngs.get_recordings_by_isrc(irsc, includes=["artists", "releases"])
     except Exception as e:
-        log.error(f"Failed to query MusicBrainz: {e}")
+        log.error(f"No results found for ISRC {irsc} on MusicBrainz: {e}")
         return {}
 
     if not result.get("isrc", {}).get("recording-list"):
@@ -392,8 +391,7 @@ class Track:
             str: The file extension of the audio file.
 
         Raises:
-            NotImplementedError: If the platform does not support downloading.
-            requests.HTTPError: For HTTP-related errors during download.
+            DownloadTrackException: If the download fails.
         """
 
         def _download():
@@ -428,11 +426,14 @@ class Track:
 
         try:
             return _download()
-        except ReadTimeout as e:
+        except Exception as e:
             if retry_count <= 0:
-                raise e
-            log.warning(f"Download failed: {e}. Retrying {retry_count} more times.")
-            return self.raw_data(retry_count - 1)
+                # log.exception(f"Download failed: {e}")
+                raise DownloadTrackException(f"Download failed for track {self.name} by {self.artist.name} : {e}")
+            else:
+                log.warning(
+                    f"Download failed for track {self.name} by {self.artist.name}. Retrying {retry_count} more times. Error: {e}")
+                return self.raw_data(retry_count - 1)
 
 
 @dataclass
@@ -492,13 +493,6 @@ def track_from_tidal_track(tidal_track: tidalapi.Track) -> Track:
             return TrackQuality.LOSSLESS
         else:
             return TrackQuality.LOW
-
-    def lyrics(track: tidalapi.Track) -> str:
-        try:
-            result = track.lyrics()
-            return result.subtitles or result.text
-        except MetadataNotAvailable:
-            return ""
 
     return Track(
         platform=Platform.TIDAL,

@@ -1,23 +1,26 @@
 import os
 
 import streamlit as st
+from spotipy import SpotifyException
 
 from spotidalyfin.db.helpers import get_authenticated_spotify_profiles, get_authenticated_tidal_profiles
 from spotidalyfin.managers.types import TrackQuality
-from spotidalyfin.ui.helpers.getters import get_database, get_spotify_manager, get_tidal_manager
+from spotidalyfin.ui.helpers.getters import get_database, get_spotify_manager, get_tidal_manager, \
+    create_state_if_missing
 from spotidalyfin.ui.helpers.platforms import get_user_playlists
+from spotidalyfin.utils.logger import log
 
-# Initialize states
-if 'submitted' not in st.session_state:
-    st.session_state.download_playlist_submitted = False
-    st.session_state.download_playlist_completed = False
-    st.session_state.download_playlist_form_data = {}
+create_state_if_missing('download_playlist_submitted', False)
+create_state_if_missing('download_playlist_completed', False)
+create_state_if_missing('download_playlist_form_data', {})
+create_state_if_missing('download_playlist_logs', [])
 
 # Show input form (when not submitted)
 if not st.session_state.download_playlist_submitted:
     # WARNING: no streamlit elements must be put here otherwise it messes with what is displayed
+
     with st.container():
-        st.header(":material/download: Download playlist")
+        st.title(":material/download: Download playlist")
         st.write("Uses the Tidal API to download a playlist from Spotify in lossless quality.")
 
         logged_spotify_usernames = get_authenticated_spotify_profiles(get_database())
@@ -53,7 +56,7 @@ if not st.session_state.download_playlist_submitted:
                 [
                     ("320kbps", TrackQuality.LOW),
                     ("FLAC (lossless)", TrackQuality.LOSSLESS),
-                    (":rainbow[HiFi] (", TrackQuality.HI_RES_LOSSLESS)
+                    (":rainbow[HiFi]", TrackQuality.HI_RES_LOSSLESS)
                 ],
                 format_func=lambda x: x[0],
                 captions=[
@@ -98,75 +101,96 @@ if not st.session_state.download_playlist_submitted:
 else:
     st.header("Downloading playlist")
 
+    # Normalize playlist ID (if from selectbox)
     if isinstance(st.session_state.download_playlist_form_data['playlist_id'], tuple):
+        playlist_name = st.session_state.download_playlist_form_data['playlist_id'][0]
         playlist_id = st.session_state.download_playlist_form_data['playlist_id'][1]
     else:
         playlist_id = st.session_state.download_playlist_form_data['playlist_id']
 
-    progress_bar = st.progress(0, "Download status")
+    progress_bar = st.progress(0, "Waiting for download to start...")
 
     if not st.session_state.download_playlist_completed:
         # Display form data summary
-        with st.expander("Development Info"):
-            st.write("### Download Summary")
-            st.write(f"Spotify Username: {st.session_state.download_playlist_form_data['spotify_username']}")
-            st.write(f"Tidal Username: {st.session_state.download_playlist_form_data['tidal_username']}")
-            st.write(f"Playlist ID: {st.session_state.download_playlist_form_data['playlist_id']}")
-            st.write(f"Quality: {st.session_state.download_playlist_form_data['quality']}")
-            st.write(f"File Type: {st.session_state.download_playlist_form_data['file_type']}")
-            st.write(f"Output Destination: {st.session_state.download_playlist_form_data['output_dest']}")
+        with st.expander(":material/bug_report: Development Info"):
+            text = """
+            Spotify Username: {spotify_username}
+            Tidal Username: {tidal_username}
+            Playlist ID: {playlist_id}
+            Quality: {quality}
+            File Type: {file_type}
+            Output Destination: {output_dest}
+            """.format(**st.session_state.download_playlist_form_data)
+            st.code(text)
 
         # Download playlist and log progress
         with st.status("") as status:
-            # Step 0
-            msg = f":material/login: Initializing accounts managers..."
-            status.update(label=msg, state="running", expanded=True)
-            status.write(f"**{msg}**")
-            spotify_manager = get_spotify_manager(st.session_state.download_playlist_form_data['spotify_username'])
-            tidal_manager = get_tidal_manager(st.session_state.download_playlist_form_data['tidal_username'])
+            try:
+                # Step 0
+                msg = f":material/login: Initializing accounts managers..."
+                status.update(label=msg, state="running", expanded=True)
+                status.write(f"**{msg}**")
+                spotify_manager = get_spotify_manager(st.session_state.download_playlist_form_data['spotify_username'])
+                tidal_manager = get_tidal_manager(st.session_state.download_playlist_form_data['tidal_username'])
 
-            status.divider()
+                # Step 1
+                msg = f":material/queue_music: Fetching Spotify playlist tracks..."
+                status.update(label=msg, state="running", expanded=True)
+                status.write(f"**{msg}**")
+                spotify_playlist = spotify_manager.get_playlist(playlist_id)
+                spotify_playlist_length = len(spotify_playlist.tracks)
 
-            # Step 1
-            msg = f":material/queue_music: Fetching Spotify playlist tracks..."
-            status.update(label=msg, state="running", expanded=True)
-            status.write(f"**{msg}**")
-            spotify_playlist = spotify_manager.get_playlist(playlist_id)
-            spotify_playlist_length = len(spotify_playlist.tracks)
+                status.divider()
 
-            status.divider()
+                # Step 2
+                msg = f":material/compare_arrows: Matching Spotify tracks to TIDAL tracks..."
+                status.update(label=msg, state="running", expanded=True)
+                status.write(f"**{msg}**")
+                tidal_playlist = tidal_manager.convert_spotify_playlist(spotify_playlist, status_container=status)
+                tidal_playlist_length = len(tidal_playlist.tracks)
 
-            # Step 2
-            msg = f":material/compare_arrows: Matching Spotify tracks to TIDAL tracks..."
-            status.update(label=msg, state="running", expanded=True)
-            status.write(f"**{msg}**")
-            tidal_playlist = tidal_manager.convert_spotify_playlist(spotify_playlist, status_container=status)
-            tidal_playlist_length = len(tidal_playlist.tracks)
+                status.divider()
 
-            status.divider()
+                # Step 3
+                msg = f":material/downloading: Downloading tracks..."
+                status.update(label=msg, state="running", expanded=True)
+                status.write(f"**{msg}**")
+                st.session_state.download_playlist_logs = tidal_manager.download_playlist(
+                    playlist=tidal_playlist,
+                    quality=st.session_state.download_playlist_form_data['quality'][1],
+                    output_type=st.session_state.download_playlist_form_data['file_type'][1],
+                    destination=st.session_state.download_playlist_form_data['output_dest'],
+                    status_container=status,
+                    progress_bar=progress_bar
+                )
 
-            # Step 3
-            msg = f":material/downloading: Downloading tracks..."
-            status.update(label=msg, state="running", expanded=True)
-            status.write(f"**{msg}**")
-            tidal_manager.download_playlist(
-                playlist=tidal_playlist,
-                quality=st.session_state.download_playlist_form_data['quality'][1],
-                output_type=st.session_state.download_playlist_form_data['file_type'][1],
-                destination=st.session_state.download_playlist_form_data['output_dest'],
-                status_container=status,
-                progress_bar=progress_bar
-            )
-
-            status.update(label="Download Complete!", state="complete", expanded=False)
-            st.session_state.download_playlist_completed = True
+                status.update(label="Download Complete!", state="complete", expanded=False)
+                st.session_state.download_playlist_completed = True
+            except SpotifyException as e:
+                status.update(label="Spotify Error", state="error", expanded=False)
+                st.error(f"An error occurred while fetching the playlist: {e}")
+                log.error(f"An error occurred while fetching the playlist: {e}")
+            # except Exception as e:
+            #     status.update(label="Download Failed", state="error", expanded=False)
+            #     st.error(f"An error occurred while downloading the playlist: {e}")
+            #     log.error(f"An error occurred while downloading the playlist: {e}")
 
     # Show completion message and reset button
     if st.session_state.download_playlist_completed:
+
+        # Display failed tracks if any
+        failed_tracks = [log for log in st.session_state.download_playlist_logs if log[0] == False]
+        if failed_tracks:
+            st.warning(f"{len(failed_tracks)} tracks failed to download.", icon=":material/report:")
+            with st.expander("Failed tracks", icon=":material/report:"):
+                for log_status, log_track in failed_tracks:
+                    st.write(f"{log_track.name} - {log_track.artist}")
+
         # status.update(label="Download Complete!", state="complete", expanded=False)
         st.success("All files have been downloaded successfully!")
         if st.button("Reset"):
             st.session_state.download_playlist_submitted = False
             st.session_state.download_playlist_completed = False
             st.session_state.download_playlist_form_data = {}
+            st.session_state.download_playlist_logs = []
             st.rerun()
