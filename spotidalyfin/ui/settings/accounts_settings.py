@@ -8,7 +8,7 @@ from spotidalyfin.managers.spotify_manager import create_temporary_oauth, try_to
 from spotidalyfin.managers.tidal_manager import try_to_authenticate_with_tidal, create_temporary_session
 from spotidalyfin.ui.helpers.dialogs import DialogContext, DialogStep, MultiStepDialog
 from spotidalyfin.ui.helpers.getters import get_database
-from spotidalyfin.ui.helpers.ui import display_subheader_with_icon, display_table
+from spotidalyfin.ui.helpers.ui import subheader_custom_icon, display_table
 
 
 # Callback to update the current step
@@ -235,14 +235,14 @@ st.title("Accounts Settings")
 st.write("Here you can manage all the accounts that you have added to Spotidalyfin.")
 
 # Spotify Section
-display_subheader_with_icon("Spotify", "assets/ui/images/spotify_logo.svg", icon_position="right")
+subheader_custom_icon("Spotify", "assets/ui/images/spotify_logo.svg", icon_position="right")
 st.write("Here you can add or remove Spotify accounts.")
 
 spotify_accounts_table()
 create_and_add_spotify_dialog()
 
 # TIDAL Section
-display_subheader_with_icon("TIDAL", "assets/ui/images/tidal_logo.svg", icon_position="right")
+subheader_custom_icon("TIDAL", "assets/ui/images/tidal_logo.svg", icon_position="right")
 st.write("Here you can add or remove TIDAL accounts.")
 
 tidal_accounts_table()

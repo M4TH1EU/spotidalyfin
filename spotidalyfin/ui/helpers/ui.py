@@ -7,8 +7,8 @@ from uuid import uuid4
 import streamlit as st
 
 
-def display_subheader_with_icon(text, icon_path, icon_position='left', img_size=24) -> None:
-    """Display a subheader with an icon on either side.
+def subheader_custom_icon(text, icon_path, icon_position='left', img_size=24) -> None:
+    """Display a subheader with an icon (supported: svg/png/jpeg) on either side.
 
     Parameters
     ----------
