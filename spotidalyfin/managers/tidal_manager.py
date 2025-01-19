@@ -85,6 +85,7 @@ class TidalManager:
     @cachebox.cached(cachebox.LRUCache(maxsize=256))
         self.db = db
 
+    @cachebox.cached(cachebox.LRUCache(maxsize=256))
     @rate_limit
     def get_track(self, track_id: str) -> Track:
         """

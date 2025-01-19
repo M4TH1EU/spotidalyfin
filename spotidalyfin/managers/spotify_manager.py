@@ -147,7 +147,6 @@ class SpotifyManager:
             logging.exception(f"Failed to search for artist with name {artist_name}")
             raise SearchException(f"Failed to search for artist with name {artist_name}")
 
-    @cachebox.cached(cachebox.LRUCache(maxsize=16))
     @rate_limit
     def get_liked_songs(self) -> Playlist:
         """
@@ -185,7 +184,6 @@ class SpotifyManager:
             tracks=tracks
         )
 
-    @cachebox.cached(cachebox.LRUCache(maxsize=32))
     @rate_limit
     def get_playlist(self, playlist_id: str, retrieve_all_tracks: bool = True,
                      retrieve_all_albums_details: bool = False) -> Playlist:
@@ -279,7 +277,6 @@ class SpotifyManager:
             logging.exception(f"Failed to fetch all tracks for playlist with ID {playlist_id}")
             raise PlaylistItemsException(f"Failed to fetch all tracks for playlist with ID {playlist_id}")
 
-    @cachebox.cached(cachebox.LRUCache(maxsize=32))
     @rate_limit
     def get_user_playlists(self, user_id: str = "me") -> List[Playlist]:
         """
