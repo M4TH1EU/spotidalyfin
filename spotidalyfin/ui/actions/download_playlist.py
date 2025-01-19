@@ -188,7 +188,7 @@ else:
 
         # status.update(label="Download Complete!", state="complete", expanded=False)
         st.success("All files have been downloaded successfully!")
-        if st.button("Reset"):
+        if st.button("Go back"):
             st.session_state.download_playlist_submitted = False
             st.session_state.download_playlist_completed = False
             st.session_state.download_playlist_form_data = {}

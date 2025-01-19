@@ -159,7 +159,8 @@ def convert_m4a_bytes_to_flac(input_bytes: bytes, timeout=10, reencode_flac: boo
                 "ffmpeg",
                 "-i", "pipe:0",  # Use pipe as input (stdin)
                 "-f", "flac",  # Specify output format as FLAC
-                "-c:a", "copy" if not reencode_flac else "flac", # Copy audio codec (no re-encoding it's already FLAC inside M4A)
+                "-c:a", "copy" if not reencode_flac else "flac",
+                # Copy audio codec (no re-encoding it's already FLAC inside M4A)
                 "pipe:1"  # Use pipe as output (stdout)
             ],
             input=input_bytes,  # Provide the byte array as input

@@ -247,7 +247,7 @@ class Artist:
     def __post_init__(self):
         # Normalize artist ID to lowercase
         self.artist_id = str(self.artist_id).lower()
-        self.name = unidecode(self.name)
+        self.name = unidecode(self.name or "")
 
     def __str__(self) -> str:
         return self.name
@@ -367,7 +367,7 @@ class Track:
         if abs(self.duration - other.duration) <= 2:  # Allow a slight variation in duration
             score += 1
         if self.isrc and self.isrc == other.isrc:
-            score += 0.5
+            score += 2
         if weighted_word_overlap(self.name, other.name) > 0.7:
             score += 1
         if weighted_word_overlap(self.album.name, other.album.name) > 0.35:
@@ -466,6 +466,11 @@ class Playlist:
 
 
 def track_from_spotify_track(spotify_track: dict) -> Track:
+    images = spotify_track.get('album', {}).get('images', [])
+    cover_url = None
+    if images:
+        cover_url = images[0].get('url')
+
     return Track(
         platform=Platform.SPOTIFY,
         name=spotify_track.get('name'),
@@ -475,7 +480,7 @@ def track_from_spotify_track(spotify_track: dict) -> Track:
         artists=[artist_from_spotify_artist(artist) for artist in spotify_track.get('artists', [])],
         isrc=spotify_track.get('external_ids', {}).get('isrc'),
         track_id=spotify_track.get('id'),
-        cover_url=spotify_track.get('album', {}).get('images', [{}])[0].get('url'),
+        cover_url=cover_url,
         track_number=spotify_track.get('track_number'),
         disc_number=spotify_track.get('disc_number'),
         release_date=parse_date(spotify_track.get('album', {}).get('release_date'))
