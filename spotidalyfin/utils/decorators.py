@@ -18,7 +18,7 @@ def rate_limit(func):
                 log.warning(f"Rate limit exceeded, retrying in a few seconds")
                 if retry_count < 7:
                     retry_count += 1
-                    time.sleep(1.5 ** retry_count + random.uniform(0.1, 0.4))
+                    time.sleep(2 ** retry_count + random.uniform(0.2, 0.6))
                 else:
                     raise RuntimeError("Rate limit exceeded") from e
             except Exception as e:

@@ -2,6 +2,7 @@
 import re
 import shutil
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from functools import lru_cache
 from typing import Optional, List
 
 import cachebox
@@ -87,7 +88,7 @@ class JellyfinManager:
     def get_users(self):
         return self.request("Users")
 
-    @cachebox.cached(cachebox.LRUCache(maxsize=256))
+    @lru_cache(maxsize=512)
     def search(self, query=None, limit=5, path="Items", year=None, parent_id=None, user_id=None,
                include_item_types="Audio",
                recursive=True) -> Optional[list]:
@@ -119,14 +120,14 @@ class JellyfinManager:
 
         return self.request(path, params=params)
 
-    @cachebox.cached(cachebox.LRUCache(maxsize=256))
+    @lru_cache(maxsize=512)
     def search_by_parent_id(self, parent_id, limit=5, include_item_types="Audio", recursive=True) -> Optional[list]:
         """Search for items by parent ID."""
         return self.search(limit=limit, path=f"Items", parent_id=parent_id,
                            include_item_types=include_item_types,
                            recursive=recursive)
 
-    @cachebox.cached(cachebox.LRUCache(maxsize=256))
+    @lru_cache(maxsize=512)
     def search_artist(self, artist_name) -> Optional[dict]:
         """ Search for an artist by name. """
         response = self.search(query=artist_name, include_item_types="MusicArtist")
@@ -136,6 +137,7 @@ class JellyfinManager:
 
         return None
 
+    @lru_cache(maxsize=512)
     def search_track_for_artist(self, track_name, artist: dict) -> Optional[dict]:
         """
         Search for a track by name for a specific artist. This is useful when the track name is not unique and the
@@ -153,7 +155,7 @@ class JellyfinManager:
 
         return None
 
-    @cachebox.cached(cachebox.LRUCache(maxsize=256))
+    @lru_cache(maxsize=512)
     def search_album(self, album_name: str, artist_name: str = None) -> Optional[dict]:
         """
         Search for an album by name and will validate with the artist name if provided.
@@ -184,6 +186,7 @@ class JellyfinManager:
 
         return None
 
+    @lru_cache(maxsize=512)
     def search_track_in_album(self, track_name: str, album: dict, duration=None) -> Optional[dict]:
         """
         Search for a track in an album by name and duration (if provided).
@@ -205,7 +208,7 @@ class JellyfinManager:
 
         return None
 
-    @cachebox.cached(cachebox.LRUCache(maxsize=256))
+    @lru_cache(maxsize=512)
     def search_track_by_name(self, track_name, artist_name=None, album_name=None, duration=None,
                              validate_track_name: bool = True) -> Optional[dict]:
         """
@@ -374,7 +377,7 @@ class JellyfinManager:
             log.info(f"[bold green]Compressed metadata images. Size before: {size_before / 1024 / 1024:.2f} MB, "
                      f"size after: {size_after / 1024 / 1024:.2f} MB", extra={"markup": True})
 
-    @cachebox.cached(cachebox.LRUCache(maxsize=16))
+    @lru_cache(maxsize=512)
     def get_user_id_from_username(self, username: str) -> Optional[str]:
         """
         Get the user ID from the username.

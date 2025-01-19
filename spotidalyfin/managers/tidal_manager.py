@@ -83,6 +83,8 @@ class TidalManager:
         self.client.audio_quality = TrackQuality.HI_RES_LOSSLESS.name  # TODO: allow configuration
 
     @cachebox.cached(cachebox.LRUCache(maxsize=256))
+        self.db = db
+
     @rate_limit
     def get_track(self, track_id: str) -> Track:
         """
@@ -323,6 +325,7 @@ class TidalManager:
 
         :return: A TIDAL track.
         """
+
         tidal_search = self.search_tracks(track_name=spotify_track.name, artist_name=spotify_track.artist.name,
                                           isrc=spotify_track.isrc)
         list_of_matches: list[Track] = []
@@ -355,7 +358,7 @@ class TidalManager:
             playlist_id=spotify_playlist.playlist_id
         )
 
-        def _convert_track(spotify_track, attempts=0):
+        def _convert_track(index, spotify_track, attempts=0):
             """
             Converts a single Spotify track to a TIDAL track.
             """
@@ -363,7 +366,7 @@ class TidalManager:
                 if attempts < 10:
                     time.sleep(0.1)
                     attempts += 1
-                    return _convert_track(spotify_track, attempts)
+                    return _convert_track(index, spotify_track, attempts)
                 else:
                     raise Exception("Failed to convert track due to missing script run context.")
 
@@ -375,10 +378,11 @@ class TidalManager:
 
             try:
                 tidal_track = self.convert_spotify_track(spotify_track)
-                tidal_playlist.tracks.append(tidal_track)
 
                 if track_empty:
                     track_empty.write(f"*:green[-> Matched track: {spotify_track.name} - {spotify_track.artist.name}]*")
+
+                return index, tidal_track
 
             except TrackNotFoundException as e:
                 if track_empty:
@@ -386,16 +390,23 @@ class TidalManager:
                         f"*:red[-> Failed to match track: {spotify_track.name} - {spotify_track.artist.name}]*")
                 log.exception(f"Failed to match track: {spotify_track.name} - {spotify_track.artist.name}")
 
+                return index, None
+
         # Use ThreadPoolExecutor to process tracks in parallel
         with ThreadPoolExecutor(max_workers=3) as executor:
-            results = executor.map(_convert_track, spotify_playlist.tracks)
+            results = executor.map(lambda item: _convert_track(*item), enumerate(spotify_playlist.tracks))
 
             # Add Streamlit context to threads
             for t in executor._threads:
                 add_script_run_ctx(t)
 
-            # Force the generator to execute all tasks
-            list(results)
+            # Convert results into a sorted list to maintain the order
+            ordered_results = sorted(results, key=lambda x: x[0])
+
+        # Append tracks to the TIDAL playlist in the correct order
+        for _, tidal_track in ordered_results:
+            if tidal_track:  # Only add successfully converted tracks
+                tidal_playlist.tracks.append(tidal_track)
 
         return tidal_playlist
 

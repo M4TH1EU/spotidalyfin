@@ -3,6 +3,7 @@ from pathlib import Path
 
 
 class Database:
+
     def __init__(self, db_path: Path = Path("~/.config/spotidalyfin").expanduser() / "spotidalyfin.db",
                  reset: bool = False):
         self.db_path = db_path
@@ -45,14 +46,4 @@ class Database:
                 refresh_token TEXT NOT NULL
             );
         """)
-        # self.con.execute("DROP TABLE IF EXISTS synced_accounts;")
-        # self.con.execute("""
-        #     CREATE TABLE IF NOT EXISTS synced_accounts (
-        #         spotify_username TEXT NOT NULL,
-        #         tidal_username TEXT NOT NULL,
-        #         enabled BOOLEAN NOT NULL,
-        #         interval INTEGER NOT NULL,
-        #         PRIMARY KEY (spotify_username, tidal_username)
-        #     );
-        # """)
         self.con.commit()

@@ -14,6 +14,7 @@ import tidalapi
 from mutagen.flac import FLAC, Picture
 from mutagen.id3 import TALB, TCOP, TDRC, TIT2, TOPE, TPE1, TRCK, TSRC, USLT, ID3, APIC
 from mutagen.mp3 import MP3
+from requests import HTTPError
 from tidalapi import Role
 from tidalapi.media import StreamManifest, AudioExtensions
 from unidecode import unidecode
@@ -257,6 +258,9 @@ class Artist:
             return False
         return self.name == other.name
 
+    def __hash__(self) -> int:
+        return hash(self.name + self.artist_id + str(self.platform))
+
 
 @dataclass
 class Album:
@@ -293,6 +297,9 @@ class Album:
                 and self.artists == other.artists
                 and self.tracks == other.tracks  # Note: Tracks must implement their own __eq__
         )
+
+    def __hash__(self) -> int:
+        return hash(self.album_id + self.name + str(self.artists) + str(self.tracks) + str(self.platform))
 
 
 @dataclass
@@ -339,6 +346,9 @@ class Track:
                 and self.isrc == other.isrc
                 and self.platform == other.platform
         )
+
+    def __hash__(self) -> int:
+        return hash(self.track_id + self.name + self.artist.name + self.album.name + str(self.duration) + str(self.artists) + str(self.isrc) + str(self.platform))
 
     def metadata(self) -> Metadata:
         """
@@ -464,6 +474,9 @@ class Playlist:
                 and self.tracks == other.tracks
         )
 
+    def __hash__(self) -> int:
+        return hash(self.playlist_id + self.name + self.image + str(self.tracks))
+
 
 def track_from_spotify_track(spotify_track: dict) -> Track:
     images = spotify_track.get('album', {}).get('images', [])
@@ -499,6 +512,12 @@ def track_from_tidal_track(tidal_track: tidalapi.Track) -> Track:
         else:
             return TrackQuality.LOW
 
+    stream_manifest = None
+    try:
+        stream_manifest = tidal_track.get_stream().get_stream_manifest()
+    except HTTPError as e:
+        log.error(f"Failed to get stream manifest for track {tidal_track.id}: {e}")
+
     return Track(
         platform=Platform.TIDAL,
         name=tidal_track.full_name,
@@ -510,7 +529,7 @@ def track_from_tidal_track(tidal_track: tidalapi.Track) -> Track:
         track_id=tidal_track.id,
         quality=real_quality(tidal_track),
         # lyrics=lyrics(tidal_track), # really slow
-        stream_manifest=tidal_track.get_stream().get_stream_manifest(),
+        stream_manifest=stream_manifest,
         copyright=tidal_track.copyright,
         track_number=tidal_track.track_num,
         disc_number=tidal_track.volume_num,

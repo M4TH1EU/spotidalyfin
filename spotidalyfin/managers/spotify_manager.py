@@ -200,6 +200,10 @@ class SpotifyManager:
         :raises PlaylistItemsException: if an error occurs while fetching the tracks in the playlist
         :raises AlbumNotFoundException: if an error occurs while fetching the album details for the tracks in the playlist
         """
+
+        if playlist_id == "liked_songs":
+            return self.get_liked_songs()
+
         try:
             playlist = self.client.playlist(playlist_id)
             anonymous = False
