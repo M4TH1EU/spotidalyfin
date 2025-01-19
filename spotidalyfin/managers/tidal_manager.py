@@ -81,8 +81,6 @@ class TidalManager:
         self.client.load_oauth_session(access_token=login_info[0], refresh_token=login_info[1], token_type="Bearer",
                                        is_pkce=True)
         self.client.audio_quality = TrackQuality.HI_RES_LOSSLESS.name  # TODO: allow configuration
-
-    @cachebox.cached(cachebox.LRUCache(maxsize=256))
         self.db = db
 
     @cachebox.cached(cachebox.LRUCache(maxsize=256))
