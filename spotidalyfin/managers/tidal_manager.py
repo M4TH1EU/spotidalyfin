@@ -9,6 +9,7 @@ from typing import List, Optional, cast
 
 import cachebox
 import tidalapi
+from requests import HTTPError
 from streamlit.elements.lib.mutable_status_container import StatusContainer
 from streamlit.elements.progress import ProgressMixin
 from streamlit.runtime.scriptrunner_utils.script_run_context import add_script_run_ctx
@@ -19,7 +20,8 @@ from tidalapi.session import SearchResults
 
 from spotidalyfin import cfg
 from spotidalyfin.db.database import Database
-from spotidalyfin.db.helpers import save_tidal_info_to_db, get_tidal_login_info, get_authenticated_tidal_profiles
+from spotidalyfin.db.helpers import save_tidal_info_to_db, get_tidal_login_info, get_authenticated_tidal_profiles, \
+    get_tidal_track_id_from_spotify_id, save_match
 from spotidalyfin.exceptions import TrackNotFoundException, AlbumNotFoundException, ArtistNotFoundException, \
     SearchException, LyricsNotFoundException, PlatformException, DownloadTrackException, DownloadPlaylistException
 from spotidalyfin.managers import types
@@ -85,18 +87,20 @@ class TidalManager:
 
     @cachebox.cached(cachebox.LRUCache(maxsize=256))
     @rate_limit
-    def get_track(self, track_id: str) -> Track:
+    def get_track(self, track_id: str, retrieve_stream: bool = True) -> Track:
         """
         Retrieves a track by its ID.
 
         :param track_id: The ID of the track to retrieve.
+        :param retrieve_stream: Whether to retrieve the stream of the track (slows down the process).
+
         :return: A Track object.
 
         :raises TrackNotFoundException: If the track cannot be found.
         """
         try:
             tidal_track = self.client.track(track_id)
-            return types.track_from_tidal_track(tidal_track)
+            return types.track_from_tidal_track(tidal_track, retrieve_stream)
         except ObjectNotFound:
             # log.exception(f"Track with ID {track_id} not found on TIDAL")
             raise TrackNotFoundException(f"Track with ID {track_id} not found on TIDAL")
@@ -217,7 +221,8 @@ class TidalManager:
             self,
             track_name: Optional[str] = "",
             artist_name: Optional[str] = "",
-            isrc: Optional[str] = None
+            isrc: Optional[str] = None,
+            retrieve_streams: bool = True
     ) -> List[Track]:
         """
         Searches for tracks by name, artist name, or ISRC code.
@@ -225,6 +230,7 @@ class TidalManager:
         :param track_name: The name of the track to search for.
         :param artist_name: The name of the track's artist.
         :param isrc: The ISRC code of the track.
+        :param retrieve_streams: Whether to retrieve the streams of the tracks (slows down the process).
 
         :raises SearchException: If the search fails.
 
@@ -244,8 +250,8 @@ class TidalManager:
             if not tracks and (track_name or artist_name):
                 tracks = self.search(f"{track_name} {artist_name}").get('tracks', [])
 
-            return [types.track_from_tidal_track(track) for track in tracks]
-        except (ObjectNotFound, KeyError):
+            return [types.track_from_tidal_track(track, retrieve_streams) for track in tracks]
+        except (ObjectNotFound, KeyError, tidalapi.exceptions.InvalidISRC):
             return []
 
     @rate_limit
@@ -309,24 +315,46 @@ class TidalManager:
                 log.warning(f"Playlist {playlist.name} already exists on TIDAL, deleting it...")
                 p.delete()
 
-        new_playlist = self.client.user.create_playlist(playlist.name, description="")
-        new_playlist.add([track.track_id for track in playlist.tracks])
+        try:
+            new_playlist = self.client.user.create_playlist(playlist.name, description="")
+            time.sleep(0.5)
+            new_playlist.add([track.track_id for track in playlist.tracks])
+        except HTTPError:
+            raise PlatformException(f"Failed to create playlist {playlist.name} on TIDAL")
 
         return new_playlist.id
 
-    def convert_spotify_track(self, spotify_track: Track) -> Track:
+    def convert_spotify_track(self, spotify_track: Track, retrieve_streams: bool = True,
+                              use_cache: bool = False) -> Track:
         """
         Converts a Spotify track to a TIDAL track.
 
         :param spotify_track: The Spotify track to convert.
+        :param retrieve_streams: Whether to retrieve the streams of the tracks (slows down the process).
+        :param use_cache: Whether to use the cache for matching. Using the cache won't retrieve any of the track data except its ID.
 
         :raises TrackNotFoundException: If no matches are found on TIDAL.
 
         :return: A TIDAL track.
         """
 
+        def _match_track_from_cache(spotify_track: Track) -> Optional[Track]:
+            """
+            Attempts to fetch a TIDAL track ID from the cache.
+            """
+            cached_id = get_tidal_track_id_from_spotify_id(self.db, spotify_track.track_id)
+            if cached_id:
+                return Track(Platform.TIDAL, "", None, None, 0, [], track_id=cached_id)
+            return None
+
+        if use_cache:
+            result_cache = _match_track_from_cache(spotify_track)
+            if result_cache:
+                # TODO: maybe add support to retrieve streams as well from the id got from the cache
+                return result_cache
+
         tidal_search = self.search_tracks(track_name=spotify_track.name, artist_name=spotify_track.artist.name,
-                                          isrc=spotify_track.isrc)
+                                          isrc=spotify_track.isrc, retrieve_streams=retrieve_streams)
         list_of_matches: list[Track] = []
         for tidal_track in tidal_search:
             match, score = spotify_track.matches(other=tidal_track)
@@ -339,17 +367,44 @@ class TidalManager:
                 f"No matches found on TIDAL for track {spotify_track.name} - {spotify_track.artist.name}")
 
         list_of_matches.sort(key=lambda x: x.quality.value + x.score, reverse=True)
+        save_match(self.db, spotify_track.track_id, list_of_matches[0].track_id)
         return list_of_matches[0]
 
-    def convert_spotify_playlist(self, spotify_playlist: Playlist,
+    def convert_spotify_playlist(self, spotify_playlist: Playlist, only_ids: bool = False,
                                  status_container: StatusContainer = None) -> Playlist:
         """
         Converts a Spotify playlist to a TIDAL playlist using threading.
 
         :param spotify_playlist: The Spotify playlist to convert.
-        :param status_container: The Streamlit status container to update, if any.
-        :return: A TIDAL playlist.
+        :param only_ids: If True, only track IDs will be fetched for faster execution using cached data.
+        :param status_container: Optional status container to display progress in Streamlit.
+        :return: A TIDAL playlist object.
         """
+        #
+        # if only_ids:
+        #     playlist = Playlist(Platform.TIDAL, spotify_playlist.name, "", "")
+        #     for spotify_track in spotify_playlist.tracks:
+        #         track = self.match_track_from_cache(spotify_track)
+        #         if not track:
+        #             track_empty = status_container.empty() if status_container else None
+        #
+        #             try:
+        #                 if track_empty:
+        #                     track_empty.write(
+        #                         f"*-> Matching track: {spotify_track.name} - {spotify_track.artist.name}*")
+        #                 track = self.convert_spotify_track(spotify_track, retrieve_streams=False)
+        #                 if track_empty:
+        #                     track_empty.write(
+        #                         f"*:green[-> Matched track: {spotify_track.name} - {spotify_track.artist.name}]*")
+        #             except TrackNotFoundException:
+        #                 if track_empty:
+        #                     track_empty.write(
+        #                         f"*:red[-> Failed to match track: {spotify_track.name} - {spotify_track.artist.name}]*")
+        #                 log.exception(f"Failed to match track: {spotify_track.name} - {spotify_track.artist.name}")
+        #                 continue
+        #         playlist.tracks.append(track)
+        #     return playlist
+
         tidal_playlist = Playlist(
             platform=Platform.TIDAL,
             name=spotify_playlist.name,
@@ -357,17 +412,17 @@ class TidalManager:
             playlist_id=spotify_playlist.playlist_id
         )
 
-        def _convert_track(index, spotify_track, attempts=0):
+        def convert_track(index, spotify_track, attempts=0):
             """
-            Converts a single Spotify track to a TIDAL track.
+            Converts a single Spotify track to a TIDAL track with retries.
             """
-            if not "streamlit_script_run_ctx" in threading.current_thread().__dict__:
-                if attempts < 10:
-                    time.sleep(0.1)
-                    attempts += 1
-                    return _convert_track(index, spotify_track, attempts)
-                else:
-                    raise Exception("Failed to convert track due to missing script run context.")
+            for _ in range(10):
+                if "streamlit_script_run_ctx" in threading.current_thread().__dict__:
+                    break
+                time.sleep(0.1)
+            else:
+                log.error(f"Failed to convert track {spotify_track.name} due to missing script context.")
+                return index, None
 
             # Create a temporary status container for track status messages
             track_empty = status_container.empty() if status_container else None
@@ -376,36 +431,30 @@ class TidalManager:
                 track_empty.write(f"*-> Matching track: {spotify_track.name} - {spotify_track.artist.name}*")
 
             try:
-                tidal_track = self.convert_spotify_track(spotify_track)
-
+                tidal_track = self.convert_spotify_track(spotify_track, retrieve_streams=not only_ids,
+                                                         use_cache=only_ids)
                 if track_empty:
-                    track_empty.write(f"*:green[-> Matched track: {spotify_track.name} - {spotify_track.artist.name}]*")
-
+                    track_empty.write(
+                        f"*:green[-> Matched track: {spotify_track.name} - {spotify_track.artist.name}]*")
                 return index, tidal_track
-
-            except TrackNotFoundException as e:
+            except TrackNotFoundException:
                 if track_empty:
                     track_empty.write(
                         f"*:red[-> Failed to match track: {spotify_track.name} - {spotify_track.artist.name}]*")
                 log.exception(f"Failed to match track: {spotify_track.name} - {spotify_track.artist.name}")
-
                 return index, None
 
-        # Use ThreadPoolExecutor to process tracks in parallel
         with ThreadPoolExecutor(max_workers=3) as executor:
-            results = executor.map(lambda item: _convert_track(*item), enumerate(spotify_playlist.tracks))
+            futures = executor.map(lambda args: convert_track(*args), enumerate(spotify_playlist.tracks))
 
-            # Add Streamlit context to threads
-            for t in executor._threads:
-                add_script_run_ctx(t)
+            # Ensure Streamlit context is added to each thread
+            for thread in executor._threads:
+                add_script_run_ctx(thread)
 
-            # Convert results into a sorted list to maintain the order
-            ordered_results = sorted(results, key=lambda x: x[0])
+            results = sorted(futures, key=lambda x: x[0])
 
-        # Append tracks to the TIDAL playlist in the correct order
-        for _, tidal_track in ordered_results:
-            if tidal_track:  # Only add successfully converted tracks
-                tidal_playlist.tracks.append(tidal_track)
+        # Add successfully converted tracks to the playlist
+        tidal_playlist.tracks.extend(tidal_track for _, tidal_track in results if tidal_track)
 
         return tidal_playlist
 

@@ -318,6 +318,8 @@ class Track:
     lyrics: Optional[str] = None
     quality: Optional[TrackQuality] = None
     stream_manifest: Optional[StreamManifest] = None
+    download_urls: Optional[List[str]] = None
+    file_extension: Optional[str] = None
     copyright: Optional[str] = None
     track_number: Optional[int] = None
     disc_number: Optional[int] = None
@@ -348,7 +350,8 @@ class Track:
         )
 
     def __hash__(self) -> int:
-        return hash(self.track_id + self.name + self.artist.name + self.album.name + str(self.duration) + str(self.artists) + str(self.isrc) + str(self.platform))
+        return hash(self.track_id + self.name + self.artist.name + self.album.name + str(self.duration) + str(
+            self.artists) + str(self.isrc) + str(self.platform))
 
     def metadata(self) -> Metadata:
         """
@@ -500,7 +503,7 @@ def track_from_spotify_track(spotify_track: dict) -> Track:
     )
 
 
-def track_from_tidal_track(tidal_track: tidalapi.Track) -> Track:
+def track_from_tidal_track(tidal_track: tidalapi.Track, retrieve_stream: bool = True) -> Track:
     def real_quality(track: tidalapi.Track) -> TrackQuality:
         """The audio_quality parameter isn't always correct"""
         if track.is_dolby_atmos:
@@ -513,10 +516,11 @@ def track_from_tidal_track(tidal_track: tidalapi.Track) -> Track:
             return TrackQuality.LOW
 
     stream_manifest = None
-    try:
-        stream_manifest = tidal_track.get_stream().get_stream_manifest()
-    except HTTPError as e:
-        log.error(f"Failed to get stream manifest for track {tidal_track.id}: {e}")
+    if retrieve_stream:
+        try:
+            stream_manifest = tidal_track.get_stream().get_stream_manifest()
+        except HTTPError as e:
+            log.error(f"Failed to get stream manifest for track {tidal_track.id}: {e}")
 
     return Track(
         platform=Platform.TIDAL,
@@ -529,7 +533,9 @@ def track_from_tidal_track(tidal_track: tidalapi.Track) -> Track:
         track_id=tidal_track.id,
         quality=real_quality(tidal_track),
         # lyrics=lyrics(tidal_track), # really slow
-        stream_manifest=stream_manifest,
+        # stream_manifest=stream_manifest,
+        download_urls=stream_manifest.get_urls() if stream_manifest else None,
+        file_extension=stream_manifest.file_extension if stream_manifest else None,
         copyright=tidal_track.copyright,
         track_number=tidal_track.track_num,
         disc_number=tidal_track.volume_num,

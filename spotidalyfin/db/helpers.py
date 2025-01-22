@@ -1,9 +1,11 @@
-from typing import List
+import sqlite3
+from typing import List, Optional
 
 from spotipy import CacheHandler, SpotifyOAuth
 
 from spotidalyfin import SPOTIFY_SCOPES, SPOTIFY_REDIRECT_URI
 from spotidalyfin.db.database import Database
+from spotidalyfin.utils.logger import log
 
 
 class SpotipyCacheDatabaseHandler(CacheHandler):
@@ -109,3 +111,45 @@ def remove_tidal_profile(db: Database, username: str) -> None:
     """Remove a TIDAL profile from the database."""
     db.execute("DELETE FROM tidal_accounts WHERE username=?", (username,))
     db.commit()
+
+
+def get_tidal_track_id_from_spotify_id(db: Database, spotify_id: str) -> Optional[str]:
+    """Get the TIDAL track ID from the Spotify track ID."""
+    if not spotify_id:
+        log.error(
+            "Error while retrieving TIDAL track ID from Spotify ID: spotify_id must be a non-empty string: " + str(
+                spotify_id))
+        return None
+
+    try:
+        cursor = db.execute("SELECT tidal_id FROM matches WHERE spotify_id=?", (str(spotify_id),))
+        res = cursor.fetchone()
+        return str(res[0]) if res else None
+    except sqlite3.InterfaceError as e:
+        log.error(f"SQLite InterfaceError: {e}, Parameters: {spotify_id}")
+    except Exception as e:
+        log.error(f"Unexpected error while retrieving TIDAL track ID from Spotify ID: {e}")
+
+    return None
+
+
+def save_match(db: Database, spotify_id: str, tidal_id: str) -> None:
+    """Save a match between a Spotify and TIDAL track."""
+    if not spotify_id or not tidal_id:
+        log.error(f"Error while saving match: spotify_id and tidal_id must be non-empty strings: "
+                  f"{spotify_id}, {tidal_id}")
+        return
+
+    try:
+        db.execute(
+            """
+            INSERT OR REPLACE INTO matches (spotify_id, tidal_id)
+            VALUES (?, ?)
+            """,
+            (str(spotify_id), str(tidal_id)),
+        )
+        db.commit()
+    except sqlite3.InterfaceError as e:
+        log.error(f"SQLite InterfaceError: {e}, Parameters: {spotify_id}, {tidal_id}")
+    except Exception as e:
+        log.error(f"Unexpected error while saving match: {e}")

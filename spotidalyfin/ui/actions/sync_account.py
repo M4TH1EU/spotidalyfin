@@ -118,24 +118,16 @@ else:
                 status.divider()
 
                 # Step 2
-                msg = f":material/compare_arrows: Matching Spotify tracks to TIDAL tracks..."
+                msg = f":material/compare_arrows: Syncing Spotify playlists to TIDAL..."
                 status.update(label=msg, state="running", expanded=True)
                 status.write(f"**{msg}**")
-                tidal_playlists = []
                 for spotify_playlist in spotify_playlists:
-                    tidal_playlists.append(
-                        tidal_manager.convert_spotify_playlist(spotify_playlist, status_container=status))
-                    status.write(f"**:green[-> Matched playlist : {spotify_playlist.name}]**")
-
-                status.divider()
-
-                # Step 3
-                msg = f":material/sync: Syncing tracks..."
-                status.update(label=msg, state="running", expanded=True)
-                status.write(f"**{msg}**")
-                for tidal_playlist in tidal_playlists:
+                    status.write(f"**{spotify_playlist.name}**")
+                    tidal_playlist = tidal_manager.convert_spotify_playlist(spotify_playlist, only_ids=True,
+                                                                            status_container=status)
                     tidal_manager.create_playlist(tidal_playlist)
-                    status.write(f":green[-> Synced playlist : {tidal_playlist.name}]")
+                    status.write(f"**Synced playlist : {spotify_playlist.name}**")
+                    status.divider()
 
                 status.update(label="Sync Complete!", state="complete", expanded=False)
                 st.session_state.sync_account_completed = True
