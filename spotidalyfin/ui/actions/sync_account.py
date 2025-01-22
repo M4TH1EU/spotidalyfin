@@ -125,8 +125,11 @@ else:
                     status.write(f"**{spotify_playlist.name}**")
                     tidal_playlist = tidal_manager.convert_spotify_playlist(spotify_playlist, only_ids=True,
                                                                             status_container=status)
-                    tidal_manager.create_playlist(tidal_playlist)
-                    status.write(f"**Synced playlist : {spotify_playlist.name}**")
+                    playlist = tidal_manager.create_playlist(tidal_playlist)
+                    if playlist:
+                        status.write(f"**Synced playlist : {spotify_playlist.name}**")
+                    else:
+                        status.write(f"**Failed to sync playlist : {spotify_playlist.name}**")
                     status.divider()
 
                 status.update(label="Sync Complete!", state="complete", expanded=False)

@@ -298,7 +298,7 @@ class TidalManager:
         return self.client.user.playlists()
 
     @rate_limit
-    def create_playlist(self, playlist: Playlist) -> str:
+    def create_playlist(self, playlist: Playlist) -> Optional[str]:
         """
         Creates a playlist on TIDAL.
 
@@ -314,13 +314,18 @@ class TidalManager:
             if p.name == playlist.name:
                 log.warning(f"Playlist {playlist.name} already exists on TIDAL, deleting it...")
                 p.delete()
-
+                time.sleep(0.5)
+        # TODO: some of these time.sleep might be redundant
         try:
             new_playlist = self.client.user.create_playlist(playlist.name, description="")
             time.sleep(0.5)
-            new_playlist.add([track.track_id for track in playlist.tracks])
+            for i in range(0, len(playlist.tracks), 200):
+                new_playlist.add([track.track_id for track in playlist.tracks[i:i + 200]])
+                time.sleep(0.5)
+
         except HTTPError:
-            raise PlatformException(f"Failed to create playlist {playlist.name} on TIDAL")
+            log.error(f"Failed to create playlist {playlist.name} on TIDAL")
+            return None
 
         return new_playlist.id
 
