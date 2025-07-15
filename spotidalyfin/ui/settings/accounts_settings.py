@@ -3,7 +3,8 @@ from typing import List
 import streamlit as st
 
 from spotidalyfin.db.helpers import get_authenticated_spotify_profiles, remove_spotify_profile, remove_tidal_profile, \
-    get_authenticated_tidal_profiles
+    get_authenticated_tidal_profiles, get_authenticated_jellyfin_profiles, remove_jellyfin_profile
+from spotidalyfin.managers.jellyfin_manager import try_to_authenticate_with_jellyfin
 from spotidalyfin.managers.spotify_manager import create_temporary_oauth, try_to_authenticate_with_spotify
 from spotidalyfin.managers.tidal_manager import try_to_authenticate_with_tidal, create_temporary_session
 from spotidalyfin.ui.helpers.dialogs import DialogContext, DialogStep, MultiStepDialog
@@ -230,6 +231,98 @@ def tidal_accounts_table():
         st.write("*You haven't added any accounts yet.*")
 
 
+def create_and_add_jellyfin_dialog():
+    def step1_content(context: DialogContext):
+        """Step 1: Server URL"""
+        st.info("Enter your Jellyfin URL and API key below.")
+
+        server_url = st.text_input("Jellyfin Server URL", value=context.get("server_url", ""))
+        api_key = st.text_input("API Key", value=context.get("api_key", ""), type="password")
+
+        # Store values in context
+        context.set("server_url", server_url)
+        context.set("api_key", api_key)
+
+    def validate_step1(context: DialogContext) -> tuple[bool, str]:
+        """Validate authorization"""
+        if not context.get("server_url"):
+            return False, "Please enter your Jellyfin server URL."
+        if not context.get("server_url").startswith(("http://", "https://")):
+            return False, "Invalid Jellyfin server URL. It should start with 'http://' or 'https://'."
+
+        # this tries to authenticate, checks if the account is already authenticated and saves it to the database if not
+        return try_to_authenticate_with_jellyfin(context.get("server_url"), context.get("api_key"), get_database())
+
+    def step2_content(context: DialogContext):
+        """Step 2: Completion"""
+        st.success("Your Jellyfin server has been successfully connected.")
+
+        # Clear sensitive data
+        context.set("server_url", "")  # TODO: do that in dialog class not here
+        context.set("api_key", "")  # TODO: do that in dialog class not here
+
+    # Create the dialog steps
+    step1 = DialogStep(
+        title="Step 1: Jellyfin Server URL",
+        content=step1_content,
+        validation_func=validate_step1,
+        next_button_text="Connect"
+    )
+
+    step2 = DialogStep(
+        title="Step 2: Setup Complete!",
+        content=step2_content,
+        next_button_text="Close"
+    )
+
+    # Create the dialog
+    jellyfin_dialog = MultiStepDialog(
+        name="Jellyfin Connection",
+        steps=[step1, step2],
+        show_progress_bar=True,
+    )
+
+    # Show the dialog
+    if st.button("Connect Jellyfin server"):
+        # Create a temporary session for the dialog to use
+        jellyfin_dialog.get_context().set("session", create_temporary_session())
+        jellyfin_dialog.render()
+
+
+def jellyfin_servers_table():
+    # Check if there are authenticated Jellyfin profiles
+    profiles = get_authenticated_jellyfin_profiles(get_database())
+
+    if profiles:
+        # Prepare data for display_table
+        data: List[List] = [
+            ["Server URL", "Actions"]  # Header row
+        ]
+
+        for username in profiles:
+            data.append([
+                inline_code_html(username, "primary"),  # Display username in red
+                lambda u=username: st.button("Remove", key=u, on_click=remove_jellyfin_profile,
+                                             args=(get_database(), u,))  # Remove button (attention late-binding)
+            ])
+
+        # Call display_table to render
+        display_table(
+            data=data,
+            columns=[3, 2],  # Aligned column widths
+            text="Here you can see all the Jellyfin servers that you have added to Spotidalyfin.",
+            border=True,
+            header=True,
+            align="left",
+            gap="small",
+            vertical_alignment="center"
+        )
+    else:
+        # No profiles available
+        st.write("*You haven't added any accounts yet.*")
+
+
+
 # Main Page Layout
 st.title(":material/manage_accounts: Accounts Settings")
 st.write("Here you can manage all the accounts that you have added to Spotidalyfin.")
@@ -247,3 +340,10 @@ st.write("Here you can add or remove TIDAL accounts.")
 
 tidal_accounts_table()
 create_and_add_tidal_dialog()
+
+# Jellyfin Section
+subheader_custom_icon("Jellyfin", "assets/ui/images/jellyfin.svg", icon_position="right")
+st.write("Here you can add or remove Jellyfin servers.")
+
+jellyfin_servers_table()
+create_and_add_jellyfin_dialog()

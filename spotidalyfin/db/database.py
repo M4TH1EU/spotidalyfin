@@ -48,6 +48,7 @@ class Database:
                 refresh_token TEXT NOT NULL
             );
         """)
+
         self.con.execute("DROP TABLE IF EXISTS tidal_accounts;")
         self.con.execute("""
             CREATE TABLE IF NOT EXISTS tidal_accounts (
@@ -56,6 +57,15 @@ class Database:
                 refresh_token TEXT NOT NULL
             );
         """)
+
+        self.con.execute("DROP TABLE IF EXISTS jellyfin_accounts;")
+        self.con.execute("""
+            CREATE TABLE IF NOT EXISTS jellyfin_accounts (
+                url TEXT PRIMARY KEY,
+                api TEXT NOT NULL
+            );
+        """)
+
         self.con.execute("DROP TABLE IF EXISTS matches;")
         self.con.execute("""
             CREATE TABLE IF NOT EXISTS matches (

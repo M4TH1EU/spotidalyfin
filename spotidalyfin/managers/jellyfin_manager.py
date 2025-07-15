@@ -5,20 +5,18 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from functools import lru_cache
 from typing import Optional, List
 
-import cachebox
 import requests
 from requests import Response
 from rich.progress import Progress
 from tidalapi import Track
 from tidalapi.exceptions import ObjectNotFound
 
-from spotidalyfin import cfg
 from spotidalyfin.db.database import Database
+from spotidalyfin.db.helpers import save_jellyfin_info_to_db
 from spotidalyfin.managers.spotify_manager import SpotifyManager
 from spotidalyfin.managers.tidal_manager import TidalManager
 from spotidalyfin.utils.comparisons import weighted_word_overlap, close
-from spotidalyfin.utils.file_utils import resize_image, calculate_checksum, file_to_list, remove_line_from_file, \
-    write_line_to_file, get_as_base64
+from spotidalyfin.utils.file_utils import get_as_base64
 from spotidalyfin.utils.formatting import format_artists, normalize_str, remove_invalid_chars_from_str
 from spotidalyfin.utils.logger import log
 
@@ -27,13 +25,31 @@ PEOPLE_MAX_SIZE = (900, 900)
 STUDIO_MAX_SIZE = (1066, 600)
 
 
+def try_to_authenticate_with_jellyfin(server_url: str, api_key: str, db: Database) -> (bool, str):
+    """
+    Try to authenticate with Jellyfin server using the provided URL and API key.
+    Returns a tuple of (success: bool, message: str).
+    """
+    jellyfin_manager = JellyfinManager(server_url, api_key)
+    try:
+        users = jellyfin_manager.get_users()
+        if not users:
+            return False, "No users found on the Jellyfin server. Please check your API key and server URL."
+
+        save_jellyfin_info_to_db(db, server_url, api_key)
+
+        return True, "Successfully authenticated with Jellyfin."
+    except requests.exceptions.RequestException as e:
+        return False, f"Failed to connect to Jellyfin server: {e}"
+
+
 class JellyfinManager:
     def __init__(self, url, api_key):
         self.url = url.rstrip("/")
         self.api_key = api_key
-        self.metadata_dir = cfg.get("jellyfin-metadata-dir")
-        self.checksum_file = self.metadata_dir / ".image_checksums_spotidalyfin_do_not_delete.txt"
-        self.checksums = None
+        # self.metadata_dir = cfg.get("jellyfin-metadata-dir")
+        # self.checksum_file = self.metadata_dir / ".image_checksums_spotidalyfin_do_not_delete.txt"
+        # self.checksums = None
 
     def request(self, path, method="GET", params: dict = {}, json: dict = {},
                 image_data: bytes = None, timeout: int = 30) -> list | Response:
@@ -309,73 +325,73 @@ class JellyfinManager:
 
         return None
 
-    def compress_metadata_images(self, progress: Progress = None):
-        """
-        Compresses and resizes images in the metadata directory. This is useful for reducing the size of the metadata
-        which can grow quite large with a lot of media. The images are resized to a maximum size defined in the constants
-        at the top of this file (default values of Jellyfin).
-        The quality of the images is set to 45 which is a good balance between quality and size, especially for images
-        that are not viewed in high resolution most of the time.
-        In my testing this reduced the size of the metadata directory by ~2/3.
-
-        :param progress: Progress bar to show progress in CLI (optional) :class:`rich.progress.Progress`
-        :return: None
-        """
-        library = self.metadata_dir / "library"
-        people = self.metadata_dir / "People"
-        studio = self.metadata_dir / "Studio"
-        artists = self.metadata_dir / "artists"
-
-        self.checksums = file_to_list(self.checksum_file)
-        checksums_to_replace = {}
-
-        size_before = sum(file.stat().st_size for file in self.metadata_dir.glob("**/*") if file.is_file())
-
-        for directory in [library, people, studio, artists]:
-            if directory == library:
-                max_size = LIBRARY_MAX_SIZE
-            elif directory == people:
-                max_size = PEOPLE_MAX_SIZE
-            elif directory == studio:
-                max_size = STUDIO_MAX_SIZE
-            else:
-                max_size = None
-
-            # Get all files in the directory
-            glob = list(directory.glob("**/*"))
-            glob = [file for file in glob if file.is_file() and file.suffix in [".jpg", ".jpeg", ".png"]]
-
-            # Add progress bar if available
-            if progress:
-                task = progress.add_task(f"Compressing images in {directory.name}...", total=len(glob))
-
-            for file in glob:
-
-                checksum = calculate_checksum(file)
-                if checksum in self.checksums:
-                    log.debug(f"Skipping already processed image: {file}")
-                    continue
-
-                log.debug(f"Compressing/resizing image: {file}")
-
-                resize_image(file, max_size, quality=45)
-                new_checksum = calculate_checksum(file)
-
-                checksums_to_replace[checksum] = new_checksum
-
-                if progress:
-                    progress.advance(task, advance=1)
-
-        # Replace old checksums (uncompressed) with new checksums for compressed images
-        for checksum, new_checksum in checksums_to_replace.items():
-            remove_line_from_file(self.checksum_file, checksum)
-            write_line_to_file(self.checksum_file, new_checksum)
-
-        size_after = sum(file.stat().st_size for file in self.metadata_dir.glob("**/*") if file.is_file())
-
-        if size_after < size_before:
-            log.info(f"[bold green]Compressed metadata images. Size before: {size_before / 1024 / 1024:.2f} MB, "
-                     f"size after: {size_after / 1024 / 1024:.2f} MB", extra={"markup": True})
+    # def compress_metadata_images(self, progress: Progress = None):
+    #     """
+    #     Compresses and resizes images in the metadata directory. This is useful for reducing the size of the metadata
+    #     which can grow quite large with a lot of media. The images are resized to a maximum size defined in the constants
+    #     at the top of this file (default values of Jellyfin).
+    #     The quality of the images is set to 45 which is a good balance between quality and size, especially for images
+    #     that are not viewed in high resolution most of the time.
+    #     In my testing this reduced the size of the metadata directory by ~2/3.
+    #
+    #     :param progress: Progress bar to show progress in CLI (optional) :class:`rich.progress.Progress`
+    #     :return: None
+    #     """
+    #     library = self.metadata_dir / "library"
+    #     people = self.metadata_dir / "People"
+    #     studio = self.metadata_dir / "Studio"
+    #     artists = self.metadata_dir / "artists"
+    #
+    #     self.checksums = file_to_list(self.checksum_file)
+    #     checksums_to_replace = {}
+    #
+    #     size_before = sum(file.stat().st_size for file in self.metadata_dir.glob("**/*") if file.is_file())
+    #
+    #     for directory in [library, people, studio, artists]:
+    #         if directory == library:
+    #             max_size = LIBRARY_MAX_SIZE
+    #         elif directory == people:
+    #             max_size = PEOPLE_MAX_SIZE
+    #         elif directory == studio:
+    #             max_size = STUDIO_MAX_SIZE
+    #         else:
+    #             max_size = None
+    #
+    #         # Get all files in the directory
+    #         glob = list(directory.glob("**/*"))
+    #         glob = [file for file in glob if file.is_file() and file.suffix in [".jpg", ".jpeg", ".png"]]
+    #
+    #         # Add progress bar if available
+    #         if progress:
+    #             task = progress.add_task(f"Compressing images in {directory.name}...", total=len(glob))
+    #
+    #         for file in glob:
+    #
+    #             checksum = calculate_checksum(file)
+    #             if checksum in self.checksums:
+    #                 log.debug(f"Skipping already processed image: {file}")
+    #                 continue
+    #
+    #             log.debug(f"Compressing/resizing image: {file}")
+    #
+    #             resize_image(file, max_size, quality=45)
+    #             new_checksum = calculate_checksum(file)
+    #
+    #             checksums_to_replace[checksum] = new_checksum
+    #
+    #             if progress:
+    #                 progress.advance(task, advance=1)
+    #
+    #     # Replace old checksums (uncompressed) with new checksums for compressed images
+    #     for checksum, new_checksum in checksums_to_replace.items():
+    #         remove_line_from_file(self.checksum_file, checksum)
+    #         write_line_to_file(self.checksum_file, new_checksum)
+    #
+    #     size_after = sum(file.stat().st_size for file in self.metadata_dir.glob("**/*") if file.is_file())
+    #
+    #     if size_after < size_before:
+    #         log.info(f"[bold green]Compressed metadata images. Size before: {size_before / 1024 / 1024:.2f} MB, "
+    #                  f"size after: {size_after / 1024 / 1024:.2f} MB", extra={"markup": True})
 
     @lru_cache(maxsize=512)
     def get_user_id_from_username(self, username: str) -> Optional[str]:
@@ -476,7 +492,6 @@ class JellyfinManager:
 
         :param playlist_with_tracks: Playlist information including tracks :dict or :list
         :param user: Username of the user :str
-        :param progress: Optional progress tracker :Progress
         :param tidal_manager: Optional Tidal manager for track retrieval :TidalManager
         :param database: Optional database for track lookup :Database
         """

@@ -112,6 +112,23 @@ def remove_tidal_profile(db: Database, username: str) -> None:
     db.execute("DELETE FROM tidal_accounts WHERE username=?", (username,))
     db.commit()
 
+def get_authenticated_jellyfin_profiles(db: Database) -> List[str]:
+    """Get the authenticated Jellyfin profiles."""
+    res = db.execute("SELECT url FROM jellyfin_accounts").fetchall()
+    return [r[0] for r in res]
+
+def remove_jellyfin_profile(db: Database, url: str) -> None:
+    """Remove a Jellyfin profile from the database."""
+    db.execute("DELETE FROM jellyfin_accounts WHERE url=?", (url,))
+    db.commit()
+
+def save_jellyfin_info_to_db(db: Database, url: str, api_key: str) -> None:
+    """Save Jellyfin login information to the database."""
+    db.execute(
+        "INSERT INTO jellyfin_accounts (url, api) VALUES (?, ?)",
+        (url, api_key)
+    )
+    db.commit()
 
 def get_tidal_track_id_from_spotify_id(db: Database, spotify_id: str) -> Optional[str]:
     """Get the TIDAL track ID from the Spotify track ID."""
