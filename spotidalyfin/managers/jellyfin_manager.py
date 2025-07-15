@@ -1,6 +1,8 @@
 # jellyfin_manager.py
 import re
 import shutil
+import threading
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from functools import lru_cache
 from typing import Optional, List
@@ -8,13 +10,18 @@ from typing import Optional, List
 import requests
 from requests import Response
 from rich.progress import Progress
+from streamlit.elements.lib.mutable_status_container import StatusContainer
+from streamlit.runtime.scriptrunner_utils.script_run_context import add_script_run_ctx
 from tidalapi import Track
 from tidalapi.exceptions import ObjectNotFound
 
+import spotidalyfin.managers.types
 from spotidalyfin.db.database import Database
-from spotidalyfin.db.helpers import save_jellyfin_info_to_db
+from spotidalyfin.db.helpers import save_jellyfin_info_to_db, get_jellyfin_api_key
+from spotidalyfin.exceptions import TrackNotFoundException
 from spotidalyfin.managers.spotify_manager import SpotifyManager
 from spotidalyfin.managers.tidal_manager import TidalManager
+from spotidalyfin.managers.types import Playlist, Platform
 from spotidalyfin.utils.comparisons import weighted_word_overlap, close
 from spotidalyfin.utils.file_utils import get_as_base64
 from spotidalyfin.utils.formatting import format_artists, normalize_str, remove_invalid_chars_from_str
@@ -25,18 +32,18 @@ PEOPLE_MAX_SIZE = (900, 900)
 STUDIO_MAX_SIZE = (1066, 600)
 
 
-def try_to_authenticate_with_jellyfin(server_url: str, api_key: str, db: Database) -> (bool, str):
+def try_to_authenticate_with_jellyfin(server_url: str, db: Database) -> (bool, str):
     """
     Try to authenticate with Jellyfin server using the provided URL and API key.
     Returns a tuple of (success: bool, message: str).
     """
-    jellyfin_manager = JellyfinManager(server_url, api_key)
+    jellyfin_manager = JellyfinManager(server_url, db)
     try:
         users = jellyfin_manager.get_users()
         if not users:
             return False, "No users found on the Jellyfin server. Please check your API key and server URL."
 
-        save_jellyfin_info_to_db(db, server_url, api_key)
+        save_jellyfin_info_to_db(db, server_url, jellyfin_manager.api_key)
 
         return True, "Successfully authenticated with Jellyfin."
     except requests.exceptions.RequestException as e:
@@ -44,9 +51,10 @@ def try_to_authenticate_with_jellyfin(server_url: str, api_key: str, db: Databas
 
 
 class JellyfinManager:
-    def __init__(self, url, api_key):
+    def __init__(self, url, db: Database):
         self.url = url.rstrip("/")
-        self.api_key = api_key
+        self.api_key = get_jellyfin_api_key(db, url)
+        self.db = db
         # self.metadata_dir = cfg.get("jellyfin-metadata-dir")
         # self.checksum_file = self.metadata_dir / ".image_checksums_spotidalyfin_do_not_delete.txt"
         # self.checksums = None
@@ -101,8 +109,13 @@ class JellyfinManager:
     def get_artists(self):
         return self.request("Artists")
 
-    def get_users(self):
-        return self.request("Users")
+    def get_users(self, only_names:bool = False) -> List[dict]:
+        users = self.request("Users")
+        if only_names:
+            return [user.get('Name', '') for user in users]
+        else:
+            # Return full user dicts
+            return users
 
     @lru_cache(maxsize=512)
     def search(self, query=None, limit=5, path="Items", year=None, parent_id=None, user_id=None,
@@ -325,6 +338,67 @@ class JellyfinManager:
 
         return None
 
+    def convert_tidal_playlist(self, tidal_playlist: Playlist, status_container: StatusContainer = None) -> Playlist:
+        """
+        Converts a Spotify playlist to a TIDAL playlist using threading.
+
+        :param tidal_playlist: The TIDAL playlist to convert.
+        :param status_container: Optional status container to display progress in Streamlit.
+        :return: A TIDAL playlist object.
+        """
+
+        jellyfin_playlist = Playlist(
+            platform=Platform.JELLYFIN,
+            name=tidal_playlist.name,
+            image=tidal_playlist.image,
+            playlist_id=tidal_playlist.playlist_id
+        )
+
+        def convert_track(index, tidal_track: spotidalyfin.managers.types.Track, attempts=0):
+            """
+            Converts a single Spotify track to a TIDAL track with retries.
+            """
+            for _ in range(10):
+                if "streamlit_script_run_ctx" in threading.current_thread().__dict__:
+                    break
+                time.sleep(0.1)
+            else:
+                log.error(f"Failed to convert track {tidal_track.name} due to missing script context.")
+                return index, None
+
+            # Create a temporary status container for track status messages
+            track_empty = status_container.empty() if status_container else None
+
+            if track_empty:
+                track_empty.write(f"*-> Matching track: {tidal_track.name} - {tidal_track.artist.name}*")
+
+            try:
+                tidal_track = self.get_track_from_data(tidal_track)
+                if track_empty:
+                    track_empty.write(
+                        f"*:green[-> Matched track: {tidal_track.name} - {tidal_track.artist.name}]*")
+                return index, tidal_track
+            except TrackNotFoundException:
+                if track_empty:
+                    track_empty.write(
+                        f"*:red[-> Failed to match track: {tidal_track.name} - {tidal_track.artist.name}]*")
+                log.exception(f"Failed to match track: {tidal_track.name} - {tidal_track.artist.name}")
+                return index, None
+
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            futures = executor.map(lambda args: convert_track(*args), enumerate(tidal_playlist.tracks))
+
+            # Ensure Streamlit context is added to each thread
+            for thread in executor._threads:
+                add_script_run_ctx(thread)
+
+            results = sorted(futures, key=lambda x: x[0])
+
+        # Add successfully converted tracks to the playlist
+        jellyfin_playlist.tracks.extend(tidal_track for _, tidal_track in results if tidal_track)
+
+        return jellyfin_playlist
+    
     # def compress_metadata_images(self, progress: Progress = None):
     #     """
     #     Compresses and resizes images in the metadata directory. This is useful for reducing the size of the metadata

@@ -143,6 +143,41 @@ class TidalManager:
             raise ArtistNotFoundException(f"Artist with ID {artist_id} not found on TIDAL")
 
     @rate_limit
+    def get_playlist(self, playlist_id: str, retrieve_all_tracks=False) -> Playlist:
+        """
+        Retrieves a playlist by its ID.
+
+        :param playlist_id: The ID of the playlist to retrieve.
+        :param retrieve_all_tracks: Whether to retrieve all tracks in the playlist (default: False).
+        :return: A Playlist object.
+
+        :raises PlatformException: If the playlist is not from TIDAL.
+        """
+        if not playlist_id:
+            raise PlatformException("Playlist ID cannot be empty.")
+
+        try:
+            tidal_playlist = self.client.playlist(playlist_id)
+
+            tracks = []
+            if retrieve_all_tracks:
+                total = tidal_playlist.num_tracks
+
+                for offset in range(0, total, 100):
+                    tracks.extend(tidal_playlist.tracks(offset=offset, limit=100))
+
+            return Playlist(
+                platform=Platform.TIDAL,
+                name=tidal_playlist.name,
+                image=tidal_playlist.image(),
+                playlist_id=tidal_playlist.id,
+                tracks=tracks
+            )
+        except ObjectNotFound:
+            # log.exception(f"Playlist with ID {playlist_id} not found on TIDAL")
+            raise PlatformException(f"Playlist with ID {playlist_id} not found on TIDAL")
+
+    @rate_limit
     def search(
             self,
             query: str,
@@ -289,13 +324,24 @@ class TidalManager:
             raise PlatformException("Lyrics are only available for TIDAL tracks trough a TidalManager instance.")
 
     @rate_limit
-    def get_playlists(self) -> List[tidalapi.UserPlaylist | tidalapi.Playlist]:
+    def get_user_playlists(self) -> List[Playlist]:
         """
         Retrieves the user's playlists.
 
-        :return: A list of playlists.
+        :return: A list of Playlist objects.
         """
-        return self.client.user.playlists()
+        playlists = self.client.user.playlists()
+
+        return [
+            Playlist(
+                platform=Platform.TIDAL,
+                name=playlist.name,
+                image=playlist.image(),
+                playlist_id=playlist.id,
+                tracks=[]
+            )
+            for playlist in playlists
+        ]
 
     @rate_limit
     def create_playlist(self, playlist: Playlist) -> Optional[str]:
@@ -310,10 +356,10 @@ class TidalManager:
             raise PlatformException("Playlist must be a TIDAL playlist to create it on TIDAL.")
 
         # Delete the playlist if it already exists
-        for p in self.get_playlists():
+        for p in self.get_user_playlists():
             if p.name == playlist.name:
                 log.warning(f"Playlist {playlist.name} already exists on TIDAL, deleting it...")
-                p.delete()
+                self.client.playlist(p.playlist_id).delete()
                 time.sleep(0.5)
         # TODO: some of these time.sleep might be redundant
         try:
@@ -374,7 +420,8 @@ class TidalManager:
         save_match(self.db, spotify_track.track_id, list_of_matches[0].track_id)
         return list_of_matches[0]
 
-    def convert_spotify_playlist(self, spotify_playlist: Playlist, retrieve_streams: bool = False, status_container: StatusContainer = None) -> Playlist:
+    def convert_spotify_playlist(self, spotify_playlist: Playlist, retrieve_streams: bool = False,
+                                 status_container: StatusContainer = None) -> Playlist:
         """
         Converts a Spotify playlist to a TIDAL playlist using threading.
 

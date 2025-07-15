@@ -130,6 +130,12 @@ def save_jellyfin_info_to_db(db: Database, url: str, api_key: str) -> None:
     )
     db.commit()
 
+def get_jellyfin_api_key(db: Database, url: str) -> Optional[str]:
+    """Get the Jellyfin API key for the given URL."""
+    cursor = db.execute("SELECT api FROM jellyfin_accounts WHERE url=?", (url,))
+    res = cursor.fetchone()
+    return res[0] if res else None
+
 def get_tidal_track_id_from_spotify_id(db: Database, spotify_id: str) -> Optional[str]:
     """Get the TIDAL track ID from the Spotify track ID."""
     if not spotify_id:

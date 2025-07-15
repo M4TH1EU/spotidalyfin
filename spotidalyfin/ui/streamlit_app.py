@@ -19,21 +19,28 @@ def setup_storage():
 setup_storage()
 
 home = st.Page("home.py", title="Home", icon=":material/home:", default=True)
-demo = st.Page("demo.py", title="Demo", icon=":material/insert_emoticon:")
+# demo = st.Page("demo.py", title="Demo", icon=":material/insert_emoticon:")
 
-home_pages = [home, demo]
+home_pages = [home]
 
-download_playlist = st.Page(
+download_spotify_playlist = st.Page(
     "actions/download_playlist.py",
-    title="Download playlist",
+    title="Download playlists from TIDAL",
     icon=":material/download:"
 )
-sync_account = st.Page(
-    "actions/sync_account.py",
-    title="Sync account",
+spotify_sync_account = st.Page(
+    "actions/sync_spotify_to_tidal.py",
+    title=" Sync playlists to TIDAL",
     icon=":material/sync:"
 )
-actions_pages = [download_playlist, sync_account]
+spotify_pages = [download_spotify_playlist, spotify_sync_account]
+
+tidal_sync_account = st.Page(
+    "actions/sync_tidal_to_jellyfin.py",
+    title="Sync playlists to Jellyfin",
+    icon=":material/sync:"
+)
+tidal_pages = [tidal_sync_account]
 
 account_settings = st.Page(
     "settings/accounts_settings.py",
@@ -46,7 +53,8 @@ st.logo("assets/ui/images/logo.webp", icon_image="assets/ui/images/icon.png", si
 
 page_dict = {
     "Home": home_pages,
-    "Actions": actions_pages,
+    "Spotify": spotify_pages,
+    "TIDAL": tidal_pages,
     "Settings": settings_pages,
 }
 pg = st.navigation(page_dict)

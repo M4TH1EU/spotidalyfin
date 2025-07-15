@@ -2,6 +2,7 @@ import streamlit as st
 from spotipy import SpotifyException
 
 from spotidalyfin.db.helpers import get_authenticated_spotify_profiles, get_authenticated_tidal_profiles
+from spotidalyfin.managers.types import Platform
 from spotidalyfin.ui.helpers.getters import get_database, get_spotify_manager, get_tidal_manager, \
     create_state_if_missing
 from spotidalyfin.ui.helpers.platforms import get_user_playlists
@@ -17,7 +18,7 @@ if not st.session_state.sync_account_submitted:
     # WARNING: no streamlit elements must be put here otherwise it messes with what is displayed
 
     with st.container():
-        st.title(":material/sync: Sync account playlists")
+        st.title(":material/sync: Sync Spotify playlists to TIDAL")
         st.write("Syncs playlists from Spotify to TIDAL accounts.")
         st.info("*2-way synchronization might be implemented in the future.*")
 
@@ -42,11 +43,11 @@ if not st.session_state.sync_account_submitted:
         with st.form("sync_form", border=input_mode[1] != 0):
             match input_mode[1]:
                 case 0:
-                    playlists = get_user_playlists(spotify_username)
+                    playlists = get_user_playlists(spotify_username, Platform.SPOTIFY)
                 case 1:
                     playlists = st.multiselect(
                         "Select playlists to sync",
-                        options=get_user_playlists(spotify_username),
+                        options=get_user_playlists(spotify_username, Platform.SPOTIFY),
                         format_func=lambda x: x[0]
                     )
                 case 2:

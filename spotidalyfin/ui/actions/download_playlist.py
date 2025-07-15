@@ -4,7 +4,7 @@ import streamlit as st
 from spotipy import SpotifyException
 
 from spotidalyfin.db.helpers import get_authenticated_spotify_profiles, get_authenticated_tidal_profiles
-from spotidalyfin.managers.types import TrackQuality
+from spotidalyfin.managers.types import TrackQuality, Platform
 from spotidalyfin.ui.helpers.getters import get_database, get_spotify_manager, get_tidal_manager, \
     create_state_if_missing
 from spotidalyfin.ui.helpers.platforms import get_user_playlists
@@ -45,7 +45,7 @@ if not st.session_state.download_playlist_submitted:
             if input_mode[1] == 0:
                 playlist_id = st.selectbox(
                     "Select a playlist",
-                    options=get_user_playlists(spotify_username),
+                    options=get_user_playlists(spotify_username, Platform.SPOTIFY),
                     format_func=lambda x: x[0]
                 )
             else:

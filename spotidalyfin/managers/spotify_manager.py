@@ -289,7 +289,6 @@ class SpotifyManager:
         try:
             playlists_data = self.client.current_user_playlists() if user_id == "me" else self.client.user_playlists(
                 user_id)
-
             items = playlists_data.get('items', [])
 
             return [
