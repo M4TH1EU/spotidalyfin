@@ -329,14 +329,13 @@ class TidalManager:
 
         return new_playlist.id
 
-    def convert_spotify_track(self, spotify_track: Track, retrieve_streams: bool = True,
-                              use_cache: bool = False) -> Track:
+    def convert_spotify_track(self, spotify_track: Track, retrieve_streams: bool = True, use_db: bool = False) -> Track:
         """
         Converts a Spotify track to a TIDAL track.
 
         :param spotify_track: The Spotify track to convert.
         :param retrieve_streams: Whether to retrieve the streams of the tracks (slows down the process).
-        :param use_cache: Whether to use the cache for matching. Using the cache won't retrieve any of the track data except its ID.
+        :param use_db: Whether to use the database for matching. Using the database will return an empty Track object with only the ID filled.
 
         :raises TrackNotFoundException: If no matches are found on TIDAL.
 
@@ -352,7 +351,7 @@ class TidalManager:
                 return Track(Platform.TIDAL, "", None, None, 0, [], track_id=cached_id)
             return None
 
-        if use_cache:
+        if use_db:
             result_cache = _match_track_from_cache(spotify_track)
             if result_cache:
                 # TODO: maybe add support to retrieve streams as well from the id got from the cache
@@ -375,40 +374,15 @@ class TidalManager:
         save_match(self.db, spotify_track.track_id, list_of_matches[0].track_id)
         return list_of_matches[0]
 
-    def convert_spotify_playlist(self, spotify_playlist: Playlist, only_ids: bool = False,
-                                 status_container: StatusContainer = None) -> Playlist:
+    def convert_spotify_playlist(self, spotify_playlist: Playlist, retrieve_streams: bool = False, status_container: StatusContainer = None) -> Playlist:
         """
         Converts a Spotify playlist to a TIDAL playlist using threading.
 
         :param spotify_playlist: The Spotify playlist to convert.
-        :param only_ids: If True, only track IDs will be fetched for faster execution using cached data.
+        :param retrieve_streams: If True, all stream manifest (for download) will be fetched, otherwise, only track IDs will be fetched for faster execution using cached data.
         :param status_container: Optional status container to display progress in Streamlit.
         :return: A TIDAL playlist object.
         """
-        #
-        # if only_ids:
-        #     playlist = Playlist(Platform.TIDAL, spotify_playlist.name, "", "")
-        #     for spotify_track in spotify_playlist.tracks:
-        #         track = self.match_track_from_cache(spotify_track)
-        #         if not track:
-        #             track_empty = status_container.empty() if status_container else None
-        #
-        #             try:
-        #                 if track_empty:
-        #                     track_empty.write(
-        #                         f"*-> Matching track: {spotify_track.name} - {spotify_track.artist.name}*")
-        #                 track = self.convert_spotify_track(spotify_track, retrieve_streams=False)
-        #                 if track_empty:
-        #                     track_empty.write(
-        #                         f"*:green[-> Matched track: {spotify_track.name} - {spotify_track.artist.name}]*")
-        #             except TrackNotFoundException:
-        #                 if track_empty:
-        #                     track_empty.write(
-        #                         f"*:red[-> Failed to match track: {spotify_track.name} - {spotify_track.artist.name}]*")
-        #                 log.exception(f"Failed to match track: {spotify_track.name} - {spotify_track.artist.name}")
-        #                 continue
-        #         playlist.tracks.append(track)
-        #     return playlist
 
         tidal_playlist = Playlist(
             platform=Platform.TIDAL,
@@ -436,8 +410,7 @@ class TidalManager:
                 track_empty.write(f"*-> Matching track: {spotify_track.name} - {spotify_track.artist.name}*")
 
             try:
-                tidal_track = self.convert_spotify_track(spotify_track, retrieve_streams=not only_ids,
-                                                         use_cache=only_ids)
+                tidal_track = self.convert_spotify_track(spotify_track, retrieve_streams=retrieve_streams, use_db=False)
                 if track_empty:
                     track_empty.write(
                         f"*:green[-> Matched track: {spotify_track.name} - {spotify_track.artist.name}]*")
@@ -509,7 +482,6 @@ class TidalManager:
         except Exception as e:
             raise DownloadTrackException(f"Failed to download track {track.name} - {track.artist.name}: {e}") from e
 
-    ### OLD BUT GOLD (WORKS)
     def download_playlist(self,
                           playlist: Playlist,
                           quality: TrackQuality = TrackQuality.HI_RES_LOSSLESS,
@@ -599,59 +571,3 @@ class TidalManager:
                 summary_downloads.append(result)
 
         return summary_downloads
-
-    # #### LOOKS NICE BUT MISSING SCRIPT CONTEXT STILL
-    # def download_playlist(
-    #         self,
-    #         playlist: Playlist,
-    #         quality: TrackQuality = TrackQuality.HI_RES_LOSSLESS,
-    #         output_type: str = "flac",
-    #         destination: str = "~/Music/Spotidalyfin",
-    #         status_container=None,
-    #         progress_bar=None
-    # ):
-    #     """Downloads a playlist to the given destination."""
-    #     # Setup
-    #     self.client.audio_quality = quality.name if quality else None
-    #     dest_path = str(Path(destination).expanduser())
-    #     total_tracks = len(playlist.tracks)
-    #     progress = [0]  # Mutable counter for tracking progress
-    #
-    #     if progress_bar:
-    #         progress_bar.progress(0)
-    #
-    #     def _execute_download(track):
-    #         # Ensure Streamlit context exists
-    #         for _ in range(10):
-    #             if "streamlit_script_run_ctx" in threading.current_thread().__dict__:
-    #                 break
-    #             time.sleep(0.1)
-    #         else:
-    #             raise ValueError("Missing script run context")
-    #
-    #         try:
-    #             # Update status and download
-    #             track_log_text = status_container.empty() if status_container else None
-    #             if track_log_text:
-    #                 track_log_text.write(f"*-> Downloading: {track.name}*")
-    #
-    #             self.download_track(track, quality, output_type, dest_path)
-    #
-    #             # Update progress
-    #             if progress_bar:
-    #                 progress[0] += 1
-    #                 progress_bar.progress(progress[0] / total_tracks)
-    #
-    #             if track_log_text:
-    #                 track_log_text.write(f"*:green[✓ {track.name}]*")
-    #
-    #         except Exception as e:
-    #             if track_log_text:
-    #                 track_log_text.write(f"**:red[Error: {e}]**")
-    #             raise
-    #
-    #     # Download tracks in parallel
-    #     with ThreadPoolExecutor(max_workers=1) as executor:
-    #         executor.map(lambda track: _execute_download(track), playlist.tracks)
-    #         for t in executor._threads:
-    #             add_script_run_ctx(t)

@@ -146,7 +146,7 @@ else:
                 msg = f":material/compare_arrows: Matching Spotify tracks to TIDAL tracks..."
                 status.update(label=msg, state="running", expanded=True)
                 status.write(f"**{msg}**")
-                tidal_playlist = tidal_manager.convert_spotify_playlist(spotify_playlist, status_container=status)
+                tidal_playlist = tidal_manager.convert_spotify_playlist(spotify_playlist, status_container=status, retrieve_streams=True)
                 tidal_playlist_length = len(tidal_playlist.tracks)
 
                 status.divider()

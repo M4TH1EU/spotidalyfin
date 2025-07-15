@@ -11,11 +11,12 @@ class Database:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
         self.db_lock = Lock()
+        db_exists = self.db_path.exists()
 
         self.con = sqlite3.connect(self.db_path, check_same_thread=False)
         self.con.row_factory = sqlite3.Row  # Access rows as dict-like objects
 
-        if reset or not self.db_path.exists():
+        if reset or not db_exists:
             self.initialize_database()
 
     def __enter__(self):
