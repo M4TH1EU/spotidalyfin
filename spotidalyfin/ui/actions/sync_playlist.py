@@ -158,7 +158,7 @@ Playlists: {playlists}
                 from_playlists: List[Playlist] = []
 
                 for playlist in playlists:
-                    from_playlist = from_manager.get_playlist(playlist[1])
+                    from_playlist = from_manager.get_playlist(playlist[1], fetch_tracks=True)
                     if not from_playlist:
                         st.error(f":red[-> Failed to fetch playlist: `{playlist[0]}`]")
                     from_playlists.append(from_playlist)

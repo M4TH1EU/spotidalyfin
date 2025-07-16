@@ -17,7 +17,7 @@ from spotidalyfin.models.album import SpotifyAlbum
 from spotidalyfin.models.artist import SpotifyArtist
 from spotidalyfin.models.manager import Manager
 from spotidalyfin.models.playlist import SpotifyPlaylist, \
-    SpotifyFavoriteTracksPlaylist
+    SpotifyFavoriteTracksPlaylist, Playlist
 from spotidalyfin.models.track import SpotifyTrack
 
 
@@ -64,7 +64,7 @@ def _parse_playlist(spotipy_playlist: dict) -> SpotifyPlaylist:
         name=spotipy_playlist['name'],
         description=spotipy_playlist.get('description', ''),
         tracks=[_parse_track(item["track"]) for item in spotipy_playlist.get("tracks", {}).get("items", [])],
-        image=spotipy_playlist.get("images", [{}])[0].get("url", "")
+        image=spotipy_playlist.get("images", [{}])[0].get("url", "") if spotipy_playlist['images'] else ""
     )
 
 
@@ -148,7 +148,7 @@ class SpotifyManager(Manager):
             logging.exception(f"Failed to fetch Spotify artist with ID {artist_id}")
             return None
 
-    def get_playlist(self, playlist_id: str, fetch_all_tracks: bool = False, fetch_albums: bool = False) -> Optional[
+    def get_playlist(self, playlist_id: str, fetch_tracks: bool = False, fetch_albums: bool = False) -> Optional[
         SpotifyPlaylist]:
         if playlist_id == "favorite_tracks":
             return self.get_favorite_tracks()
@@ -171,7 +171,7 @@ class SpotifyManager(Manager):
                 logging.exception(f"Failed to fetch playlist with ID {playlist_id}, even with the anonymous client")
                 return None
 
-        if fetch_all_tracks:
+        if fetch_tracks:
             total = playlist["tracks"]["total"]
             tracks = playlist["tracks"]["items"]
 
@@ -302,16 +302,16 @@ class SpotifyManager(Manager):
             logging.exception(f"Failed to create TIDAL playlist '{name}': {e}")
             return None
 
-    def add_tracks_to_playlist(self, playlist_id: str, tracks: List[SpotifyTrack]) -> bool:
+    def add_tracks_to_playlist(self, playlist: Playlist, tracks: List[SpotifyTrack]) -> bool:
         try:
             track_ids = [track.id for track in tracks if track.id]
             if not track_ids:
                 return False
 
-            self.client.playlist_add_items(playlist_id, track_ids)
+            self.client.playlist_add_items(playlist.id, track_ids)
             return True
         except SpotifyException as e:
-            logging.exception(f"Failed to add tracks to playlist {playlist_id}: {e}")
+            logging.exception(f"Failed to add tracks to playlist {playlist.id}: {e}")
             return False
 
     def remove_playlist_by_id(self, playlist_id: str) -> bool:

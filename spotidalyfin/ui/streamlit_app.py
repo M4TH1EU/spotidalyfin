@@ -30,25 +30,6 @@ sync_playlist = st.Page(
 )
 actions_pages = [sync_playlist]
 
-download_spotify_playlist = st.Page(
-    "actions/download_playlist.py",
-    title="Download playlists from TIDAL",
-    icon=":material/download:"
-)
-spotify_sync_account = st.Page(
-    "actions/sync_spotify_to_tidal.py",
-    title=" Sync playlists to TIDAL",
-    icon=":material/sync:"
-)
-spotify_pages = [download_spotify_playlist, spotify_sync_account]
-
-tidal_sync_account = st.Page(
-    "actions/sync_tidal_to_jellyfin.py",
-    title="Sync playlists to Jellyfin",
-    icon=":material/sync:"
-)
-tidal_pages = [tidal_sync_account]
-
 account_settings = st.Page(
     "settings/accounts_settings.py",
     title="Account settings",
@@ -61,8 +42,6 @@ st.logo("assets/ui/images/logo.webp", icon_image="assets/ui/images/icon.png", si
 page_dict = {
     "Home": home_pages,
     "Actions": actions_pages,
-    "Spotify": spotify_pages,
-    "TIDAL": tidal_pages,
     "Settings": settings_pages,
 }
 pg = st.navigation(page_dict)
