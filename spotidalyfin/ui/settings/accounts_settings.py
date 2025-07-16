@@ -7,6 +7,7 @@ from spotidalyfin.db.helpers import get_authenticated_spotify_profiles, remove_s
 from spotidalyfin.managers.jellyfin_manager import try_to_authenticate_with_jellyfin
 from spotidalyfin.managers.spotify_manager import create_temporary_oauth, try_to_authenticate_with_spotify
 from spotidalyfin.managers.tidal_manager import try_to_authenticate_with_tidal, create_temporary_session
+from spotidalyfin.platforms.spotify.spotify_engine import create_temp_oauth, login
 from spotidalyfin.ui.helpers.dialogs import DialogContext, DialogStep, MultiStepDialog
 from spotidalyfin.ui.helpers.getters import get_database
 from spotidalyfin.ui.helpers.ui import subheader_custom_icon, display_table, inline_code_html
@@ -44,7 +45,7 @@ def create_and_add_spotify_dialog():
 
         # Create a temporary OAuth object to check if the credentials are valid
         spotify_dialog.get_context().set("oauth",
-                                         create_temporary_oauth(context.get("client_id"), context.get("client_secret")))
+                                         create_temp_oauth(context.get("client_id"), context.get("client_secret")))
 
         return True, ""
 
@@ -64,7 +65,7 @@ def create_and_add_spotify_dialog():
         if not context.get("redirect_url"):
             return False, "Please enter the URL you were redirected to after authorizing Spotidalyfin."
 
-        return try_to_authenticate_with_spotify(context.get("oauth"), context.get("redirect_url"), get_database())
+        return login(context.get("oauth"), context.get("redirect_url"), get_database())
 
     def step3_content(context: DialogContext):
         """Step 3: Completion"""

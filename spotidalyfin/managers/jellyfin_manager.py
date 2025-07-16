@@ -295,6 +295,43 @@ class JellyfinManager:
         """
         return bool(self.get_track_from_data(track))
 
+    def match_track_from_tidal(self, tidal_track: Track) -> spotidalyfin.managers.types.Track | None:
+        """
+        Match a Tidal track to a Jellyfin track.
+
+        :param tidal_track: TidalAPI Track object :class:`tidalapi.Track`
+        :return: Matched Jellyfin track or None if not found :class:`spotidalyfin.managers.types.Track` | :class:`None`
+        """
+        track_name = tidal_track.full_name
+        artist_name = tidal_track.artist.name
+        album_name = tidal_track.album.name
+        duration = tidal_track.duration
+
+        # Search for album from artist and then track name in album
+        jellyfin_album = self.search_album(album_name, artist_name) or self.search_album(album_name, "")
+        if jellyfin_album:
+            jellyfin_track = self.search_track_in_album(track_name, jellyfin_album, duration)
+            if jellyfin_track:
+                return jellyfin_track
+
+        # Search by track name and verify artist name and album name
+        jellyfin_track = self.search_track_by_name(track_name, artist_name, album_name, duration)
+        if not jellyfin_track:
+            # For when the album name might be too different, just search by track name and artist name
+            jellyfin_track = self.search_track_by_name(track_name, artist_name, None, duration)
+            if not jellyfin_track:
+                # Last resort, search by artist name and then track name
+                jellyfin_track = self.search_track_by_name(
+                    normalize_str(track_name, try_fix_track_name=True, remove_in_brackets=True, stop_at_dash_char=True),
+                    artist_name, None)
+
+        if jellyfin_track:
+            return jellyfin_track
+
+        return None
+
+
+
     def get_track_from_data(self, track: dict | Track) -> Optional[dict]:
         """
         Get Jellyfin track from either a Spotify track dict or a TidalAPI Track object. Using the Tidal Track object

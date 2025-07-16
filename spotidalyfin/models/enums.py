@@ -1,0 +1,15 @@
+from enum import Enum
+
+
+class TrackQuality(Enum):
+    DOLBY_ATMOS = 0
+    LOW = 1
+    LOSSLESS = 2
+    HI_RES_LOSSLESS = 3
+
+
+class ArtistRole(Enum):
+    MAIN = "MAIN"
+    FEATURED = "FEATURED"
+    CONTRIBUTOR = "CONTRIBUTOR"
+    ARTIST = "ARTIST"

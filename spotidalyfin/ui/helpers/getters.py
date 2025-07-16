@@ -2,8 +2,8 @@ import streamlit as st
 
 from spotidalyfin.db.database import Database
 from spotidalyfin.managers.jellyfin_manager import JellyfinManager
-from spotidalyfin.managers.spotify_manager import SpotifyManager
 from spotidalyfin.managers.tidal_manager import TidalManager
+from spotidalyfin.platforms.spotify.spotify_engine import SpotifyManager
 
 
 def get_database():
