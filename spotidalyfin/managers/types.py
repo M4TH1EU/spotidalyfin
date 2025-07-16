@@ -361,7 +361,7 @@ class Track:
 
     def matches(self, other: Track) -> (bool, float):
         """
-        Checks if two Track objects represent the same track across platforms.
+        Checks if two Track objects represent the same track across engines.
 
         Scoring criteria:
         - Duration similarity

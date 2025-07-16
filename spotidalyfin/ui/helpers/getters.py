@@ -1,9 +1,11 @@
 import streamlit as st
 
 from spotidalyfin.db.database import Database
+from spotidalyfin.engines.spotify_engine import SpotifyManager
+from spotidalyfin.engines.tidal_engine import TidalManager
 from spotidalyfin.managers.jellyfin_manager import JellyfinManager
-from spotidalyfin.managers.tidal_manager import TidalManager
-from spotidalyfin.platforms.spotify.spotify_engine import SpotifyManager
+from spotidalyfin.managers.types import Platform
+from spotidalyfin.models.manager import Manager
 
 
 def get_database():
@@ -18,6 +20,18 @@ def create_state_if_missing(key: str, value: any):
     # return st.session_state[key]
 
 
+def get_manager_for_platform(identifier: str, platform: Platform) -> Manager:
+    """Get the manager for the given platform."""
+    if platform == Platform.SPOTIFY:
+        return get_spotify_manager(identifier)
+    elif platform == Platform.TIDAL:
+        return get_tidal_manager(identifier)
+    # elif platform == Platform.JELLYFIN:
+    #     return get_jellyfin_manager(identifier)
+    else:
+        raise ValueError(f"Unsupported platform: {platform}")
+
+
 def get_spotify_manager(username: str) -> SpotifyManager:
     key = f"spotify_manager_{username}"
     if key not in st.session_state:
@@ -30,6 +44,7 @@ def get_tidal_manager(username: str) -> TidalManager:
     if key not in st.session_state:
         st.session_state[key] = TidalManager(username, get_database())
     return st.session_state[key]
+
 
 def get_jellyfin_manager(server: str) -> JellyfinManager:
     key = f"jellyfin_manager_{server}"

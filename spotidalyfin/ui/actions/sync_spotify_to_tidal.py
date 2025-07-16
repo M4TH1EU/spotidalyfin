@@ -124,7 +124,8 @@ else:
                 status.write(f"**{msg}**")
                 for spotify_playlist in spotify_playlists:
                     status.write(f"**{spotify_playlist.name}**")
-                    tidal_playlist = tidal_manager.convert_spotify_playlist(spotify_playlist, retrieve_streams=False, status_container=status)
+                    tidal_playlist = tidal_manager.convert_spotify_playlist(spotify_playlist, retrieve_streams=False,
+                                                                            status_container=status)
                     playlist = tidal_manager.create_playlist(tidal_playlist)
                     if playlist:
                         status.write(f"**Synced playlist : {spotify_playlist.name}**")

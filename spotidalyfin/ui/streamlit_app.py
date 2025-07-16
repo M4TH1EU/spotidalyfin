@@ -23,6 +23,13 @@ home = st.Page("home.py", title="Home", icon=":material/home:", default=True)
 
 home_pages = [home]
 
+sync_playlist = st.Page(
+    "actions/sync_playlist.py",
+    title="Sync playlists",
+    icon=":material/sync:",
+)
+actions_pages = [sync_playlist]
+
 download_spotify_playlist = st.Page(
     "actions/download_playlist.py",
     title="Download playlists from TIDAL",
@@ -53,6 +60,7 @@ st.logo("assets/ui/images/logo.webp", icon_image="assets/ui/images/icon.png", si
 
 page_dict = {
     "Home": home_pages,
+    "Actions": actions_pages,
     "Spotify": spotify_pages,
     "TIDAL": tidal_pages,
     "Settings": settings_pages,

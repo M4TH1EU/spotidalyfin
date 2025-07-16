@@ -4,10 +4,9 @@ import streamlit as st
 
 from spotidalyfin.db.helpers import get_authenticated_spotify_profiles, remove_spotify_profile, remove_tidal_profile, \
     get_authenticated_tidal_profiles, get_authenticated_jellyfin_profiles, remove_jellyfin_profile
+from spotidalyfin.engines.spotify_engine import login_spotify, create_temp_oauth_spotify
+from spotidalyfin.engines.tidal_engine import login_tidal, create_temp_session_tidal
 from spotidalyfin.managers.jellyfin_manager import try_to_authenticate_with_jellyfin
-from spotidalyfin.managers.spotify_manager import create_temporary_oauth, try_to_authenticate_with_spotify
-from spotidalyfin.managers.tidal_manager import try_to_authenticate_with_tidal, create_temporary_session
-from spotidalyfin.platforms.spotify.spotify_engine import create_temp_oauth, login
 from spotidalyfin.ui.helpers.dialogs import DialogContext, DialogStep, MultiStepDialog
 from spotidalyfin.ui.helpers.getters import get_database
 from spotidalyfin.ui.helpers.ui import subheader_custom_icon, display_table, inline_code_html
@@ -45,7 +44,8 @@ def create_and_add_spotify_dialog():
 
         # Create a temporary OAuth object to check if the credentials are valid
         spotify_dialog.get_context().set("oauth",
-                                         create_temp_oauth(context.get("client_id"), context.get("client_secret")))
+                                         create_temp_oauth_spotify(context.get("client_id"),
+                                                                   context.get("client_secret")))
 
         return True, ""
 
@@ -65,7 +65,7 @@ def create_and_add_spotify_dialog():
         if not context.get("redirect_url"):
             return False, "Please enter the URL you were redirected to after authorizing Spotidalyfin."
 
-        return login(context.get("oauth"), context.get("redirect_url"), get_database())
+        return login_spotify(context.get("oauth"), context.get("redirect_url"), get_database())
 
     def step3_content(context: DialogContext):
         """Step 3: Completion"""
@@ -162,7 +162,7 @@ def create_and_add_tidal_dialog():
             return False, "Please enter the URL you were redirected to after authorizing Spotidalyfin."
 
         # this tries to authenticate, checks if the account is already authenticated and saves it to the database if not
-        return try_to_authenticate_with_tidal(context.get("session"), context.get("redirect_url"), get_database())
+        return login_tidal(context.get("session"), context.get("redirect_url"), get_database())
 
     def step2_content(context: DialogContext):
         """Step 2: Completion"""
@@ -195,7 +195,7 @@ def create_and_add_tidal_dialog():
     # Show the dialog
     if st.button("Connect TIDAL Account"):
         # Create a temporary session for the dialog to use
-        tidal_dialog.get_context().set("session", create_temporary_session())
+        tidal_dialog.get_context().set("session", create_temp_session_tidal())
         tidal_dialog.render()
 
 
@@ -252,7 +252,7 @@ def create_and_add_jellyfin_dialog():
             return False, "Invalid Jellyfin server URL. It should start with 'http://' or 'https://'."
 
         # this tries to authenticate, checks if the account is already authenticated and saves it to the database if not
-        return try_to_authenticate_with_jellyfin(context.get("server_url"), context.get("api_key"), get_database())
+        return try_to_authenticate_with_jellyfin(context.get("server_url"), get_database())
 
     def step2_content(context: DialogContext):
         """Step 2: Completion"""
@@ -286,7 +286,6 @@ def create_and_add_jellyfin_dialog():
     # Show the dialog
     if st.button("Connect Jellyfin server"):
         # Create a temporary session for the dialog to use
-        jellyfin_dialog.get_context().set("session", create_temporary_session())
         jellyfin_dialog.render()
 
 
@@ -321,7 +320,6 @@ def jellyfin_servers_table():
     else:
         # No profiles available
         st.write("*You haven't added any accounts yet.*")
-
 
 
 # Main Page Layout

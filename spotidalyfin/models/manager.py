@@ -1,13 +1,16 @@
+import logging
 from abc import abstractmethod, ABC
 from dataclasses import dataclass
 from typing import List, Optional
 
+from spotidalyfin.managers.types import Platform
 from spotidalyfin.models import Track, Album, Artist
-from spotidalyfin.models.base_playlist import Playlist, FavoriteTracksPlaylist
+from spotidalyfin.models.playlist import Playlist, FavoriteTracksPlaylist
 
 
 @dataclass
 class Manager(ABC):
+    PLATFORM: Platform
 
     @abstractmethod
     def get_track(self, track_id: str) -> Optional[Track]:
@@ -25,7 +28,8 @@ class Manager(ABC):
         raise NotImplementedError("This method should be implemented by subclasses.")
 
     @abstractmethod
-    def get_playlist(self, playlist_id: str, fetch_tracks: bool = False, fetch_albums: bool = False) -> Optional[Playlist]:
+    def get_playlist(self, playlist_id: str, fetch_tracks: bool = False, fetch_albums: bool = False) -> Optional[
+        Playlist]:
         """Retrieve a playlist by its ID."""
         raise NotImplementedError("This method should be implemented by subclasses.")
 
@@ -66,9 +70,27 @@ class Manager(ABC):
         """Search for tracks by ISRC code."""
         raise NotImplementedError("This method should be implemented by subclasses.")
 
+    def search_albums(self, query: str = None, upc: str = None) -> list[Album]:
+        """Search for albums based on a query or UPC code."""
+        results = []
+
+        if upc:
+            results = self.search_albums_by_upc(upc)
+
+        if not results:
+            if query:
+                results = self.search_albums_by_query(query)
+
+        return results
+
     @abstractmethod
-    def search_albums(self, query: str) -> list[Album]:
+    def search_albums_by_query(self, query: str) -> list[Album]:
         """Search for albums based on a query."""
+        raise NotImplementedError("This method should be implemented by subclasses.")
+
+    @abstractmethod
+    def search_albums_by_upc(self, upc: str) -> list[Album]:
+        """Search for albums based on a UPC (barcode)."""
         raise NotImplementedError("This method should be implemented by subclasses.")
 
     @abstractmethod
@@ -86,7 +108,49 @@ class Manager(ABC):
         """Retrieve lyrics for a given track."""
         raise NotImplementedError("This method should be implemented by subclasses.")
 
-    @abstractmethod
-    def create_playlist(self, name: str, tracks: List[Track], description: str = "", cover_url: str = "") -> Playlist:
+    def create_playlist(self, name: str, tracks: List[Track], description: str = "", cover_url: str = "") -> Optional[
+        Playlist]:
         """Create a new playlist."""
+
+        # Make sure to remove any existing playlist with the same name
+        self.remove_playlist_by_name(name)
+
+        # Create an empty playlist first
+        new_playlist = self.create_empty_playlist(name, description, cover_url)
+        if not new_playlist:
+            logging.error(f"Failed to create empty playlist: {name}")
+            return None
+
+        # If the playlist is created successfully, add the tracks to it
+        if not self.add_tracks_to_playlist(new_playlist, tracks):
+            logging.error(f"Failed to add tracks to playlist: {name}")
+            return None
+
+        return new_playlist
+
+    @abstractmethod
+    def create_empty_playlist(self, name: str, description: str = "", cover_url: str = "") -> Optional[Playlist]:
+        """Create a new empty playlist."""
+        raise NotImplementedError("This method should be implemented by subclasses.")
+
+    def add_tracks_to_playlist_with_id(self, playlist_id: str, tracks: List[Track]) -> bool:
+        """Add tracks to an existing playlist."""
+        return self.add_tracks_to_playlist(self.get_playlist(playlist_id), tracks)
+
+    @abstractmethod
+    def add_tracks_to_playlist(self, playlist: Playlist, tracks: List[Track]) -> bool:
+        raise NotImplementedError("This method should be implemented by subclasses.")
+
+    def remove_playlist_by_name(self, name: str) -> bool:
+        """Remove a playlist by its name."""
+
+        playlists = self.get_user_playlists()
+        for playlist in playlists:
+            if playlist.name == name:
+                return self.remove_playlist_by_id(playlist.id)
+        return False
+
+    @abstractmethod
+    def remove_playlist_by_id(self, playlist_id: str) -> bool:
+        """Remove a playlist by its ID."""
         raise NotImplementedError("This method should be implemented by subclasses.")

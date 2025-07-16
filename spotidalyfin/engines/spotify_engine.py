@@ -11,12 +11,14 @@ from spotipy_anon import SpotifyAnon
 from spotidalyfin import SPOTIFY_REDIRECT_URI, SPOTIFY_SCOPES
 from spotidalyfin.db.database import Database
 from spotidalyfin.db.helpers import get_spotify_oauth, get_authenticated_spotify_profiles, save_spotify_into_db
-from spotidalyfin.models import Track, Album, Artist, TrackQuality
-from spotidalyfin.models.base_album import SpotifyAlbum
-from spotidalyfin.models.base_artist import SpotifyArtist
-from spotidalyfin.models.base_manager import Manager
-from spotidalyfin.models.base_playlist import FavoriteTracksPlaylist, Playlist, SpotifyPlaylist
-from spotidalyfin.models.base_track import SpotifyTrack
+from spotidalyfin.managers.types import Platform
+from spotidalyfin.models import Track, TrackQuality
+from spotidalyfin.models.album import SpotifyAlbum
+from spotidalyfin.models.artist import SpotifyArtist
+from spotidalyfin.models.manager import Manager
+from spotidalyfin.models.playlist import SpotifyPlaylist, \
+    SpotifyFavoriteTracksPlaylist
+from spotidalyfin.models.track import SpotifyTrack
 
 
 def _parse_track(spotipy_track: dict) -> SpotifyTrack:
@@ -26,7 +28,8 @@ def _parse_track(spotipy_track: dict) -> SpotifyTrack:
         artist=_parse_artist(spotipy_track["artists"][0]) if spotipy_track.get("artists") else None,
         album=_parse_album(spotipy_track["album"]) if spotipy_track.get("album") else None,
         duration=spotipy_track.get("duration_ms", 0),
-        quality=TrackQuality.LOW
+        quality=TrackQuality.LOW,
+        isrc=spotipy_track.get("external_ids", {}).get("isrc", "").upper()
     )
 
 
@@ -43,7 +46,7 @@ def _parse_album(spotipy_album: dict) -> SpotifyAlbum:
     return SpotifyAlbum(
         name=spotipy_album["name"],
         id=spotipy_album["id"],
-        artist=Artist(
+        artist=SpotifyArtist(
             name=spotipy_album["artists"][0]["name"],
             id=spotipy_album["artists"][0]["id"]
         ),
@@ -59,21 +62,21 @@ def _parse_playlist(spotipy_playlist: dict) -> SpotifyPlaylist:
     return SpotifyPlaylist(
         id=spotipy_playlist['id'],
         name=spotipy_playlist['name'],
+        description=spotipy_playlist.get('description', ''),
         tracks=[_parse_track(item["track"]) for item in spotipy_playlist.get("tracks", {}).get("items", [])],
         image=spotipy_playlist.get("images", [{}])[0].get("url", "")
     )
 
 
-def _parse_favorite_tracks(spotipy_playlist: dict) -> FavoriteTracksPlaylist:
-    return FavoriteTracksPlaylist(
-        id="favorite_tracks",
+def _parse_favorite_tracks(spotipy_playlist: dict) -> SpotifyFavoriteTracksPlaylist:
+    return SpotifyFavoriteTracksPlaylist(
         name="Liked Songs",
         tracks=[_parse_track(item["track"]) for item in spotipy_playlist.get("items", [])],
         image=spotipy_playlist.get("images", [{"url": ""}])[0].get("url", "")
     )
 
 
-def create_temp_oauth(client_id: str, client_secret: str) -> SpotifyOAuth:
+def create_temp_oauth_spotify(client_id: str, client_secret: str) -> SpotifyOAuth:
     """Create a temporary (in-memory storage) SpotifyOAuth object with the given parameters."""
     return SpotifyOAuth(
         client_id=client_id,
@@ -85,7 +88,7 @@ def create_temp_oauth(client_id: str, client_secret: str) -> SpotifyOAuth:
     )
 
 
-def login(oauth: SpotifyOAuth, response_url: str, db: Database = None) -> (bool, str):
+def login_spotify(oauth: SpotifyOAuth, response_url: str, db: Database = None) -> (bool, str):
     try:
         code = oauth.parse_response_code(response_url)
         if code:
@@ -107,6 +110,8 @@ def login(oauth: SpotifyOAuth, response_url: str, db: Database = None) -> (bool,
 
 
 class SpotifyManager(Manager):
+    PLATFORM = Platform.SPOTIFY
+
     def __init__(self, username: str, db: Database):
         self.username = username
         self.db = db
@@ -116,7 +121,7 @@ class SpotifyManager(Manager):
         self.client = spotipy.Spotify(auth_manager=self.oauth)
         self.anonymous_client = spotipy.Spotify(auth_manager=SpotifyAnon())
 
-    def get_track(self, track_id: str) -> Optional[Track]:
+    def get_track(self, track_id: str) -> Optional[SpotifyTrack]:
         try:
             spotipy_track = self.client.track(track_id)
             return _parse_track(spotipy_track)
@@ -125,7 +130,7 @@ class SpotifyManager(Manager):
             logging.exception(f"Failed to fetch Spotify track with ID {track_id}")
             return None
 
-    def get_album(self, album_id: str) -> Optional[Album]:
+    def get_album(self, album_id: str) -> Optional[SpotifyAlbum]:
         try:
             spotipy_album = self.client.album(album_id)
             return _parse_album(spotipy_album)
@@ -134,7 +139,7 @@ class SpotifyManager(Manager):
             logging.exception(f"Failed to fetch Spotify album with ID {album_id}")
             return None
 
-    def get_artist(self, artist_id: str) -> Optional[Artist]:
+    def get_artist(self, artist_id: str) -> Optional[SpotifyArtist]:
         try:
             spotipy_artist = self.client.artist(artist_id)
             return _parse_artist(spotipy_artist)
@@ -144,7 +149,7 @@ class SpotifyManager(Manager):
             return None
 
     def get_playlist(self, playlist_id: str, fetch_all_tracks: bool = False, fetch_albums: bool = False) -> Optional[
-        Playlist]:
+        SpotifyPlaylist]:
         if playlist_id == "favorite_tracks":
             return self.get_favorite_tracks()
 
@@ -193,9 +198,8 @@ class SpotifyManager(Manager):
 
         return _parse_playlist(playlist)
 
-    def get_user_playlists(self, user_id: str = None) -> list[Playlist]:
+    def get_user_playlists(self, user_id: str = None) -> list[SpotifyPlaylist]:
         try:
-            playlists = []
             if not user_id:
                 playlists = self.client.current_user_playlists()
             else:
@@ -207,7 +211,7 @@ class SpotifyManager(Manager):
             logging.exception(f"Failed to fetch playlists for user {user_id or self.username}")
             return []
 
-    def get_favorite_tracks(self) -> Optional[FavoriteTracksPlaylist]:
+    def get_favorite_tracks(self) -> Optional[SpotifyFavoriteTracksPlaylist]:
         try:
             liked_songs = self.client.current_user_saved_tracks(limit=50, offset=0)
             total = liked_songs['total']
@@ -230,17 +234,50 @@ class SpotifyManager(Manager):
             logging.exception("Failed to fetch favorite tracks")
             return None
 
-    def search_tracks_by_query(self, query: str) -> list[Track]:
-        pass
+    def search_tracks_by_query(self, query: str) -> list[SpotifyTrack]:
+        try:
+            results = self.client.search(q=query, type='track', limit=10)
+            return [_parse_track(item) for item in results['tracks']['items']]
 
-    def search_tracks_by_isrc(self, isrc: str) -> list[Track]:
-        pass
+        except SpotifyException as e:
+            logging.exception(f"Failed to search tracks with query '{query}'")
+            return []
 
-    def search_albums(self, query: str) -> list[Album]:
-        pass
+    def search_tracks_by_isrc(self, isrc: str) -> list[SpotifyTrack]:
+        try:
+            results = self.client.search(q=f"isrc:{isrc}", type='track', limit=10)
+            return [_parse_track(item) for item in results['tracks']['items']]
 
-    def search_artists(self, query: str) -> list[Artist]:
-        pass
+        except SpotifyException as e:
+            logging.exception(f"Failed to search tracks with ISRC '{isrc}'")
+            return []
+
+    def search_albums_by_query(self, query: str) -> list[SpotifyAlbum]:
+        try:
+            results = self.client.search(q=query, type='album', limit=10)
+            return [_parse_album(item) for item in results['albums']['items']]
+
+        except SpotifyException as e:
+            logging.exception(f"Failed to search albums with query '{query}'")
+            return []
+
+    def search_albums_by_upc(self, upc: str) -> list[SpotifyAlbum]:
+        try:
+            results = self.client.search(q=f"upc:{upc}", type='album', limit=10)
+            return [_parse_album(item) for item in results['albums']['items']]
+
+        except SpotifyException as e:
+            logging.exception(f"Failed to search albums with UPC '{upc}'")
+            return []
+
+    def search_artists(self, query: str) -> list[SpotifyArtist]:
+        try:
+            results = self.client.search(q=query, type='artist', limit=10)
+            return [_parse_artist(item) for item in results['artists']['items']]
+
+        except SpotifyException as e:
+            logging.exception(f"Failed to search artists with query '{query}'")
+            return []
 
     def supports_lyrics(self) -> bool:
         return False
@@ -248,5 +285,39 @@ class SpotifyManager(Manager):
     def get_lyrics(self, track: Track) -> str:
         pass
 
-    def create_playlist(self, name: str, tracks: List[Track], description: str = "", cover_url: str = "") -> Playlist:
-        pass
+    def create_empty_playlist(self, name: str, description: str = "", cover_url: str = "") -> Optional[SpotifyPlaylist]:
+        try:
+            playlist = self.client.user_playlist_create(
+                user=self.username,
+                name=name,
+                public=False,
+                description=description
+            )
+
+            if cover_url:
+                self.client.playlist_upload_cover_image(playlist['id'], cover_url)
+
+            return _parse_playlist(playlist)
+        except Exception as e:
+            logging.exception(f"Failed to create TIDAL playlist '{name}': {e}")
+            return None
+
+    def add_tracks_to_playlist(self, playlist_id: str, tracks: List[SpotifyTrack]) -> bool:
+        try:
+            track_ids = [track.id for track in tracks if track.id]
+            if not track_ids:
+                return False
+
+            self.client.playlist_add_items(playlist_id, track_ids)
+            return True
+        except SpotifyException as e:
+            logging.exception(f"Failed to add tracks to playlist {playlist_id}: {e}")
+            return False
+
+    def remove_playlist_by_id(self, playlist_id: str) -> bool:
+        try:
+            self.client.current_user_unfollow_playlist(playlist_id=playlist_id)
+            return True
+        except SpotifyException as e:
+            logging.exception(f"Failed to remove playlist with ID {playlist_id}: {e}")
+            return False
