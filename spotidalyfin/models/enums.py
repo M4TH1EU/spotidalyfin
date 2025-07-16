@@ -1,6 +1,12 @@
 from enum import Enum
 
 
+class Platform(Enum):
+    TIDAL = "TIDAL"
+    SPOTIFY = "SPOTIFY"
+    JELLYFIN = "JELLYFIN"
+
+
 class TrackQuality(Enum):
     DOLBY_ATMOS = 0
     LOW = 1

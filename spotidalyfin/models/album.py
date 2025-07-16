@@ -2,7 +2,7 @@ import datetime
 from dataclasses import dataclass, field
 from typing import Optional, List
 
-from spotidalyfin.managers.types import Platform
+from spotidalyfin.models.enums import Platform
 
 
 @dataclass
@@ -34,3 +34,8 @@ class SpotifyAlbum(PlatformBound, Album):
 @dataclass
 class TidalAlbum(PlatformBound, Album):
     PLATFORM = Platform.TIDAL
+
+
+@dataclass
+class JellyfinAlbum(PlatformBound, Album):
+    PLATFORM = Platform.JELLYFIN

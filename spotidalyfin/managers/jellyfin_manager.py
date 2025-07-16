@@ -8,7 +8,6 @@ from functools import lru_cache
 from typing import Optional, List
 
 import requests
-from requests import Response
 from rich.progress import Progress
 from streamlit.elements.lib.mutable_status_container import StatusContainer
 from streamlit.runtime.scriptrunner_utils.script_run_context import add_script_run_ctx
@@ -18,10 +17,10 @@ from tidalapi.exceptions import ObjectNotFound
 import spotidalyfin.managers.types
 from spotidalyfin.db.database import Database
 from spotidalyfin.db.helpers import save_jellyfin_info_to_db, get_jellyfin_api_key
-from spotidalyfin.exceptions import TrackNotFoundException
-from spotidalyfin.managers.spotify_manager import SpotifyManager
-from spotidalyfin.managers.tidal_manager import TidalManager
-from spotidalyfin.managers.types import Playlist, Platform
+from spotidalyfin.engines.spotify_engine import SpotifyManager
+from spotidalyfin.engines.tidal_engine import TidalManager
+from spotidalyfin.managers.types import Playlist
+from spotidalyfin.models.enums import Platform
 from spotidalyfin.utils.comparisons import weighted_word_overlap, close
 from spotidalyfin.utils.file_utils import get_as_base64
 from spotidalyfin.utils.formatting import format_artists, normalize_str, remove_invalid_chars_from_str
@@ -59,46 +58,46 @@ class JellyfinManager:
         # self.checksum_file = self.metadata_dir / ".image_checksums_spotidalyfin_do_not_delete.txt"
         # self.checksums = None
 
-    def request(self, path, method="GET", params: dict = {}, json: dict = {},
-                image_data: bytes = None, timeout: int = 30) -> list | Response:
-        url = f"{self.url}/{path.lstrip('/')}"
-        headers = {"X-Emby-Token": self.api_key}
-
-        if image_data:
-            headers["Content-Type"] = "image/jpeg"
-
-        # Fixes an issue with Jellyfin API where searching with apostrophes doesn't work
-        if "searchTerm" in params:
-            params["searchTerm"] = re.sub(r"['\"’‘”“].*", '', params["searchTerm"])
-
-        try:
-            if method == "GET":
-                response = requests.get(url, headers=headers, params=params)
-            elif method == "POST":
-                if image_data:
-                    response = requests.post(url, headers=headers, json=json, params=params, data=image_data)
-                else:
-                    response = requests.post(url, headers=headers, json=json, params=params)
-            elif method == "DELETE":
-                response = requests.delete(url, headers=headers)
-            elif method == "DOWNLOAD_GET":
-                return requests.get(url, headers=headers, stream=True, timeout=timeout)
-            else:
-                raise ValueError(f"Invalid method: {method}")
-
-            response.raise_for_status()
-
-            respjson = response.json()
-            if isinstance(respjson, dict):
-                if respjson.get('TotalRecordCount', 0) >= 1:
-                    if "Items" in respjson:
-                        return respjson["Items"]
-            elif isinstance(respjson, list):
-                return respjson
-
-            return []
-        except requests.exceptions.RequestException:
-            return []
+    # def request(self, path, method="GET", params: dict = {}, json: dict = {},
+    #             image_data: bytes = None, timeout: int = 30) -> list | Response:
+    #     url = f"{self.url}/{path.lstrip('/')}"
+    #     headers = {"X-Emby-Token": self.api_key}
+    #
+    #     if image_data:
+    #         headers["Content-Type"] = "image/jpeg"
+    #
+    #     # Fixes an issue with Jellyfin API where searching with apostrophes doesn't work
+    #     if "searchTerm" in params:
+    #         params["searchTerm"] = re.sub(r"['\"’‘”“].*", '', params["searchTerm"])
+    #
+    #     try:
+    #         if method == "GET":
+    #             response = requests.get(url, headers=headers, params=params)
+    #         elif method == "POST":
+    #             if image_data:
+    #                 response = requests.post(url, headers=headers, json=json, params=params, data=image_data)
+    #             else:
+    #                 response = requests.post(url, headers=headers, json=json, params=params)
+    #         elif method == "DELETE":
+    #             response = requests.delete(url, headers=headers)
+    #         elif method == "DOWNLOAD_GET":
+    #             return requests.get(url, headers=headers, stream=True, timeout=timeout)
+    #         else:
+    #             raise ValueError(f"Invalid method: {method}")
+    #
+    #         response.raise_for_status()
+    #
+    #         respjson = response.json()
+    #         if isinstance(respjson, dict):
+    #             if respjson.get('TotalRecordCount', 0) >= 1:
+    #                 if "Items" in respjson:
+    #                     return respjson["Items"]
+    #         elif isinstance(respjson, list):
+    #             return respjson
+    #
+    #         return []
+    #     except requests.exceptions.RequestException:
+    #         return []
 
     def delete_item(self, item_id):
         self.request(f"Items/{item_id}", method="DELETE")
@@ -109,7 +108,7 @@ class JellyfinManager:
     def get_artists(self):
         return self.request("Artists")
 
-    def get_users(self, only_names:bool = False) -> List[dict]:
+    def get_users(self, only_names: bool = False) -> List[dict]:
         users = self.request("Users")
         if only_names:
             return [user.get('Name', '') for user in users]
@@ -330,8 +329,6 @@ class JellyfinManager:
 
         return None
 
-
-
     def get_track_from_data(self, track: dict | Track) -> Optional[dict]:
         """
         Get Jellyfin track from either a Spotify track dict or a TidalAPI Track object. Using the Tidal Track object
@@ -415,7 +412,7 @@ class JellyfinManager:
                     track_empty.write(
                         f"*:green[-> Matched track: {tidal_track.name} - {tidal_track.artist.name}]*")
                 return index, tidal_track
-            except TrackNotFoundException:
+            except Exception:
                 if track_empty:
                     track_empty.write(
                         f"*:red[-> Failed to match track: {tidal_track.name} - {tidal_track.artist.name}]*")
@@ -435,7 +432,7 @@ class JellyfinManager:
         jellyfin_playlist.tracks.extend(tidal_track for _, tidal_track in results if tidal_track)
 
         return jellyfin_playlist
-    
+
     # def compress_metadata_images(self, progress: Progress = None):
     #     """
     #     Compresses and resizes images in the metadata directory. This is useful for reducing the size of the metadata

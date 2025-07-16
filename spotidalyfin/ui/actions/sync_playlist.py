@@ -3,11 +3,10 @@ from typing import List
 import streamlit as st
 
 from spotidalyfin.db.helpers import get_authenticated_spotify_profiles, get_authenticated_tidal_profiles
-from spotidalyfin.managers.types import Platform
+from spotidalyfin.models.enums import Platform
 from spotidalyfin.models.playlist import Playlist
 from spotidalyfin.models.utils import get_track_on_another_platform
 from spotidalyfin.ui.helpers.getters import get_database, create_state_if_missing, get_manager_for_platform
-from spotidalyfin.ui.helpers.platforms import get_user_playlists
 from spotidalyfin.utils.logger import log
 
 create_state_if_missing('sync_account_submitted', False)
@@ -72,11 +71,13 @@ if not st.session_state.sync_account_submitted:
         with st.form("sync_form", border=input_mode[1] != 0):
             match input_mode[1]:
                 case 0:
-                    playlists = get_user_playlists(from_account, from_select[1])
+                    playlists = [(p.name, p.id) for p in
+                                 get_manager_for_platform(from_account, from_select[1]).get_user_playlists()]
                 case 1:
                     playlists = st.multiselect(
                         "Select playlists to sync",
-                        options=get_user_playlists(from_account, from_select[1]),
+                        options=[(p.name, p.id) for p in
+                                 get_manager_for_platform(from_account, from_select[1]).get_user_playlists()],
                         format_func=lambda x: x[0]
                     )
                 case 2:

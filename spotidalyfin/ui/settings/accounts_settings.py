@@ -4,9 +4,9 @@ import streamlit as st
 
 from spotidalyfin.db.helpers import get_authenticated_spotify_profiles, remove_spotify_profile, remove_tidal_profile, \
     get_authenticated_tidal_profiles, get_authenticated_jellyfin_profiles, remove_jellyfin_profile
+from spotidalyfin.engines.jellyfin_engine import login_jellyfin
 from spotidalyfin.engines.spotify_engine import login_spotify, create_temp_oauth_spotify
 from spotidalyfin.engines.tidal_engine import login_tidal, create_temp_session_tidal
-from spotidalyfin.managers.jellyfin_manager import try_to_authenticate_with_jellyfin
 from spotidalyfin.ui.helpers.dialogs import DialogContext, DialogStep, MultiStepDialog
 from spotidalyfin.ui.helpers.getters import get_database
 from spotidalyfin.ui.helpers.ui import subheader_custom_icon, display_table, inline_code_html
@@ -252,7 +252,7 @@ def create_and_add_jellyfin_dialog():
             return False, "Invalid Jellyfin server URL. It should start with 'http://' or 'https://'."
 
         # this tries to authenticate, checks if the account is already authenticated and saves it to the database if not
-        return try_to_authenticate_with_jellyfin(context.get("server_url"), get_database())
+        return login_jellyfin(context.get("server_url"), get_database())
 
     def step2_content(context: DialogContext):
         """Step 2: Completion"""

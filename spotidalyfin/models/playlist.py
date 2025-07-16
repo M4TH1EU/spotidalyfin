@@ -1,7 +1,8 @@
 from dataclasses import dataclass, field
 from typing import List, Optional
 
-from ..managers.types import Platform
+from spotidalyfin.models.enums import Platform
+
 
 @dataclass
 class PlatformBound:
@@ -32,6 +33,11 @@ class TidalPlaylist(PlatformBound, Playlist):
 
 
 @dataclass
+class JellyfinPlaylist(PlatformBound, Playlist):
+    PLATFORM = Platform.JELLYFIN
+
+
+@dataclass
 class FavoriteTracksPlaylist(Playlist):
     id: str = field(init=False, default="favorite_tracks")
 
@@ -44,3 +50,8 @@ class SpotifyFavoriteTracksPlaylist(PlatformBound, FavoriteTracksPlaylist):
 @dataclass
 class TidalFavoriteTracksPlaylist(PlatformBound, FavoriteTracksPlaylist):
     PLATFORM = Platform.TIDAL
+
+
+@dataclass
+class JellyfinFavoriteTracksPlaylist(PlatformBound, FavoriteTracksPlaylist):
+    PLATFORM = Platform.JELLYFIN

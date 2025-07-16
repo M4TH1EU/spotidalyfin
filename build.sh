@@ -10,8 +10,6 @@ pip install -r requirements.txt pyinstaller
 
 pip uninstall -y pyarrow pandas #  we don't need them / reduce exec size
 
-# pyinstaller --noconfirm --onefile --hidden-import spotidalyfin --add-binary spotidalyfin/spotidalyfin.secrets:./ --console --name spotidalyfin-${VERSION}_linux_x86_64 "start.py" # old terminal interface
-# pyinstaller --noconfirm --copy-metadata "streamlit" --collect-all "streamlit" --hidden-import "streamlit" --hidden-import spotidalyfin --add-data "spotidalyfin":"./spotidalyfin" --console --name spotidalyfin-${VERSION}_linux_x86_64 "start_webui.py"
 pyinstaller --noconfirm \
     --copy-metadata "streamlit" \
     --hidden-import "streamlit.runtime.scriptrunner.magic_funcs" \

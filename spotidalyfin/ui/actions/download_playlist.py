@@ -1,13 +1,12 @@
 import os
 
 import streamlit as st
+from spotidalyfin.ui.helpers.platforms import get_user_playlists
 from spotipy import SpotifyException
 
 from spotidalyfin.db.helpers import get_authenticated_spotify_profiles, get_authenticated_tidal_profiles
-from spotidalyfin.managers.types import TrackQuality, Platform
 from spotidalyfin.ui.helpers.getters import get_database, get_spotify_manager, get_tidal_manager, \
     create_state_if_missing
-from spotidalyfin.ui.helpers.platforms import get_user_playlists
 from spotidalyfin.utils.logger import log
 
 create_state_if_missing('download_playlist_submitted', False)
@@ -146,7 +145,8 @@ else:
                 msg = f":material/compare_arrows: Matching Spotify tracks to TIDAL tracks..."
                 status.update(label=msg, state="running", expanded=True)
                 status.write(f"**{msg}**")
-                tidal_playlist = tidal_manager.convert_spotify_playlist(spotify_playlist, status_container=status, retrieve_streams=True)
+                tidal_playlist = tidal_manager.convert_spotify_playlist(spotify_playlist, status_container=status,
+                                                                        retrieve_streams=True)
                 tidal_playlist_length = len(tidal_playlist.tracks)
 
                 status.divider()

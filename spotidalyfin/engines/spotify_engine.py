@@ -11,10 +11,10 @@ from spotipy_anon import SpotifyAnon
 from spotidalyfin import SPOTIFY_REDIRECT_URI, SPOTIFY_SCOPES
 from spotidalyfin.db.database import Database
 from spotidalyfin.db.helpers import get_spotify_oauth, get_authenticated_spotify_profiles, save_spotify_into_db
-from spotidalyfin.managers.types import Platform
 from spotidalyfin.models import Track, TrackQuality
 from spotidalyfin.models.album import SpotifyAlbum
 from spotidalyfin.models.artist import SpotifyArtist
+from spotidalyfin.models.enums import Platform
 from spotidalyfin.models.manager import Manager
 from spotidalyfin.models.playlist import SpotifyPlaylist, \
     SpotifyFavoriteTracksPlaylist, Playlist

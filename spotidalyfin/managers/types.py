@@ -3,7 +3,6 @@ from __future__ import annotations  # For forward type references in Python < 3.
 from dataclasses import dataclass
 from dataclasses import field
 from datetime import datetime
-from enum import Enum
 from pathlib import Path
 from typing import Optional, List
 
@@ -19,24 +18,25 @@ from tidalapi import Role
 from tidalapi.media import StreamManifest, AudioExtensions
 from unidecode import unidecode
 
-from spotidalyfin.exceptions import DownloadTrackException
+from spotidalyfin.models.enums import Platform, TrackQuality
 from spotidalyfin.utils.comparisons import weighted_word_overlap
 from spotidalyfin.utils.file_utils import open_image_url
 from spotidalyfin.utils.formatting import parse_date
 from spotidalyfin.utils.logger import log
 
 
-class Platform(Enum):
-    TIDAL = "TIDAL"
-    SPOTIFY = "SPOTIFY"
-    JELLYFIN = "JELLYFIN"
-
-
-class TrackQuality(Enum):
-    DOLBY_ATMOS = 0
-    LOW = 1
-    LOSSLESS = 2
-    HI_RES_LOSSLESS = 3
+#
+# class Platform(Enum):
+#     TIDAL = "TIDAL"
+#     SPOTIFY = "SPOTIFY"
+#     JELLYFIN = "JELLYFIN"
+#
+#
+# class TrackQuality(Enum):
+#     DOLBY_ATMOS = 0
+#     LOW = 1
+#     LOSSLESS = 2
+#     HI_RES_LOSSLESS = 3
 
 
 def _generate_artists_string(artists: list[Artist]) -> str:
@@ -442,7 +442,7 @@ class Track:
         except Exception as e:
             if retry_count <= 0:
                 # log.exception(f"Download failed: {e}")
-                raise DownloadTrackException(f"Download failed for track {self.name} by {self.artist.name} : {e}")
+                raise Exception(f"Download failed for track {self.name} by {self.artist.name} : {e}")
             else:
                 log.warning(
                     f"Download failed for track {self.name} by {self.artist.name}. Retrying {retry_count} more times. Error: {e}")

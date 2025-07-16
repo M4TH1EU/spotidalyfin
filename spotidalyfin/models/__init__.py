@@ -1,6 +1,6 @@
 from .album import Album
 from .artist import Artist
-from .track import Track
 from .enums import TrackQuality, ArtistRole
+from .track import Track
 
 __all__ = ["Artist", "Album", "Track", "TrackQuality", "ArtistRole"]

@@ -11,10 +11,10 @@ from tidalapi.session import SearchResults
 
 from spotidalyfin.db.database import Database
 from spotidalyfin.db.helpers import get_authenticated_tidal_profiles, save_tidal_info_to_db, get_tidal_login_info
-from spotidalyfin.managers.types import Platform
 from spotidalyfin.models import Track, TrackQuality
 from spotidalyfin.models.album import TidalAlbum
 from spotidalyfin.models.artist import TidalArtist
+from spotidalyfin.models.enums import Platform
 from spotidalyfin.models.manager import Manager
 from spotidalyfin.models.playlist import Playlist, TidalFavoriteTracksPlaylist, \
     TidalPlaylist
@@ -331,3 +331,159 @@ class TidalManager(Manager):
         except Exception as e:
             logging.exception(f"Failed to remove TIDAL playlist with ID {playlist_id}: {e}")
             return False
+
+# OLD CODE TO MIGRATE
+
+# tidal_search = self.search_tracks(track_name=spotify_track.name, artist_name=spotify_track.artist.name,
+#                                   isrc=spotify_track.isrc, retrieve_streams=retrieve_streams)
+# list_of_matches: list[Track] = []
+# for tidal_track in tidal_search:
+#     match, score = spotify_track.matches(other=tidal_track)
+#
+#     if match:
+#         list_of_matches.append(tidal_track)
+#
+# if not list_of_matches:
+#     raise TrackNotFoundException(
+#         f"No matches found on TIDAL for track {spotify_track.name} - {spotify_track.artist.name}")
+#
+# list_of_matches.sort(key=lambda x: x.quality.value + x.score, reverse=True)
+# save_match(self.db, spotify_track.track_id, list_of_matches[0].track_id)
+# return list_of_matches[0]
+
+
+# def download_track(self,
+#                    track: Track,
+#                    quality: TrackQuality = TrackQuality.HI_RES_LOSSLESS,
+#                    output_type: str = "flac",
+#                    destination: str = "~/Music/Spotidalyfin",
+#                    lyrics: bool = True
+#                    ):
+#     """
+#     Downloads a track to the given destination.
+#
+#     :param track: The track to download.
+#     :param quality: The quality of the downloaded track.
+#     :param output_type: The output file type.
+#     :param destination: The destination folder.
+#     :param lyrics: Whether to download the lyrics. Slows down the process a bit.
+#
+#     :raises DownloadTrackException: If the track cannot be downloaded.
+#     """
+#
+#     try:
+#         if quality:
+#             self.client.audio_quality = quality.name
+#
+#         if destination:
+#             destination = Path(destination).expanduser()
+#
+#         raw_data, filetype = track.raw_data()
+#
+#         if filetype == "m4a" and output_type == "flac":
+#             raw_data = convert_m4a_bytes_to_flac(raw_data)
+#             filetype = "flac"
+#
+#         if lyrics:
+#             track.lyrics = self.get_lyrics(track)
+#
+#         metadata = track.metadata()
+#         out_file = metadata.generate_path(base_path=destination, extension=filetype)
+#         out_file.parent.mkdir(parents=True, exist_ok=True)
+#
+#         with open(out_file, "wb") as f:
+#             f.write(raw_data)
+#
+#         metadata.write_to_file(out_file)
+#     except Exception as e:
+#         raise DownloadTrackException(f"Failed to download track {track.name} - {track.artist.name}: {e}") from e
+#
+# def download_playlist(self,
+#                       playlist: Playlist,
+#                       quality: TrackQuality = TrackQuality.HI_RES_LOSSLESS,
+#                       output_type: str = "flac",
+#                       destination: str = "~/Music/Spotidalyfin",
+#                       status_container: StatusContainer = None,
+#                       progress_bar: ProgressMixin = None
+#                       ) -> List[tuple[bool, Track]]:
+#     """
+#     Downloads a playlist to the given destination.
+#
+#     :param playlist: The playlist to download.
+#     :param quality: The quality of the downloaded tracks.
+#     :param output_type: The output file type.
+#     :param destination: The destination folder.
+#     :param status_container: The status container to update, if any.
+#     :param progress_bar: A Streamlit progress bar widget.
+#
+#     :raises DownloadPlaylistException:
+#
+#     :return: A list of tuples containing the download status and the track.
+#     """
+#
+#     if quality:
+#         self.client.audio_quality = quality.name
+#
+#     if destination:
+#         destination = Path(destination).expanduser()
+#
+#     # Total number of tracks to download
+#     total_tracks = len(playlist.tracks)
+#
+#     # Initialize the progress bar
+#     if progress_bar is not None:
+#         progress_bar.progress(0, "Downloading tracks...")
+#
+#     # Track progress in the main thread using a shared variable
+#     def _execute_download(_track, _progress_tracker, attempts=0):
+#         if not "streamlit_script_run_ctx" in threading.current_thread().__dict__:
+#             if attempts < 10:
+#                 time.sleep(0.1)
+#                 attempts += 1
+#                 return _execute_download(_track, _progress_tracker, attempts)
+#             else:
+#                 raise DownloadPlaylistException("Failed to download track due to missing script run context.")
+#
+#         # Create an st.empty() container to write status messages (no spamming logs)
+#         track_empty = status_container.empty() if status_container else None
+#
+#         try:
+#             if track_empty:
+#                 track_empty.write(f"*-> Downloading track: {_track.name}*")
+#
+#             self.download_track(_track, quality, output_type, destination)
+#
+#             # Update progress in the main thread safely
+#             if progress_bar is not None:
+#                 _progress_tracker[0] += 1
+#                 progress_bar.progress(_progress_tracker[0] / total_tracks,
+#                                       f"{_progress_tracker[0]}/{total_tracks} tracks downloaded")
+#
+#             if track_empty:
+#                 track_empty.write(f"*:green[-> Downloaded track: {_track.name}]*")
+#
+#             return True, _track
+#
+#         except Exception as e:
+#             log.exception(f"Failed to download track {_track.name} in playlist {playlist.name}")
+#             if track_empty:
+#                 track_empty.write(f"**:red[-> {e}]**")
+#
+#             return False, _track
+#
+#     # Shared progress tracker (using list to ensure it's mutable)
+#     progress_tracker = [0]
+#
+#     summary_downloads = []
+#
+#     # Use ThreadPoolExecutor to download tracks in parallel
+#     with ThreadPoolExecutor(max_workers=4) as executor:
+#         results = executor.map(lambda track: _execute_download(track, progress_tracker), playlist.tracks)
+#
+#         for t in executor._threads:
+#             add_script_run_ctx(t)
+#
+#         for result in results:
+#             summary_downloads.append(result)
+#
+#     return summary_downloads

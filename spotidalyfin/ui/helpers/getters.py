@@ -1,10 +1,10 @@
 import streamlit as st
 
 from spotidalyfin.db.database import Database
+from spotidalyfin.engines.jellyfin_engine import JellyfinManager
 from spotidalyfin.engines.spotify_engine import SpotifyManager
 from spotidalyfin.engines.tidal_engine import TidalManager
-from spotidalyfin.managers.jellyfin_manager import JellyfinManager
-from spotidalyfin.managers.types import Platform
+from spotidalyfin.models.enums import Platform
 from spotidalyfin.models.manager import Manager
 
 

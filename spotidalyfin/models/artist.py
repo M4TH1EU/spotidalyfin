@@ -1,8 +1,7 @@
 from dataclasses import dataclass, field
 from typing import List, Optional
 
-from .enums import ArtistRole
-from ..managers.types import Platform
+from .enums import ArtistRole, Platform
 
 
 @dataclass
@@ -31,3 +30,8 @@ class SpotifyArtist(PlatformBound, Artist):
 @dataclass
 class TidalArtist(PlatformBound, Artist):
     PLATFORM = Platform.TIDAL
+
+
+@dataclass
+class JellyfinArtist(PlatformBound, Artist):
+    PLATFORM = Platform.JELLYFIN

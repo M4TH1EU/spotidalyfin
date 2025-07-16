@@ -33,3 +33,8 @@ class SpotifyTrack(PlatformBound, Track):
 @dataclass
 class TidalTrack(PlatformBound, Track):
     PLATFORM = Platform.TIDAL
+
+
+@dataclass
+class JellyfinTrack(PlatformBound, Track):
+    PLATFORM = Platform.JELLYFIN
