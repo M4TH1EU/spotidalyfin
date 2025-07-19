@@ -50,7 +50,7 @@ class Manager(ABC):
         raise NotImplementedError("This method should be implemented by subclasses.")
 
     @abstractmethod
-    def get_favorite_tracks(self) -> Optional[FavoriteTracksPlaylist]:
+    def get_favorite_tracks(self, user_id: str = None) -> Optional[FavoriteTracksPlaylist]:
         """Retrieve the favorite tracks playlist."""
         raise NotImplementedError("This method should be implemented by subclasses.")
 

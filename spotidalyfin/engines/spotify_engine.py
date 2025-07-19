@@ -214,7 +214,7 @@ class SpotifyManager(Manager):
             logging.exception(f"Failed to fetch playlists for user {user_id or self.username}")
             return []
 
-    def get_favorite_tracks(self) -> Optional[SpotifyFavoriteTracksPlaylist]:
+    def get_favorite_tracks(self, user_id: str = None) -> Optional[SpotifyFavoriteTracksPlaylist]:
         try:
             liked_songs = self.client.current_user_saved_tracks(limit=50, offset=0)
             total = liked_songs['total']

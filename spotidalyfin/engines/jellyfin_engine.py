@@ -104,20 +104,21 @@ def _parse_quality(jellyfin_track: dict) -> TrackQuality:
 
 
 def _parse_playlist(jellyfin_playlist: dict) -> JellyfinPlaylist:
-    playlist_id = jellyfin_playlist.get("Id")
-    name = jellyfin_playlist.get("Name")
     items = jellyfin_playlist.get("Items", [])
 
     return JellyfinPlaylist(
-        id=playlist_id,
-        name=name,
+        id=jellyfin_playlist.get("Id"),
+        name=jellyfin_playlist.get("Name"),
         tracks=[_parse_track(item) for item in items],
         image=_parse_cover_url(jellyfin_playlist)
     )
 
 
-def _parse_favorite_tracks(jellyfin_playlist: dict) -> JellyfinFavoriteTracksPlaylist:
-    pass
+def _parse_favorite_tracks(jellyfin_playlist: list) -> JellyfinFavoriteTracksPlaylist:
+    return JellyfinFavoriteTracksPlaylist(
+        name="Favorite Tracks",
+        tracks=[_parse_track(item) for item in jellyfin_playlist],
+    )
 
 
 def login_jellyfin(server_url: str, api_key: str, db: Database) -> (bool, str, dict):
@@ -296,10 +297,28 @@ class JellyfinManager(Manager):
         return _parse_playlist(jellyfin_playlist)
 
     def get_user_playlists(self, user_id: str = None) -> list[JellyfinPlaylist]:
-        pass
+        if user_id is None:
+            logging.warning("No user ID provided, returning empty playlist list.")
+            return []
 
-    def get_favorite_tracks(self) -> Optional[JellyfinFavoriteTracksPlaylist]:
-        pass
+        # TODO
+
+    def get_favorite_tracks(self, user_id: str = None) -> Optional[JellyfinFavoriteTracksPlaylist]:
+        if user_id is None:
+            logging.warning("No user ID provided, returning no favorites list.")
+            return None
+
+        path = f"Users/{user_id}/Items"
+        params = {
+            "Filters": "IsFavorite",
+            "Recursive": "true",
+            "IncludeItemTypes": "Audio",
+        }
+        jellyfin_favorites = self._get(path, params)
+        if not jellyfin_favorites:
+            return None
+
+        return _parse_favorite_tracks(jellyfin_favorites)
 
     def search_tracks_by_query(self, query: str) -> list[JellyfinTrack]:
         pass

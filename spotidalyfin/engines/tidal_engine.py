@@ -192,7 +192,7 @@ class TidalManager(Manager):
             logging.exception(f"Failed to fetch TIDAL playlists for user {user_id}: {e}")
             return []
 
-    def get_favorite_tracks(self) -> Optional[TidalFavoriteTracksPlaylist]:
+    def get_favorite_tracks(self, user_id: str = None) -> Optional[TidalFavoriteTracksPlaylist]:
         try:
             liked_songs = self.client.user.favorites(limit=100, offset=0)
             total = liked_songs.total
