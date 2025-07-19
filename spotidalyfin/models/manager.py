@@ -1,7 +1,7 @@
 import logging
 from abc import abstractmethod, ABC
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from spotidalyfin.managers.types import Platform
 from spotidalyfin.models import Track, Album, Artist
@@ -11,6 +11,17 @@ from spotidalyfin.models.playlist import Playlist, FavoriteTracksPlaylist
 @dataclass
 class Manager(ABC):
     PLATFORM: Platform
+
+    @abstractmethod
+    def is_multi_user(self) -> bool:
+        """Check if the manager supports multiple users."""
+        raise NotImplementedError("This method should be implemented by subclasses.")
+
+    def get_users(self) -> List[Tuple[str, str]]:
+        """Retrieve a list of users with their IDs and names."""
+        if self.is_multi_user():
+            raise NotImplementedError("This method should be implemented by subclasses.")
+        return []
 
     @abstractmethod
     def get_track(self, track_id: str) -> Optional[Track]:

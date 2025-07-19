@@ -32,22 +32,22 @@ def create_and_add_spotify_dialog():
         context.set("client_id", client_id)
         context.set("client_secret", client_secret)
 
-    def validate_step1(context: DialogContext) -> tuple[bool, str]:
+    def validate_step1(context: DialogContext) -> tuple[bool, str, dict]:
         """Validate Spotify credentials"""
         if not all([context.get("client_id"), context.get("client_secret")]):
-            return False, "Please fill in all fields to continue."
+            return False, "Please fill in all fields to continue.", {}
 
         if len(context.get("client_id")) != 32:
-            return False, "Invalid Client ID. Please check the Client ID and try again."
+            return False, "Invalid Client ID. Please check the Client ID and try again.", {}
         if len(context.get("client_secret")) != 32:
-            return False, "Invalid Client Secret. Please check the Client Secret and try again."
+            return False, "Invalid Client Secret. Please check the Client Secret and try again.", {}
 
         # Create a temporary OAuth object to check if the credentials are valid
         spotify_dialog.get_context().set("oauth",
                                          create_temp_oauth_spotify(context.get("client_id"),
                                                                    context.get("client_secret")))
 
-        return True, ""
+        return True, "", {}
 
     def step2_content(context: DialogContext):
         """Step 2: Authorization URL and code"""
@@ -60,10 +60,10 @@ def create_and_add_spotify_dialog():
         redirect_url = st.text_input("Enter the URL you were redirected to after authorization.")
         context.set("redirect_url", redirect_url)
 
-    def validate_step2(context: DialogContext) -> tuple[bool, str]:
+    def validate_step2(context: DialogContext) -> tuple[bool, str, dict]:
         """Validate authorization"""
         if not context.get("redirect_url"):
-            return False, "Please enter the URL you were redirected to after authorizing Spotidalyfin."
+            return False, "Please enter the URL you were redirected to after authorizing Spotidalyfin.", {}
 
         return login_spotify(context.get("oauth"), context.get("redirect_url"), get_database())
 
@@ -156,10 +156,10 @@ def create_and_add_tidal_dialog():
         redirect_url = st.text_input("Enter the URL you were redirected to after authorization.")
         context.set("redirect_url", redirect_url)
 
-    def validate_step1(context: DialogContext) -> tuple[bool, str]:
+    def validate_step1(context: DialogContext) -> tuple[bool, str, dict]:
         """Validate authorization"""
         if not context.get("redirect_url"):
-            return False, "Please enter the URL you were redirected to after authorizing Spotidalyfin."
+            return False, "Please enter the URL you were redirected to after authorizing Spotidalyfin.", {}
 
         # this tries to authenticate, checks if the account is already authenticated and saves it to the database if not
         return login_tidal(context.get("session"), context.get("redirect_url"), get_database())
@@ -244,15 +244,15 @@ def create_and_add_jellyfin_dialog():
         context.set("server_url", server_url)
         context.set("api_key", api_key)
 
-    def validate_step1(context: DialogContext) -> tuple[bool, str]:
+    def validate_step1(context: DialogContext) -> tuple[bool, str, dict]:
         """Validate authorization"""
         if not context.get("server_url"):
-            return False, "Please enter your Jellyfin server URL."
+            return False, "Please enter your Jellyfin server URL.", {}
         if not context.get("server_url").startswith(("http://", "https://")):
-            return False, "Invalid Jellyfin server URL. It should start with 'http://' or 'https://'."
+            return False, "Invalid Jellyfin server URL. It should start with 'http://' or 'https://'.", {}
 
         # this tries to authenticate, checks if the account is already authenticated and saves it to the database if not
-        return login_jellyfin(context.get("server_url"), get_database())
+        return login_jellyfin(server_url=context.get("server_url"), api_key=context.get("api_key"), db=get_database())
 
     def step2_content(context: DialogContext):
         """Step 2: Completion"""

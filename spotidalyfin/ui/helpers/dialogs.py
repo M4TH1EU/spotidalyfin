@@ -87,16 +87,16 @@ class DialogStep:
     """
     title: str
     content: Callable[[DialogContext], None]
-    validation_func: Callable[[DialogContext], tuple[bool, str]] = None
+    validation_func: Callable[[DialogContext], tuple[bool, str, dict]] = None
     next_button_text: str = None
     next_button_icon: str = None
 
     def __post_init__(self):
         # Default validation that always passes
         if self.validation_func is None:
-            self.validation_func = lambda ctx: (True, "")
+            self.validation_func = lambda ctx: (True, "", {})
 
-    def validate(self, context: DialogContext) -> tuple[bool, str] | tuple[bool, str, dict]:
+    def validate(self, context: DialogContext) -> tuple[bool, str, dict]:
         """Run validation with dialog context
 
         Parameters:

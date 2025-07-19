@@ -8,4 +8,7 @@ if __name__ == '__main__':
     )
 
     print(engine.get_users())
+    print(engine.get_album('74151a370400b19ac9f5d018f18a1dd2'))
+    print(engine.get_artist('0e9e1928043a888f5f45ba0952863e50'))
+
     print(engine.get_track('2cbfad9d6fe68ace6890bb0bd937b31b'))

@@ -1,6 +1,6 @@
 import logging
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Tuple
 
 import requests
 
@@ -16,33 +16,43 @@ from spotidalyfin.models.playlist import JellyfinPlaylist, \
 from spotidalyfin.models.track import JellyfinTrack
 
 
+def _parse_cover_url(jellyfin_item: dict) -> Optional[str]:
+    cover_tag = jellyfin_item.get("ImageTags", {}).get("Primary") or jellyfin_item.get(
+        "PrimaryImageTag") or jellyfin_item.get("AlbumPrimaryImageTag")
+    if not cover_tag:
+        cover_tag = jellyfin_item.get("PrimaryImageTag")
+    if not cover_tag:
+        return None
+
+    item_id = jellyfin_item.get("Id") or jellyfin_item.get("AlbumId")
+    if cover_tag and item_id:
+        return f"/Items/{item_id}/Images/Primary?tag={cover_tag}"
+    return None
+
+
 def _parse_artist(jellyfin_artist: dict) -> JellyfinArtist:
     return JellyfinArtist(
         name=jellyfin_artist.get("Name"),
         id=jellyfin_artist.get("Id"),
-        image=None
+        image=_parse_cover_url(jellyfin_artist),
     )
 
 
 def _parse_album(jellyfin_album: dict) -> JellyfinAlbum:
     artist = _parse_artist(jellyfin_album["AlbumArtists"][0])
-
-    cover_tag = jellyfin_album.get("AlbumPrimaryImageTag")
-    cover_url = (
-        f"/Items/{jellyfin_album['AlbumId']}/Images/Primary?tag={cover_tag}"
-        if cover_tag else None
-    )
+    album_name = jellyfin_album.get("Album") or jellyfin_album.get("Name")  # from track | from album
+    album_id = jellyfin_album.get("AlbumId") or jellyfin_album.get("Id")  # from track | from album
 
     release_date_str = jellyfin_album.get("PremiereDate")
     release_date = datetime.fromisoformat(release_date_str.replace("Z", "+00:00")) if release_date_str else None
 
     return JellyfinAlbum(
-        name=jellyfin_album["Album"],
-        id=jellyfin_album["AlbumId"],
+        name=album_name,
+        id=album_id,
         artist=artist,
         barcode="",
         release_date=release_date,
-        cover_url=cover_url,
+        cover_url=_parse_cover_url(jellyfin_album),
         num_volumes=None,
         tracks=None
     )
@@ -101,30 +111,30 @@ def _parse_favorite_tracks(jellyfin_playlist: dict) -> JellyfinFavoriteTracksPla
     pass
 
 
-def login_jellyfin(server_url: str, db: Database) -> (bool, str):
+def login_jellyfin(server_url: str, api_key: str, db: Database) -> (bool, str, dict):
     """
     Try to authenticate with Jellyfin server using the provided URL and API key.
     Returns a tuple of (success: bool, message: str).
     """
-    jellyfin_manager = JellyfinManager(server_url, db)
+    jellyfin_manager = JellyfinManager(url=server_url, db=db, api_key=api_key)
     try:
         users = jellyfin_manager.get_users()
         if not users:
-            return False, "No users found on the Jellyfin server. Please check your API key and server URL."
+            return False, "No users found on the Jellyfin server. Please check your API key and server URL.", {}
 
         save_jellyfin_info_to_db(db, server_url, jellyfin_manager.api_key)
 
-        return True, "Successfully authenticated with Jellyfin."
+        return True, "Successfully authenticated with Jellyfin.", {}
     except requests.exceptions.RequestException as e:
-        return False, f"Failed to connect to Jellyfin server: {e}"
+        return False, f"Failed to connect to Jellyfin server: {e}", {}
 
 
 class JellyfinManager(Manager):
     PLATFORM = Platform.JELLYFIN
 
-    def __init__(self, url, db: Database):
+    def __init__(self, url, db: Database, api_key: str = None):
         self.url = url.rstrip("/")
-        self.api_key = get_jellyfin_api_key(db, url)
+        self.api_key = get_jellyfin_api_key(db, url) if api_key is None else api_key
         self.db = db
 
     def _get(self, path, params=None, timeout: int = 30) -> list:
@@ -193,17 +203,14 @@ class JellyfinManager(Manager):
     # def _change_primary_image(self, item_id, image_data):
     #     self._request(f"Items/{item_id}/Images/Primary", method="POST", image_data=image_data)
 
-    def get_users(self) -> list[tuple[str, str]]:
-        """
-        Get a list of users from the Jellyfin server.
-        Returns a list of tuples (user_id, username).
-        """
+    def is_multi_user(self) -> bool:
+        return True
+
+    def get_users(self) -> List[Tuple[str, str]]:
         users = self._get("Users")
         return [(str(user.get("Id")), str(user.get("Name"))) for user in users]
 
-    # 	https://jellyfin.broillet.ch/Users/6dbbbaa045e34cc597554eb59891d110/Items/2cbfad9d6fe68ace6890bb0bd937b31b
     def get_track(self, track_id: str) -> Optional[JellyfinTrack]:
-        # path = f"Users/{"6dbbbaa045e34cc597554eb59891d110"}/Items/{track_id}"
         path = f"Items"
         params = {
             "ids": track_id,
@@ -217,10 +224,28 @@ class JellyfinManager(Manager):
         return _parse_track(jellyfin_track)
 
     def get_album(self, album_id: str) -> Optional[JellyfinAlbum]:
-        pass
+        path = f"Items"
+        params = {
+            "ids": album_id,
+            "mediaTypes": "MusicAlbum"
+        }
+        result = self._get(path, params)
+        if not result:
+            return None
+        jellyfin_album = result[0]
+        return _parse_album(jellyfin_album)
 
     def get_artist(self, artist_id: str) -> Optional[JellyfinArtist]:
-        pass
+        path = f"Items"
+        params = {
+            "ids": artist_id,
+            "mediaTypes": "MusicArtist",
+        }
+        result = self._get(path, params)
+        if not result:
+            return None
+        jellyfin_artist = result[0]
+        return _parse_artist(jellyfin_artist)
 
     def get_playlist(self, playlist_id: str, fetch_tracks: bool = False, fetch_albums: bool = False) -> Optional[
         JellyfinPlaylist]:

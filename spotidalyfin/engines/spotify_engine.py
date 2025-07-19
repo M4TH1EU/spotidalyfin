@@ -88,7 +88,7 @@ def create_temp_oauth_spotify(client_id: str, client_secret: str) -> SpotifyOAut
     )
 
 
-def login_spotify(oauth: SpotifyOAuth, response_url: str, db: Database = None) -> (bool, str):
+def login_spotify(oauth: SpotifyOAuth, response_url: str, db: Database = None) -> (bool, str, dict):
     try:
         code = oauth.parse_response_code(response_url)
         if code:
@@ -97,16 +97,16 @@ def login_spotify(oauth: SpotifyOAuth, response_url: str, db: Database = None) -
             if db:
                 username = spotipy.Spotify(auth_manager=oauth).current_user()["id"]
                 if username in get_authenticated_spotify_profiles(db):
-                    return False, "This account is already authenticated, please remove it and try again."
+                    return False, "This account is already authenticated, please remove it and try again.", {}
 
                 save_spotify_into_db(db, username, oauth)
 
-            return True, "Login successful"
+            return True, "Login successful", {}
     except SpotifyOauthError as e:
         if hasattr(e, "error_description"):
-            return False, f"Failed to authenticate with Spotify: {e.error_description}"
+            return False, f"Failed to authenticate with Spotify: {e.error_description}", {}
 
-    return False, "Failed to authenticate with Spotify. Please try again."
+    return False, "Failed to authenticate with Spotify. Please try again.", {}
 
 
 class SpotifyManager(Manager):
@@ -120,6 +120,9 @@ class SpotifyManager(Manager):
         self.oauth = get_spotify_oauth(db, username)
         self.client = spotipy.Spotify(auth_manager=self.oauth)
         self.anonymous_client = spotipy.Spotify(auth_manager=SpotifyAnon())
+
+    def is_multi_user(self) -> bool:
+        return False
 
     def get_track(self, track_id: str) -> Optional[SpotifyTrack]:
         try:

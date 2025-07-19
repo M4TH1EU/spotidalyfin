@@ -35,19 +35,19 @@ def get_manager_for_platform(identifier: str, platform: Platform) -> Manager:
 def get_spotify_manager(username: str) -> SpotifyManager:
     key = f"spotify_manager_{username}"
     if key not in st.session_state:
-        st.session_state[key] = SpotifyManager(username, get_database())
+        st.session_state[key] = SpotifyManager(username=username, db=get_database())
     return st.session_state[key]
 
 
 def get_tidal_manager(username: str) -> TidalManager:
     key = f"tidal_manager_{username}"
     if key not in st.session_state:
-        st.session_state[key] = TidalManager(username, get_database())
+        st.session_state[key] = TidalManager(username=username, db=get_database())
     return st.session_state[key]
 
 
 def get_jellyfin_manager(server: str) -> JellyfinManager:
     key = f"jellyfin_manager_{server}"
     if key not in st.session_state:
-        st.session_state[key] = JellyfinManager(server, get_database())
+        st.session_state[key] = JellyfinManager(url=server, db=get_database())
     return st.session_state[key]

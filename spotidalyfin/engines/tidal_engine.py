@@ -97,30 +97,31 @@ def create_temp_session_tidal(config: tidalapi.Config = tidalapi.Config()) -> ti
     return tidalapi.Session(config=config)
 
 
-def login_tidal(session: tidalapi.Session(), response_url: str, db: Database = None) -> (bool, str):
+def login_tidal(session: tidalapi.Session(), response_url: str, db: Database = None) -> (bool, str, dict):
     """Try to authenticate with TIDAL using the given redirect URL. Optionally save the account into the database."""
     try:
         response: dict = session.pkce_get_auth_token(response_url)
         if db and "user" in response:
             if response.get("user").get("username") in get_authenticated_tidal_profiles(db):
-                return False, "This account is already authenticated, please remove it and try again."
+                return False, "This account is already authenticated, please remove it and try again.", {}
 
             save_tidal_info_to_db(db, response)
 
-        return True, ""
+        return True, "", {}
     except Exception as e:
         logging.exception("Failed to authenticate with TIDAL")
 
         try:
             error = json.loads(e.response.content.decode()).get("error_description")
             if error:
-                return False, f"Failed to authenticate with TIDAL: {error}"
+                return False, f"Failed to authenticate with TIDAL: {error}", {}
         except JSONDecodeError | TypeError:
             logging.exception("Failed to parse TIDAL authentication error response")
-            return False, f"Failed to authenticate with TIDAL. Please try again."
+            return False, f"Failed to authenticate with TIDAL. Please try again.", {}
 
 
 class TidalManager(Manager):
+
     PLATFORM = Platform.TIDAL
 
     def __init__(self, username: str, db: Database):
@@ -134,6 +135,9 @@ class TidalManager(Manager):
                                        is_pkce=True)
         self.client.audio_quality = TrackQuality.HI_RES_LOSSLESS.name  # TODO: allow configuration
         self.db = db
+
+    def is_multi_user(self) -> bool:
+        return False
 
     def get_track(self, track_id: str) -> Optional[TidalTrack]:
         try:

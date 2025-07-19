@@ -41,6 +41,18 @@ if not st.session_state.sync_account_submitted:
                 options=accounts_options[from_select[0]]
             )
 
+            from_manager = get_manager_for_platform(from_account, from_select[1])
+
+            if from_manager.is_multi_user():
+                from_users = from_manager.get_users()
+                if from_users:
+                    from_user_select = st.selectbox(
+                        "Select user:",
+                        options=from_users,
+                        format_func=lambda x: x[0]
+                    )
+                    from_user = from_user_select[1]
+
         with st.container(border=1):
             st.subheader(":material/content_paste: Select destination platform and account")
 
@@ -58,6 +70,17 @@ if not st.session_state.sync_account_submitted:
                 options=accounts_options[to_select[0]]
             )
 
+            to_manager = get_manager_for_platform(to_account, to_select[1])
+            if to_manager.is_multi_user():
+                to_users = to_manager.get_users()
+                if to_users:
+                    to_user_select = st.selectbox(
+                        "Select user:",
+                        options=to_users,
+                        format_func=lambda x: x[0]
+                    )
+                    to_user = to_user_select[1]
+
         if from_select[1] == to_select[1]:
             st.error("Source and destination platforms must be different.")
             st.stop()
@@ -72,12 +95,12 @@ if not st.session_state.sync_account_submitted:
             match input_mode[1]:
                 case 0:
                     playlists = [(p.name, p.id) for p in
-                                 get_manager_for_platform(from_account, from_select[1]).get_user_playlists()]
+                                 from_manager.get_user_playlists(user_id=from_user if from_manager.is_multi_user() else None)]
                 case 1:
                     playlists = st.multiselect(
                         "Select playlists to sync",
                         options=[(p.name, p.id) for p in
-                                 get_manager_for_platform(from_account, from_select[1]).get_user_playlists()],
+                                 from_manager.get_user_playlists(user_id=from_user if from_manager.is_multi_user() else None)],
                         format_func=lambda x: x[0]
                     )
                 case 2:
@@ -98,8 +121,10 @@ if not st.session_state.sync_account_submitted:
                 st.session_state.sync_account_form_data = {
                     "from_platform": from_select[1],
                     "from_account": from_account,
+                    "from_user": from_user if from_manager.is_multi_user() else None,
                     "to_platform": to_select[1],
                     "to_account": to_account,
+                    "to_user": to_user if to_manager.is_multi_user() else None,
                     "playlists": playlists,
                 }
                 st.rerun()
