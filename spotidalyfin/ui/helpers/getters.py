@@ -26,8 +26,8 @@ def get_manager_for_platform(identifier: str, platform: Platform) -> Manager:
         return get_spotify_manager(identifier)
     elif platform == Platform.TIDAL:
         return get_tidal_manager(identifier)
-    # elif platform == Platform.JELLYFIN:
-    #     return get_jellyfin_manager(identifier)
+    elif platform == Platform.JELLYFIN:
+        return get_jellyfin_manager(identifier)
     else:
         raise ValueError(f"Unsupported platform: {platform}")
 

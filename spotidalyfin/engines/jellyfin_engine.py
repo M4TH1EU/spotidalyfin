@@ -104,7 +104,16 @@ def _parse_quality(jellyfin_track: dict) -> TrackQuality:
 
 
 def _parse_playlist(jellyfin_playlist: dict) -> JellyfinPlaylist:
-    pass
+    playlist_id = jellyfin_playlist.get("Id")
+    name = jellyfin_playlist.get("Name")
+    items = jellyfin_playlist.get("Items", [])
+
+    return JellyfinPlaylist(
+        id=playlist_id,
+        name=name,
+        tracks=[_parse_track(item) for item in items],
+        image=_parse_cover_url(jellyfin_playlist)
+    )
 
 
 def _parse_favorite_tracks(jellyfin_playlist: dict) -> JellyfinFavoriteTracksPlaylist:
@@ -137,6 +146,8 @@ class JellyfinManager(Manager):
         self.api_key = get_jellyfin_api_key(db, url) if api_key is None else api_key
         self.db = db
 
+        self.default_admin_user_id = self._get_default_admin_user_id()
+
     def _get(self, path, params=None, timeout: int = 30) -> list:
         """
         Perform a GET request to the Jellyfin API.
@@ -153,7 +164,7 @@ class JellyfinManager(Manager):
 
         try:
             resp_json = response.json()
-            if 'Items' in resp_json and resp_json.get('TotalRecordCount', 0) > 0:
+            if 'Items' in resp_json and resp_json.get('TotalRecordCount', 0) >= 0:
                 return resp_json['Items']
             elif isinstance(resp_json, list):
                 return resp_json
@@ -210,12 +221,19 @@ class JellyfinManager(Manager):
         users = self._get("Users")
         return [(str(user.get("Id")), str(user.get("Name"))) for user in users]
 
+    def _get_default_admin_user_id(self) -> str:
+        users = self._get("Users")
+        for user in users:
+            if user.get("Policy", {}).get("IsAdministrator", False):
+                return str(user.get("Id"))
+
     def get_track(self, track_id: str) -> Optional[JellyfinTrack]:
         path = f"Items"
         params = {
             "ids": track_id,
             "mediaTypes": "Audio",
-            "fields": "MediaSources"
+            "fields": "MediaSources",
+            "includeItemTypes": "Audio"
         }
         result = self._get(path, params)
         if not result:
@@ -227,7 +245,7 @@ class JellyfinManager(Manager):
         path = f"Items"
         params = {
             "ids": album_id,
-            "mediaTypes": "MusicAlbum"
+            "includeItemTypes": "MusicAlbum"
         }
         result = self._get(path, params)
         if not result:
@@ -239,7 +257,7 @@ class JellyfinManager(Manager):
         path = f"Items"
         params = {
             "ids": artist_id,
-            "mediaTypes": "MusicArtist",
+            "includeItemTypes": "MusicArtist",
         }
         result = self._get(path, params)
         if not result:
@@ -247,9 +265,35 @@ class JellyfinManager(Manager):
         jellyfin_artist = result[0]
         return _parse_artist(jellyfin_artist)
 
-    def get_playlist(self, playlist_id: str, fetch_tracks: bool = False, fetch_albums: bool = False) -> Optional[
+    def get_playlist(self, playlist_id: str, fetch_tracks: bool = True, fetch_albums: bool = False) -> Optional[
         JellyfinPlaylist]:
-        pass
+        path = f"Items"
+        params = {
+            "ids": playlist_id,
+            "includeItemTypes": "Playlist",
+        }
+        result = self._get(path, params)
+        if not result:
+            return None
+        jellyfin_playlist = result[0]
+
+        if fetch_tracks:
+            # path = f"Playlists/{playlist_id}/Items" # broken without browser session
+            path = f"Users/{self.default_admin_user_id}/Items"
+            params = {
+                "parentId": playlist_id,
+                "mediaTypes": "Audio",
+            }
+            items = self._get(path, params)
+            if not items:
+                items = []
+            jellyfin_playlist["Items"] = items
+
+        if fetch_albums:
+            # album data should already be included with the fetch_tracks call
+            pass
+
+        return _parse_playlist(jellyfin_playlist)
 
     def get_user_playlists(self, user_id: str = None) -> list[JellyfinPlaylist]:
         pass

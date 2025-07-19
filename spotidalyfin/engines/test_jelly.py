@@ -12,3 +12,5 @@ if __name__ == '__main__':
     print(engine.get_artist('0e9e1928043a888f5f45ba0952863e50'))
 
     print(engine.get_track('2cbfad9d6fe68ace6890bb0bd937b31b'))
+
+    print(engine.get_playlist('8fda11ea1088480124aef0e80277054e'))

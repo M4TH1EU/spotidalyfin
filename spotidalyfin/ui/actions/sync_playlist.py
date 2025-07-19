@@ -2,7 +2,8 @@ from typing import List
 
 import streamlit as st
 
-from spotidalyfin.db.helpers import get_authenticated_spotify_profiles, get_authenticated_tidal_profiles
+from spotidalyfin.db.helpers import get_authenticated_spotify_profiles, get_authenticated_tidal_profiles, \
+    get_authenticated_jellyfin_profiles
 from spotidalyfin.models.enums import Platform
 from spotidalyfin.models.playlist import Playlist
 from spotidalyfin.models.utils import get_track_on_another_platform
@@ -22,7 +23,16 @@ if not st.session_state.sync_account_submitted:
         st.title(":material/sync: Sync a playlist between two platforms")
         st.write("Syncs playlists between two platforms")
 
-        platform_options = [(Platform.SPOTIFY.value, Platform.SPOTIFY), (Platform.TIDAL.value, Platform.TIDAL)]
+        platform_options = [
+            (Platform.SPOTIFY.value, Platform.SPOTIFY),
+            (Platform.TIDAL.value, Platform.TIDAL),
+            (Platform.JELLYFIN.value, Platform.JELLYFIN)
+        ]
+        accounts_options = {
+            Platform.SPOTIFY.value: get_authenticated_spotify_profiles(get_database()),
+            Platform.TIDAL.value: get_authenticated_tidal_profiles(get_database()),
+            Platform.JELLYFIN.value: get_authenticated_jellyfin_profiles(get_database())
+        }
 
         with st.container(border=1):
             st.subheader(":material/content_copy: Select source platform and account")
@@ -32,10 +42,6 @@ if not st.session_state.sync_account_submitted:
                 options=platform_options,
                 format_func=lambda x: x[0]
             )
-            accounts_options = {
-                Platform.SPOTIFY.value: get_authenticated_spotify_profiles(get_database()),
-                Platform.TIDAL.value: get_authenticated_tidal_profiles(get_database())
-            }
             from_account = st.selectbox(
                 f"Choose {from_select[0]} account to use for fetching playlists:",
                 options=accounts_options[from_select[0]]
@@ -49,7 +55,7 @@ if not st.session_state.sync_account_submitted:
                     from_user_select = st.selectbox(
                         "Select user:",
                         options=from_users,
-                        format_func=lambda x: x[0]
+                        format_func=lambda x: x[1]
                     )
                     from_user = from_user_select[1]
 
@@ -61,10 +67,6 @@ if not st.session_state.sync_account_submitted:
                 options=platform_options,
                 format_func=lambda x: x[0]
             )
-            accounts_options = {
-                Platform.SPOTIFY.value: get_authenticated_spotify_profiles(get_database()),
-                Platform.TIDAL.value: get_authenticated_tidal_profiles(get_database())
-            }
             to_account = st.selectbox(
                 f"Choose {to_select[0]} account to sync the playlists to:",
                 options=accounts_options[to_select[0]]
@@ -77,7 +79,7 @@ if not st.session_state.sync_account_submitted:
                     to_user_select = st.selectbox(
                         "Select user:",
                         options=to_users,
-                        format_func=lambda x: x[0]
+                        format_func=lambda x: x[1]
                     )
                     to_user = to_user_select[1]
 
@@ -168,7 +170,7 @@ Playlists: {playlists}
                 status.write(f"**{msg}**")
 
                 if isinstance(st.session_state.sync_account_form_data['playlists'], str):
-                    playlist_name = from_manager.get_playlist(st.session_state.sync_account_form_data['playlists']).name
+                    playlist_name = from_manager.get_playlist(st.session_state.sync_account_form_data['playlists'], fetch_tracks=False).name
                     playlists = [(st.session_state.sync_account_form_data['playlists'], playlist_name)]
                 else:
                     playlists = st.session_state.sync_account_form_data['playlists']

@@ -151,7 +151,7 @@ class SpotifyManager(Manager):
             logging.exception(f"Failed to fetch Spotify artist with ID {artist_id}")
             return None
 
-    def get_playlist(self, playlist_id: str, fetch_tracks: bool = False, fetch_albums: bool = False) -> Optional[
+    def get_playlist(self, playlist_id: str, fetch_tracks: bool = True, fetch_albums: bool = False) -> Optional[
         SpotifyPlaylist]:
         if playlist_id == "favorite_tracks":
             return self.get_favorite_tracks()

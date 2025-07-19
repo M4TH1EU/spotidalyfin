@@ -39,7 +39,7 @@ class Manager(ABC):
         raise NotImplementedError("This method should be implemented by subclasses.")
 
     @abstractmethod
-    def get_playlist(self, playlist_id: str, fetch_tracks: bool = False, fetch_albums: bool = False) -> Optional[
+    def get_playlist(self, playlist_id: str, fetch_tracks: bool = True, fetch_albums: bool = False) -> Optional[
         Playlist]:
         """Retrieve a playlist by its ID."""
         raise NotImplementedError("This method should be implemented by subclasses.")
@@ -146,7 +146,7 @@ class Manager(ABC):
 
     def add_tracks_to_playlist_with_id(self, playlist_id: str, tracks: List[Track]) -> bool:
         """Add tracks to an existing playlist."""
-        return self.add_tracks_to_playlist(self.get_playlist(playlist_id), tracks)
+        return self.add_tracks_to_playlist(self.get_playlist(playlist_id, fetch_tracks=False), tracks)
 
     @abstractmethod
     def add_tracks_to_playlist(self, playlist: Playlist, tracks: List[Track]) -> bool:

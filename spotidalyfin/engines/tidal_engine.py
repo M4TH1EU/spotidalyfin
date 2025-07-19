@@ -166,7 +166,7 @@ class TidalManager(Manager):
             logging.exception(f"Failed to fetch TIDAL artist with ID {artist_id}: {e}")
             return None
 
-    def get_playlist(self, playlist_id: str, fetch_tracks: bool = False, fetch_albums: bool = False) -> Optional[
+    def get_playlist(self, playlist_id: str, fetch_tracks: bool = True, fetch_albums: bool = False) -> Optional[
         TidalPlaylist]:
         if playlist_id == "favorite_tracks":
             return self.get_favorite_tracks()
