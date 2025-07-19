@@ -96,7 +96,7 @@ class DialogStep:
         if self.validation_func is None:
             self.validation_func = lambda ctx: (True, "")
 
-    def validate(self, context: DialogContext) -> tuple[bool, str]:
+    def validate(self, context: DialogContext) -> tuple[bool, str] | tuple[bool, str, dict]:
         """Run validation with dialog context
 
         Parameters:
@@ -211,7 +211,11 @@ class MultiStepDialog:
     def next_step(self):
         """Attempt to proceed to next step with validation"""
         current_step = self.steps[self.get_current_step()]
-        is_valid, error_message = current_step.validate(self.get_context())
+        is_valid, error_message, data = current_step.validate(self.get_context())
+
+        if data:
+            for key, value in data.items():
+                self.get_context().set(key, value)
 
         if is_valid:
             self.state["error"] = ""  # Clear error message
