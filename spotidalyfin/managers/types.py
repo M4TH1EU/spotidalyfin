@@ -1,7 +1,6 @@
 from __future__ import annotations  # For forward type references in Python < 3.10
 
 from dataclasses import dataclass
-from dataclasses import field
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, List
@@ -9,11 +8,9 @@ from typing import Optional, List
 import acoustid
 import musicbrainzngs
 import requests
-import tidalapi
 from mutagen.flac import FLAC, Picture
 from mutagen.id3 import TALB, TCOP, TDRC, TIT2, TOPE, TPE1, TRCK, TSRC, USLT, ID3, APIC
 from mutagen.mp3 import MP3
-from requests import HTTPError
 from tidalapi import Role
 from tidalapi.media import StreamManifest, AudioExtensions
 from unidecode import unidecode
@@ -21,23 +18,12 @@ from unidecode import unidecode
 from spotidalyfin.models.enums import Platform, TrackQuality
 from spotidalyfin.utils.comparisons import weighted_word_overlap
 from spotidalyfin.utils.file_utils import open_image_url
-from spotidalyfin.utils.formatting import parse_date
 from spotidalyfin.utils.logger import log
 
 
 #
-# class Platform(Enum):
-#     TIDAL = "TIDAL"
-#     SPOTIFY = "SPOTIFY"
-#     JELLYFIN = "JELLYFIN"
+# THIS ISN'T USED ANYMORE AND IS HERE ONLY FOR REFERENCE UNTIL MIGRATED TO NEW FILES
 #
-#
-# class TrackQuality(Enum):
-#     DOLBY_ATMOS = 0
-#     LOW = 1
-#     LOSSLESS = 2
-#     HI_RES_LOSSLESS = 3
-
 
 def _generate_artists_string(artists: list[Artist]) -> str:
     output = ""
@@ -234,75 +220,6 @@ class Metadata:
 
 
 @dataclass
-class Artist:
-    """
-    Represents an artist with associated metadata.
-    """
-    platform: Platform
-    name: str
-    artist_id: str
-    genres: List[str] = field(default_factory=list)
-    role: Role = Role.artist
-    picture: Optional[str] = None
-
-    def __post_init__(self):
-        # Normalize artist ID to lowercase
-        self.artist_id = str(self.artist_id).lower()
-        self.name = unidecode(self.name or "")
-
-    def __str__(self) -> str:
-        return self.name
-
-    def __eq__(self, other: object) -> bool:
-        if not isinstance(other, Artist):
-            return False
-        return self.name == other.name
-
-    def __hash__(self) -> int:
-        return hash(self.name + self.artist_id + str(self.platform))
-
-
-@dataclass
-class Album:
-    """
-    Represents an album with metadata and associated tracks.
-    """
-    platform: Platform
-    name: str
-    artists: List[Artist]
-    release_date: Optional[datetime]
-    tracks: List[Optional[Track]]
-    album_id: str
-    barcode: str
-    cover_url: Optional[str] = None
-    num_volumes: Optional[int] = None
-
-    def __post_init__(self):
-        # Normalize album ID and barcode to lowercase strings
-        self.name = unidecode(self.name)
-        self.album_id = str(self.album_id).lower()
-        self.barcode = str(self.barcode).lower()
-
-    def __str__(self) -> str:
-        primary_artist = self.artists[0].name if self.artists else "Unknown Artist"
-        release_date_str = self.release_date.date() if self.release_date else "Unknown Date"
-        return f"{self.name} by {primary_artist} released on {release_date_str}"
-
-    def __eq__(self, other: object) -> bool:
-        if not isinstance(other, Album):
-            return False
-        return (
-                self.album_id == other.album_id
-                and self.name == other.name
-                and self.artists == other.artists
-                and self.tracks == other.tracks  # Note: Tracks must implement their own __eq__
-        )
-
-    def __hash__(self) -> int:
-        return hash(self.album_id + self.name + str(self.artists) + str(self.tracks) + str(self.platform))
-
-
-@dataclass
 class Track:
     """
     Represents a track with associated metadata and utility methods for comparison and download.
@@ -326,38 +243,6 @@ class Track:
     release_date: Optional[datetime] = None
     cover_url: Optional[str] = None
     score: Optional[float] = None
-
-    def __post_init__(self):
-        if self.isrc:
-            self.isrc = self.isrc.upper()
-        self.name = unidecode(self.name)
-
-    def __str__(self) -> str:
-        return f"{self.name} by {self.artist} from {self.album.name}"
-
-    def __eq__(self, other: object) -> bool:
-        if not isinstance(other, Track):
-            return False
-        return (
-                self.track_id == other.track_id
-                and self.name == other.name
-                and self.artist == other.artist
-                and self.album == other.album
-                and self.duration == other.duration
-                and self.artists == other.artists
-                and self.isrc == other.isrc
-                and self.platform == other.platform
-        )
-
-    def __hash__(self) -> int:
-        return hash(self.track_id + self.name + self.artist.name + self.album.name + str(self.duration) + str(
-            self.artists) + str(self.isrc) + str(self.platform))
-
-    def metadata(self) -> Metadata:
-        """
-        Converts track metadata into a Metadata object for further use.
-        """
-        return Metadata(self)
 
     def matches(self, other: Track) -> (bool, float):
         """
@@ -447,146 +332,3 @@ class Track:
                 log.warning(
                     f"Download failed for track {self.name} by {self.artist.name}. Retrying {retry_count} more times. Error: {e}")
                 return self.raw_data(retry_count - 1)
-
-
-@dataclass
-class Playlist:
-    """
-    Represents a playlist with associated metadata and track list.
-    """
-    platform: Platform
-    name: str
-    image: str
-    playlist_id: str
-    tracks: List[Track] = None
-
-    def __post_init__(self):
-        if self.tracks is None:
-            self.tracks = []
-
-    def __str__(self) -> str:
-        return self.name
-
-    def __eq__(self, other: object) -> bool:
-        if not isinstance(other, Playlist):
-            return False
-        return (
-                self.playlist_id == other.playlist_id
-                and self.name == other.name
-                and self.image == other.image
-                and self.tracks == other.tracks
-        )
-
-    def __hash__(self) -> int:
-        return hash(self.playlist_id + self.name + self.image + str(self.tracks))
-
-
-def track_from_spotify_track(spotify_track: dict) -> Track:
-    images = spotify_track.get('album', {}).get('images', [])
-    cover_url = None
-    if images:
-        cover_url = images[0].get('url')
-
-    return Track(
-        platform=Platform.SPOTIFY,
-        name=spotify_track.get('name'),
-        artist=artist_from_spotify_artist(spotify_track.get('artists')[0]),
-        album=album_from_spotify_album(spotify_track.get('album')),
-        duration=int(spotify_track.get('duration_ms', 0) / 1000),
-        artists=[artist_from_spotify_artist(artist) for artist in spotify_track.get('artists', [])],
-        isrc=spotify_track.get('external_ids', {}).get('isrc'),
-        track_id=spotify_track.get('id'),
-        cover_url=cover_url,
-        track_number=spotify_track.get('track_number'),
-        disc_number=spotify_track.get('disc_number'),
-        release_date=parse_date(spotify_track.get('album', {}).get('release_date'))
-    )
-
-
-def track_from_tidal_track(tidal_track: tidalapi.Track, retrieve_stream: bool = True) -> Track:
-    def real_quality(track: tidalapi.Track) -> TrackQuality:
-        """The audio_quality parameter isn't always correct"""
-        if track.is_dolby_atmos:
-            return TrackQuality.DOLBY_ATMOS
-        elif track.is_hi_res_lossless:
-            return TrackQuality.HI_RES_LOSSLESS
-        elif track.is_lossless:
-            return TrackQuality.LOSSLESS
-        else:
-            return TrackQuality.LOW
-
-    stream_manifest = None
-    if retrieve_stream:
-        try:
-            stream_manifest = tidal_track.get_stream().get_stream_manifest()
-        except HTTPError as e:
-            log.error(f"Failed to get stream manifest for track {tidal_track.id}: {e}")
-
-    return Track(
-        platform=Platform.TIDAL,
-        name=tidal_track.full_name,
-        artist=artist_from_tidal_artist(tidal_track.artist),
-        album=album_from_tidal_album(tidal_track.album),
-        duration=tidal_track.duration,
-        artists=[artist_from_tidal_artist(artist) for artist in tidal_track.artists],
-        isrc=tidal_track.isrc,
-        track_id=tidal_track.id,
-        quality=real_quality(tidal_track),
-        # lyrics=lyrics(tidal_track), # really slow
-        stream_manifest=stream_manifest,
-        download_urls=stream_manifest.get_urls() if stream_manifest else None,
-        file_extension=stream_manifest.file_extension if stream_manifest else None,
-        copyright=tidal_track.copyright,
-        track_number=tidal_track.track_num,
-        disc_number=tidal_track.volume_num,
-        release_date=tidal_track.tidal_release_date,
-        cover_url=tidal_track.album.image(1280)
-    )
-
-
-def album_from_spotify_album(spotify_album: dict) -> Album:
-    return Album(
-        platform=Platform.SPOTIFY,
-        name=spotify_album.get('name', ''),
-        artists=[artist_from_spotify_artist(artist) for artist in spotify_album.get('artists', [])],
-        release_date=parse_date(spotify_album.get('release_date')),
-        tracks=[None for _ in range(spotify_album.get('total_tracks', 0))],
-        album_id=spotify_album.get('id'),
-        barcode=spotify_album.get('external_ids', {}).get('upc')
-    )
-
-
-def album_from_tidal_album(tidal_album: tidalapi.Album, load_tracks: bool = False) -> Album:
-    if load_tracks:
-        tracks = tidal_album.tracks()
-    else:
-        tracks = [None for _ in range(tidal_album.num_tracks)] if tidal_album.num_tracks else []
-
-    return Album(
-        platform=Platform.TIDAL,
-        name=tidal_album.name,
-        artists=[artist_from_tidal_artist(artist) for artist in tidal_album.artists],
-        release_date=tidal_album.release_date,
-        tracks=tracks,
-        album_id=str(tidal_album.id),
-        barcode=str(tidal_album.universal_product_number)
-    )
-
-
-def artist_from_spotify_artist(spotify_artist) -> Artist:
-    return Artist(
-        platform=Platform.SPOTIFY,
-        name=spotify_artist.get('name', ''),
-        artist_id=spotify_artist.get('id', ''),
-        genres=spotify_artist.get('genres', [])
-    )
-
-
-def artist_from_tidal_artist(tidal_artist: tidalapi.Artist) -> Artist:
-    return Artist(
-        platform=Platform.TIDAL,
-        name=tidal_artist.name,
-        artist_id=str(tidal_artist.id),
-        role=tidal_artist.role,
-        picture=tidal_artist.picture
-    )

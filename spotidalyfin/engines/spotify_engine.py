@@ -273,7 +273,7 @@ class SpotifyManager(Manager):
             logging.exception(f"Failed to search albums with UPC '{upc}'")
             return []
 
-    def search_artists(self, query: str) -> list[SpotifyArtist]:
+    def search_artists_by_query(self, query: str) -> list[SpotifyArtist]:
         try:
             results = self.client.search(q=query, type='artist', limit=10)
             return [_parse_artist(item) for item in results['artists']['items']]
@@ -288,7 +288,7 @@ class SpotifyManager(Manager):
     def get_lyrics(self, track: Track) -> str:
         pass
 
-    def create_empty_playlist(self, name: str, description: str = "", cover_url: str = "") -> Optional[SpotifyPlaylist]:
+    def create_empty_playlist(self, name: str, description: str = "", cover_url: str = "", user_id: str = None) -> Optional[SpotifyPlaylist]:
         try:
             playlist = self.client.user_playlist_create(
                 user=self.username,

@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, List, Tuple
 
 import requests
@@ -14,6 +14,7 @@ from spotidalyfin.models.manager import Manager
 from spotidalyfin.models.playlist import JellyfinPlaylist, \
     JellyfinFavoriteTracksPlaylist, Playlist
 from spotidalyfin.models.track import JellyfinTrack
+from spotidalyfin.models.utils import get_as_base64
 
 
 def _parse_cover_url(jellyfin_item: dict) -> Optional[str]:
@@ -149,84 +150,73 @@ class JellyfinManager(Manager):
 
         self.default_admin_user_id = self._get_default_admin_user_id()
 
-    def _get(self, path, params=None, timeout: int = 30) -> list:
+    def _request(self, path, params=None, method="GET", headers=None, data=None, timeout: int = 30) -> Optional[
+        list | dict | bool]:
         """
         Perform a GET request to the Jellyfin API.
         Returns the JSON response as a dictionary.
         """
         if params is None:
             params = {}
+        if headers is None:
+            headers = {}
 
         url = f"{self.url}/{path.lstrip('/')}"
-        headers = {"X-Emby-Token": self.api_key}
+        headers.update({"X-Emby-Token": self.api_key})
 
-        response = requests.get(url, headers=headers, params=params, timeout=timeout)
-        response.raise_for_status()  # Raise an error for bad responses
+        response = None
+        if method == "GET":
+            response = requests.get(url, params=params, headers=headers, timeout=timeout)
+        elif method == "POST":
+            response = requests.post(url, params=params, headers=headers, timeout=timeout, data=data)
+        elif method == "DELETE":
+            response = requests.delete(url, params=params, headers=headers, timeout=timeout)
+
+        response.raise_for_status()
+
+        if response.status_code == 204:  # No Content
+            return response.ok
 
         try:
             resp_json = response.json()
             if 'Items' in resp_json and resp_json.get('TotalRecordCount', 0) >= 0:
                 return resp_json['Items']
+            elif 'Lyrics' in resp_json:
+                return resp_json.get('Lyrics', [])
             elif isinstance(resp_json, list):
+                return resp_json
+            elif 'Id' in resp_json:
                 return resp_json
             else:
                 logging.warning(f"Unexpected response format: {resp_json}")
                 return []
-
         except ValueError:
-            logging.exception("Failed to parse JSON response fromJellyfin API.")
+            logging.exception("Failed to parse JSON response from Jellyfin API.")
+        except requests.exceptions.RequestException as e:
+            logging.exception(f"Request to Jellyfin API failed: {e}")
+
         return []
 
-    # def _request(self, path, method="GET", params=None, timeout: int = 30) -> dict:
-    #     if params is None:
-    #         params = {}
-    #
-    #     url = f"{self.url}/{path.lstrip('/')}"
-    #     headers = {"X-Emby-Token": self.api_key}
-    #
-    #     # Fixes an issue with Jellyfin API where searching with apostrophes doesn't work
-    #     if "searchTerm" in params:
-    #         params["searchTerm"] = re.sub(r"['\"’‘”“].*", '', params["searchTerm"])
-    #
-    #     try:
-    #         if method == "GET":
-    #             response = requests.get(url, headers=headers, params=params)
-    #         # elif method == "POST":
-    #         #     if image_data:
-    #         #         response = requests.post(url, headers=headers, json=json, params=params, data=image_data)
-    #         #     else:
-    #         #         response = requests.post(url, headers=headers, json=json, params=params)
-    #         # elif method == "DELETE":
-    #         #     response = requests.delete(url, headers=headers)
-    #         # elif method == "DOWNLOAD_GET":
-    #         #     return requests.get(url, headers=headers, stream=True, timeout=timeout)
-    #         else:
-    #             raise ValueError(f"Invalid method: {method}")
-    #
-    #         response.raise_for_status()
-    #         respjson = response.json()
-    #         return respjson
-    #     except requests.exceptions.RequestException:
-    #         return {}
-
-    # def _delete_item(self, item_id):
-    #     self._request(f"Items/{item_id}", method="DELETE")
-    #
-    # def _change_primary_image(self, item_id, image_data):
-    #     self._request(f"Items/{item_id}/Images/Primary", method="POST", image_data=image_data)
+    def _modify_image(self, item_id: str, data: bytes, type="Primary"):
+        self._request(f"Items/{item_id}/Images/{type}", method="POST", headers={'Content-Type': "image/jpeg"},
+                      data=data)
 
     def is_multi_user(self) -> bool:
         return True
 
     def get_users(self) -> List[Tuple[str, str]]:
-        users = self._get("Users")
+        users = self._request("Users")
         return [(str(user.get("Id")), str(user.get("Name"))) for user in users]
 
-    def _get_default_admin_user_id(self) -> str:
-        users = self._get("Users")
+    def _get_default_admin_user_id(self) -> Optional[str]:
+        """This method retrieves the first user with admin privileges to use in some API calls due to Jellyfin's API limitations."""
+        users = self._request("Users")
         for user in users:
             if user.get("Policy", {}).get("IsAdministrator", False):
                 return str(user.get("Id"))
+
+        logging.warning("No admin user found in Jellyfin server.")
+        return None
 
     def get_track(self, track_id: str) -> Optional[JellyfinTrack]:
         path = f"Items"
@@ -236,7 +226,7 @@ class JellyfinManager(Manager):
             "fields": "MediaSources",
             "includeItemTypes": "Audio"
         }
-        result = self._get(path, params)
+        result = self._request(path, params)
         if not result:
             return None
         jellyfin_track = result[0]
@@ -248,7 +238,7 @@ class JellyfinManager(Manager):
             "ids": album_id,
             "includeItemTypes": "MusicAlbum"
         }
-        result = self._get(path, params)
+        result = self._request(path, params)
         if not result:
             return None
         jellyfin_album = result[0]
@@ -260,7 +250,7 @@ class JellyfinManager(Manager):
             "ids": artist_id,
             "includeItemTypes": "MusicArtist",
         }
-        result = self._get(path, params)
+        result = self._request(path, params)
         if not result:
             return None
         jellyfin_artist = result[0]
@@ -273,7 +263,7 @@ class JellyfinManager(Manager):
             "ids": playlist_id,
             "includeItemTypes": "Playlist",
         }
-        result = self._get(path, params)
+        result = self._request(path, params)
         if not result:
             return None
         jellyfin_playlist = result[0]
@@ -285,7 +275,7 @@ class JellyfinManager(Manager):
                 "parentId": playlist_id,
                 "mediaTypes": "Audio",
             }
-            items = self._get(path, params)
+            items = self._request(path, params)
             if not items:
                 items = []
             jellyfin_playlist["Items"] = items
@@ -301,7 +291,16 @@ class JellyfinManager(Manager):
             logging.warning("No user ID provided, returning empty playlist list.")
             return []
 
-        # TODO
+        path = f"Users/{user_id}/Items"
+        params = {
+            "includeItemTypes": "Playlist",
+            "recursive": "true",
+        }
+        result = self._request(path, params)
+        if not result:
+            return []
+
+        return [_parse_playlist(item) for item in result]
 
     def get_favorite_tracks(self, user_id: str = None) -> Optional[JellyfinFavoriteTracksPlaylist]:
         if user_id is None:
@@ -314,39 +313,120 @@ class JellyfinManager(Manager):
             "Recursive": "true",
             "IncludeItemTypes": "Audio",
         }
-        jellyfin_favorites = self._get(path, params)
+        jellyfin_favorites = self._request(path, params)
         if not jellyfin_favorites:
             return None
 
         return _parse_favorite_tracks(jellyfin_favorites)
 
     def search_tracks_by_query(self, query: str) -> list[JellyfinTrack]:
-        pass
+        path = "Items"
+        params = {
+            "searchTerm": query,
+            "recursive": "true",
+            "limit": 10,
+            "fields": "MediaSources",
+            "includeItemTypes": "Audio"
+        }
+        results = self._request(path, params)
+        return [_parse_track(item) for item in results]
 
     def search_tracks_by_isrc(self, isrc: str) -> list[JellyfinTrack]:
-        pass
+        logging.warning("Jellyfin does not support searching by ISRC. Returning empty list.")
+        return []
 
     def search_albums_by_query(self, query: str) -> list[JellyfinAlbum]:
-        pass
+        path = "Items"
+        params = {
+            "searchTerm": query,
+            "includeItemTypes": "MusicAlbum",
+            "recursive": "true",
+            "limit": 10
+        }
+        results = self._request(path, params)
+        return [_parse_album(item) for item in results]
 
     def search_albums_by_upc(self, upc: str) -> list[JellyfinAlbum]:
-        pass
+        logging.warning("Jellyfin does not support searching by UPC. Returning empty list.")
+        return []
 
-    def search_artists(self, query: str) -> list[JellyfinArtist]:
-        pass
+    def search_artists_by_query(self, query: str) -> list[JellyfinArtist]:
+        path = "Items"
+        params = {
+            "searchTerm": query,
+            "includeItemTypes": "MusicArtist",
+            "recursive": "true",
+            "limit": 10
+        }
+        results = self._request(path, params)
+        return [_parse_artist(item) for item in results]
 
     def supports_lyrics(self) -> bool:
-        pass
+        return True
 
     def get_lyrics(self, track: Track) -> str:
-        pass
+        path = f"Audio/{track.id}/Lyrics"
+        results = self._request(path)
+        if not results:
+            return ""
 
-    def create_empty_playlist(self, name: str, description: str = "", cover_url: str = "") -> Optional[
-        JellyfinPlaylist]:
-        pass
+        def format_time(ms):
+            """Convert microseconds to [mm:ss.xx] format"""
+            seconds = ms / 10_000_000
+            t = timedelta(seconds=seconds)
+            total_minutes = int(t.total_seconds() // 60)
+            seconds_left = t.total_seconds() % 60
+            return f"[{total_minutes:02}:{seconds_left:05.2f}]"
+
+        output = ""
+        # Convert and print the output
+        for entry in results:
+            timestamp = format_time(entry['Start'])
+            output += f"{timestamp} {entry['Text']}\n"
+
+        return output.strip()
+
+    def create_empty_playlist(self, name: str, description: str = "", cover_url: str = "", user_id: str = None) -> \
+            Optional[
+                JellyfinPlaylist]:
+        if not user_id:
+            logging.error("No user ID provided, cannot create playlist.")
+
+        path = f"Playlists"
+        params = {
+            "name": name,
+            "userId": user_id,
+            "mediaType": "Audio",
+        }
+
+        result = self._request(path, params, method="POST")
+        if not result or "Id" not in result:
+            logging.error("Failed to create playlist.")
+            return None
+
+        if cover_url:
+            cover_bytes = get_as_base64(cover_url)
+            self._modify_image(result.get('Id'), cover_bytes)
+
+        return self.get_playlist(result.get("Id"), fetch_tracks=False, fetch_albums=False)
 
     def add_tracks_to_playlist(self, playlist: Playlist, tracks: List[JellyfinTrack]) -> bool:
-        pass
+        path = f"Playlists/{playlist.id}/Items"
+        params = {
+            "ids": ",".join(track.id for track in tracks),
+            "userId": "6dbbbaa045e34cc597554eb59891d110"
+        }
+        result = self._request(path, params, method="POST")
+        if not result:
+            logging.error(f"Failed to add tracks to playlist {playlist.name}.")
+            return False
+
+        return True
 
     def remove_playlist_by_id(self, playlist_id: str) -> bool:
-        pass
+        path = f"Items/{playlist_id}"
+        result = self._request(path, method="DELETE")
+        if not result:
+            return False
+
+        return True

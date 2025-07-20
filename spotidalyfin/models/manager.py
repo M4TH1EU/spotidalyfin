@@ -3,8 +3,8 @@ from abc import abstractmethod, ABC
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
-from spotidalyfin.managers.types import Platform
 from spotidalyfin.models import Track, Album, Artist
+from spotidalyfin.models.enums import Platform
 from spotidalyfin.models.playlist import Playlist, FavoriteTracksPlaylist
 
 
@@ -105,7 +105,7 @@ class Manager(ABC):
         raise NotImplementedError("This method should be implemented by subclasses.")
 
     @abstractmethod
-    def search_artists(self, query: str) -> list[Artist]:
+    def search_artists_by_query(self, query: str) -> list[Artist]:
         """Search for artists based on a query."""
         raise NotImplementedError("This method should be implemented by subclasses.")
 
@@ -119,15 +119,20 @@ class Manager(ABC):
         """Retrieve lyrics for a given track."""
         raise NotImplementedError("This method should be implemented by subclasses.")
 
-    def create_playlist(self, name: str, tracks: List[Track], description: str = "", cover_url: str = "") -> Optional[
+    def create_playlist(self, name: str, tracks: List[Track], description: str = "", cover_url: str = "",
+                        user_id: str = None) -> Optional[
         Playlist]:
         """Create a new playlist."""
 
+        if self.is_multi_user() and not user_id:
+            logging.error("User ID is required to create playlist for multi-user platforms.")
+            return None
+
         # Make sure to remove any existing playlist with the same name
-        self.remove_playlist_by_name(name)
+        self.remove_playlist_by_name(name, user_id)
 
         # Create an empty playlist first
-        new_playlist = self.create_empty_playlist(name, description, cover_url)
+        new_playlist = self.create_empty_playlist(name, description, cover_url, user_id)
         if not new_playlist:
             logging.error(f"Failed to create empty playlist: {name}")
             return None
@@ -140,7 +145,8 @@ class Manager(ABC):
         return new_playlist
 
     @abstractmethod
-    def create_empty_playlist(self, name: str, description: str = "", cover_url: str = "") -> Optional[Playlist]:
+    def create_empty_playlist(self, name: str, description: str = "", cover_url: str = "", user_id: str = None) -> \
+    Optional[Playlist]:
         """Create a new empty playlist."""
         raise NotImplementedError("This method should be implemented by subclasses.")
 
@@ -152,10 +158,10 @@ class Manager(ABC):
     def add_tracks_to_playlist(self, playlist: Playlist, tracks: List[Track]) -> bool:
         raise NotImplementedError("This method should be implemented by subclasses.")
 
-    def remove_playlist_by_name(self, name: str) -> bool:
+    def remove_playlist_by_name(self, name: str, user_id: str = None) -> bool:
         """Remove a playlist by its name."""
 
-        playlists = self.get_user_playlists()
+        playlists = self.get_user_playlists(user_id=user_id)
         for playlist in playlists:
             if playlist.name == name:
                 return self.remove_playlist_by_id(playlist.id)

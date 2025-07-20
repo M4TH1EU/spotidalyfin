@@ -15,4 +15,16 @@ if __name__ == '__main__':
 
     print(engine.get_playlist('8fda11ea1088480124aef0e80277054e'))
 
+    print(engine.get_user_playlists('6dbbbaa045e34cc597554eb59891d110'))
+
     print(engine.get_favorite_tracks('6dbbbaa045e34cc597554eb59891d110'))
+
+    print(engine.search_tracks_by_query("i'm still standing"))
+
+    print(engine.search_albums_by_query("too low for zero"))
+
+    print(engine.search_artists_by_query("elton john"))
+
+    print(engine.get_lyrics(engine.get_track('b8da635bdaf1f8a1ed27834d17c066bd')))
+
+    print(engine.create_playlist("Test Playlist", [engine.get_track('b8da635bdaf1f8a1ed27834d17c066bd')], cover_url="https://i.scdn.co/image/ab67616d00001e029acfbf04685635028b45d5b4", user_id='6dbbbaa045e34cc597554eb59891d110'))

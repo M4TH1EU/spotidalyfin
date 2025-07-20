@@ -163,6 +163,8 @@ Playlists: {playlists}
                     st.session_state.sync_account_form_data['to_account'],
                     st.session_state.sync_account_form_data['to_platform']
                 )
+                from_user = st.session_state.sync_account_form_data.get('from_user', None)
+                to_user = st.session_state.sync_account_form_data.get('to_user', None)
 
                 # Step 1
                 msg = f":material/queue_music: Making sure playlists format is correct..."
@@ -223,7 +225,7 @@ Playlists: {playlists}
 
                     status.write(
                         f":material/playlist_add: Creating playlist on {to_manager.PLATFORM.value}: {from_playlist.name}")
-                    to_playlist = to_manager.create_playlist(from_playlist.name, to_tracks, from_playlist.description)
+                    to_playlist = to_manager.create_playlist(from_playlist.name, to_tracks, from_playlist.description, to_user)
                     if not to_playlist:
                         status.write(f":red[-> Failed to create playlist: {from_playlist.name}]")
                         continue

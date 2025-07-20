@@ -1,8 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Optional
 
-from .enums import TrackQuality
-from ..managers.types import Platform
+from .enums import TrackQuality, Platform
 
 
 @dataclass

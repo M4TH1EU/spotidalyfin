@@ -275,7 +275,7 @@ class TidalManager(Manager):
             logging.exception(f"Failed to search TIDAL albums with UPC '{upc}': {e}")
             return []
 
-    def search_artists(self, query: str) -> list[TidalArtist]:
+    def search_artists_by_query(self, query: str) -> list[TidalArtist]:
         try:
             search_results = self._search(query, models=[tidalapi.Artist])
             if not search_results or not search_results.get('artists'):
@@ -302,7 +302,7 @@ class TidalManager(Manager):
             logging.exception(f"Lyrics not found for track {track.name} by {track.artist.name}")
             return ""
 
-    def create_empty_playlist(self, name: str, description: str = "", cover_url: str = "") -> Optional[TidalPlaylist]:
+    def create_empty_playlist(self, name: str, description: str = "", cover_url: str = "", user_id: str = None) -> Optional[TidalPlaylist]:
         try:
             new_playlist = self.client.user.create_playlist(title=name, description=description)
             # TODO: Handle cover
