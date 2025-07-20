@@ -7,3 +7,4 @@ pyacoustid~=1.3.0
 musicbrainzngs~=0.7.1
 streamlit~=1.46.1
 Unidecode~=1.4.0
+rapidfuzz~=3.13.0

@@ -258,6 +258,18 @@ class JellyfinManager(Manager):
         jellyfin_artist = result[0]
         return _parse_artist(jellyfin_artist)
 
+    def get_artist_tracks(self, artist_id: str) -> list[JellyfinTrack]:
+        path = "Items"
+        params = {
+            "recursive": "true",
+            "limit": 50,
+            "fields": "MediaSources",
+            "includeItemTypes": "Audio",
+            "artistIds": artist_id
+        }
+        results = self._request(path, params)
+        return [_parse_track(item) for item in results]
+
     def get_playlist(self, playlist_id: str, fetch_tracks: bool = True, fetch_albums: bool = False) -> Optional[
         JellyfinPlaylist]:
         path = f"Items"
@@ -326,7 +338,7 @@ class JellyfinManager(Manager):
         params = {
             "searchTerm": query,
             "recursive": "true",
-            "limit": 10,
+            "limit": 25,
             "fields": "MediaSources",
             "includeItemTypes": "Audio"
         }
@@ -343,7 +355,7 @@ class JellyfinManager(Manager):
             "searchTerm": query,
             "includeItemTypes": "MusicAlbum",
             "recursive": "true",
-            "limit": 10
+            "limit": 15
         }
         results = self._request(path, params)
         return [_parse_album(item) for item in results]
@@ -358,7 +370,7 @@ class JellyfinManager(Manager):
             "searchTerm": query,
             "includeItemTypes": "MusicArtist",
             "recursive": "true",
-            "limit": 10
+            "limit": 15
         }
         results = self._request(path, params)
         return [_parse_artist(item) for item in results]

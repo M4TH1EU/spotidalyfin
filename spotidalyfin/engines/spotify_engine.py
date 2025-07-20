@@ -152,6 +152,15 @@ class SpotifyManager(Manager):
             logging.exception(f"Failed to fetch Spotify artist with ID {artist_id}")
             return None
 
+    def get_artist_tracks(self, artist_id: str) -> list[SpotifyTrack]:
+        try:
+            results = self.client.artist_top_tracks(artist_id) # TODO: retrieve all tracks instead of just top tracks
+            return [_parse_track(track) for track in results['tracks']]
+
+        except SpotifyException as e:
+            logging.exception(f"Failed to fetch top tracks for artist with ID {artist_id}")
+            return []
+
     def get_playlist(self, playlist_id: str, fetch_tracks: bool = True, fetch_albums: bool = False) -> Optional[
         SpotifyPlaylist]:
         if playlist_id == "favorite_tracks":

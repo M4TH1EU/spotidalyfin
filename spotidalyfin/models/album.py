@@ -19,7 +19,7 @@ class Album:
     name: str
     id: str
     artist: 'Artist'
-    barcode: str
+    barcode: Optional[str]
     release_date: Optional[datetime.datetime] = None
     cover_url: Optional[str] = None
     num_volumes: Optional[int] = None

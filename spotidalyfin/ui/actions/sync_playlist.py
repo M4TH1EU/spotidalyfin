@@ -225,7 +225,7 @@ Playlists: {playlists}
 
                     status.write(
                         f":material/playlist_add: Creating playlist on {to_manager.PLATFORM.value}: {from_playlist.name}")
-                    to_playlist = to_manager.create_playlist(from_playlist.name, to_tracks, from_playlist.description, to_user)
+                    to_playlist = to_manager.create_playlist(from_playlist.name, to_tracks, from_playlist.description, from_playlist.image, to_user)
                     if not to_playlist:
                         status.write(f":red[-> Failed to create playlist: {from_playlist.name}]")
                         continue

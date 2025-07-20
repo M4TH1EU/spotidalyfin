@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
 from spotidalyfin.models import Track, Album, Artist
+from spotidalyfin.models.compare import normalize_track_name, compare_strings
 from spotidalyfin.models.enums import Platform
 from spotidalyfin.models.playlist import Playlist, FavoriteTracksPlaylist
 
@@ -39,6 +40,11 @@ class Manager(ABC):
         raise NotImplementedError("This method should be implemented by subclasses.")
 
     @abstractmethod
+    def get_artist_tracks(self, artist_id: str) -> List[Track]:
+        """Retrieve all tracks by an artist."""
+        raise NotImplementedError("This method should be implemented by subclasses.")
+
+    @abstractmethod
     def get_playlist(self, playlist_id: str, fetch_tracks: bool = True, fetch_albums: bool = False) -> Optional[
         Playlist]:
         """Retrieve a playlist by its ID."""
@@ -63,7 +69,18 @@ class Manager(ABC):
 
         if not results:
             if query and artist_name:
+                # artists = self.search_artists_by_query(artist_name)
                 results = self.search_tracks_by_query(f"{query} {artist_name}")
+                if not results:
+                    results = self.search_tracks_by_query(query)
+
+                    if not results:
+                        results = self.search_tracks_by_query(normalize_track_name(query))
+
+                        if not results:
+                            artists = self.search_artists_by_query(artist_name)
+                            best_artist_match = max(artists, key = lambda a: compare_strings(a.name, artist_name), default=None)
+                            results = self.get_artist_tracks(best_artist_match.id)
             elif query:
                 results = self.search_tracks_by_query(query)
             elif artist_name:
@@ -146,7 +163,7 @@ class Manager(ABC):
 
     @abstractmethod
     def create_empty_playlist(self, name: str, description: str = "", cover_url: str = "", user_id: str = None) -> \
-    Optional[Playlist]:
+            Optional[Playlist]:
         """Create a new empty playlist."""
         raise NotImplementedError("This method should be implemented by subclasses.")
 
