@@ -57,7 +57,7 @@ if not st.session_state.sync_account_submitted:
                         options=from_users,
                         format_func=lambda x: x[1]
                     )
-                    from_user = from_user_select[1]
+                    from_user = from_user_select[0]
 
         with st.container(border=1):
             st.subheader(":material/content_paste: Select destination platform and account")
@@ -81,7 +81,7 @@ if not st.session_state.sync_account_submitted:
                         options=to_users,
                         format_func=lambda x: x[1]
                     )
-                    to_user = to_user_select[1]
+                    to_user = to_user_select[0]
 
         if from_select[1] == to_select[1]:
             st.error("Source and destination platforms must be different.")

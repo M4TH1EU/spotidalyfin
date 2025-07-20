@@ -27,7 +27,7 @@ def _parse_cover_url(jellyfin_item: dict) -> Optional[str]:
 
     item_id = jellyfin_item.get("Id") or jellyfin_item.get("AlbumId")
     if cover_tag and item_id:
-        return f"/Items/{item_id}/Images/Primary?tag={cover_tag}"
+        return f"{jellyfin_item.get('base_url', '')}/Items/{item_id}/Images/Primary?tag={cover_tag}"
     return None
 
 
@@ -180,6 +180,8 @@ class JellyfinManager(Manager):
         try:
             resp_json = response.json()
             if 'Items' in resp_json and resp_json.get('TotalRecordCount', 0) >= 0:
+                for item in resp_json['Items']:
+                    item['base_url'] = self.url
                 return resp_json['Items']
             elif 'Lyrics' in resp_json:
                 return resp_json.get('Lyrics', [])

@@ -19,6 +19,7 @@ from spotidalyfin.models.manager import Manager
 from spotidalyfin.models.playlist import SpotifyPlaylist, \
     SpotifyFavoriteTracksPlaylist, Playlist
 from spotidalyfin.models.track import SpotifyTrack
+from spotidalyfin.models.utils import get_as_base64
 
 
 def _parse_track(spotipy_track: dict) -> SpotifyTrack:
@@ -298,7 +299,7 @@ class SpotifyManager(Manager):
             )
 
             if cover_url:
-                self.client.playlist_upload_cover_image(playlist['id'], cover_url)
+                self.client.playlist_upload_cover_image(playlist['id'], get_as_base64(cover_url))
 
             return _parse_playlist(playlist)
         except Exception as e:
