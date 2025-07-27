@@ -39,3 +39,7 @@ class TidalAlbum(PlatformBound, Album):
 @dataclass
 class JellyfinAlbum(PlatformBound, Album):
     PLATFORM = Platform.JELLYFIN
+
+@dataclass
+class SubsonicAlbum(PlatformBound, Album):
+    PLATFORM = Platform.SUBSONIC

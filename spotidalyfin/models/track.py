@@ -37,3 +37,7 @@ class TidalTrack(PlatformBound, Track):
 @dataclass
 class JellyfinTrack(PlatformBound, Track):
     PLATFORM = Platform.JELLYFIN
+
+@dataclass
+class SubsonicTrack(PlatformBound, Track):
+    PLATFORM = Platform.SUBSONIC

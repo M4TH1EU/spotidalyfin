@@ -35,3 +35,7 @@ class TidalArtist(PlatformBound, Artist):
 @dataclass
 class JellyfinArtist(PlatformBound, Artist):
     PLATFORM = Platform.JELLYFIN
+
+@dataclass
+class SubsonicArtist(PlatformBound, Artist):
+    PLATFORM = Platform.SUBSONIC

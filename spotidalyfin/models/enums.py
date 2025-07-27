@@ -5,6 +5,7 @@ class Platform(Enum):
     TIDAL = "TIDAL"
     SPOTIFY = "SPOTIFY"
     JELLYFIN = "JELLYFIN"
+    SUBSONIC = "SUBSONIC"
 
 
 class TrackQuality(Enum):

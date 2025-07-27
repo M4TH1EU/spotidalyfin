@@ -55,3 +55,11 @@ class TidalFavoriteTracksPlaylist(PlatformBound, FavoriteTracksPlaylist):
 @dataclass
 class JellyfinFavoriteTracksPlaylist(PlatformBound, FavoriteTracksPlaylist):
     PLATFORM = Platform.JELLYFIN
+
+@dataclass
+class SubsonicFavoriteTracksPlaylist(PlatformBound, FavoriteTracksPlaylist):
+    PLATFORM = Platform.SUBSONIC
+
+@dataclass
+class SubsonicPlaylist(PlatformBound, Playlist):
+    PLATFORM = Platform.SUBSONIC
