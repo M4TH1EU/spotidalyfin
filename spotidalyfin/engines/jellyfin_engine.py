@@ -101,7 +101,7 @@ def _parse_quality(jellyfin_track: dict) -> TrackQuality:
     except (IndexError, AttributeError, TypeError):
         pass
 
-    return None
+    return TrackQuality.UNKNOWN
 
 
 def _parse_playlist(jellyfin_playlist: dict) -> JellyfinPlaylist:

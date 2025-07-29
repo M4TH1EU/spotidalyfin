@@ -9,6 +9,7 @@ class Platform(Enum):
 
 
 class TrackQuality(Enum):
+    UNKNOWN = 0
     DOLBY_ATMOS = 0
     LOW = 1
     LOSSLESS = 2
