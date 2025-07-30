@@ -19,6 +19,7 @@ from spotidalyfin.models.manager import Manager
 from spotidalyfin.models.playlist import Playlist, TidalFavoriteTracksPlaylist, \
     TidalPlaylist
 from spotidalyfin.models.track import TidalTrack
+from spotidalyfin.models.utils import get_as_base64
 
 
 def _parse_real_track_quality(track: tidalapi.Track) -> TrackQuality:
@@ -60,16 +61,15 @@ def _parse_album(tidal_album: tidalapi.Album, fetch_tracks: bool = False) -> Tid
         artist=_parse_artist(tidal_album.artist) if tidal_album.artist else None,
         barcode=tidal_album.upc,
         release_date=tidal_album.release_date,
-        cover_url=tidal_album.cover,
+        cover=get_as_base64(f"https://resources.tidal.com/images/{tidal_album.cover.replace('-', '/')}/1280x1280.jpg"),
         tracks=tidal_album.tracks() if fetch_tracks else None,
     )
-
 
 def _parse_playlist(tidal_playlist: tidalapi.Playlist, fetch_tracks: bool = False) -> TidalPlaylist:
     return TidalPlaylist(
         name=tidal_playlist.name,
         id=tidal_playlist.id,
-        image=tidal_playlist.image(640),
+        image=get_as_base64(tidal_playlist.image(640)),
         tracks=_fetch_playlist_tracks(tidal_playlist) if fetch_tracks else None,
     )
 
@@ -305,7 +305,7 @@ class TidalManager(Manager):
             logging.exception(f"Lyrics not found for track {track.name} by {track.artist.name}")
             return ""
 
-    def create_empty_playlist(self, name: str, description: str = "", cover_url: str = "", user_id: str = None) -> Optional[TidalPlaylist]:
+    def create_empty_playlist(self, name: str, description: str = "", cover: bytes = None, user_id: str = None) -> Optional[TidalPlaylist]:
         try:
             new_playlist = self.client.user.create_playlist(title=name, description=description)
             # TODO: Handle cover

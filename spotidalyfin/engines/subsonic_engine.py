@@ -1,5 +1,6 @@
 import datetime
 import hashlib
+import logging
 import random
 import string
 from typing import List, Optional, Tuple
@@ -27,7 +28,7 @@ def _parse_album(subsonic_album: dict, artist: Optional[SubsonicArtist] = None) 
         id=subsonic_album.get("albumId") or subsonic_album.get("id"),
         name=subsonic_album.get("album") or subsonic_album.get("name", "Unknown Album"),
         artist=artist if artist else _parse_artist(subsonic_album),
-        cover_url=subsonic_album.get("coverArt"),
+        cover=subsonic_album.get("coverArt"),
         barcode="",
         release_date=datetime.datetime(
             subsonic_album.get('originalReleaseDate').get('year', '1970'),
@@ -56,6 +57,22 @@ def _parse_track(subsonic_song: dict, artist: Optional[SubsonicArtist] = None,
     )
 
 
+def _parse_playlist(subsonic_playlist: dict, fetch_tracks: bool = True, cover: bytes = None) -> SubsonicPlaylist:
+    tracks = []
+    if fetch_tracks:
+        for entry in subsonic_playlist.get("entry", []):
+            track = _parse_track(entry)
+            if track:
+                tracks.append(track)
+
+    return SubsonicPlaylist(
+        id=subsonic_playlist.get("id"),
+        name=subsonic_playlist.get("name"),
+        tracks=tracks if fetch_tracks else None,
+        image=cover
+    )
+
+
 def _parse_quality(subsonic_track: dict) -> TrackQuality:
     try:
         codec = subsonic_track.get('contentType', 'audio/mpeg').split('/')[1].lower()
@@ -65,11 +82,12 @@ def _parse_quality(subsonic_track: dict) -> TrackQuality:
 
         if codec in ["mp3", "aac", "opus"]:
             return TrackQuality.LOW
-        if codec == "flac":
-            if (bit_depth == 16 or bit_rate >= 1000) and sample_rate >= 44100:
+        elif codec == "flac":
+            if (bit_depth <= 16 or bit_rate >= 500) and sample_rate >= 44100:  # 16-bit 44.1kHz
                 return TrackQuality.LOSSLESS
-            if (bit_depth == 24 or bit_rate >= 1000) and sample_rate >= 48000:  # TODO: do this correctly
+            if (bit_depth > 16 or bit_rate >= 1500) and sample_rate >= 48000:  # 24-bit 192kHz
                 return TrackQuality.HI_RES_LOSSLESS
+
             return TrackQuality.LOSSLESS  # fallback for flac
 
     except (IndexError, AttributeError, TypeError):
@@ -96,7 +114,7 @@ class SubsonicManager(Manager):
         self.api_version = "1.16.1"
         self.client_name = "spotidalyfin"
 
-    def _request(self, endpoint: str, params: dict = None) -> dict:
+    def _request(self, endpoint: str, params: dict = None) -> dict | bytes:
         salt = _generate_salt()
         token = _generate_token(self.password, salt)
 
@@ -111,12 +129,29 @@ class SubsonicManager(Manager):
         all_params = {**default_params, **(params or {})}
         response = requests.get(f"{self.base_url}/rest/{endpoint}.view", params=all_params)
         response.raise_for_status()
-        resp_json = response.json()
 
-        if resp_json.get("subsonic-response", {}).get("status") == "failed":
-            raise ValueError(f"Subsonic API error: {resp_json['subsonic-response'].get('error')}")
+        if response.headers.get("Content-Type") == "application/json":
+            resp_json = response.json()
 
-        return resp_json["subsonic-response"]
+            if resp_json.get("subsonic-response", {}).get("status") == "failed":
+                logging.error(f"Subsonic API error: {resp_json['subsonic-response'].get('error')}")
+                return {}
+
+            return resp_json["subsonic-response"]
+        elif response.headers.get("Content-Type") == "image/png" or response.headers.get(
+                "Content-Type") == "image/jpeg":
+            return response.content
+        else:
+            logging.error(f"Unexpected response type: {response.headers.get('Content-Type')}")
+            return {}
+
+    def _get_cover_art(self, cover_art: str) -> Optional[bytes]:
+        resp = self._request("getCoverArt", {"id": cover_art, "size": 500, "format": "png"})
+        if isinstance(resp, bytes):
+            return resp
+        else:
+            logging.error(f"Failed to fetch cover art for ID {cover_art}")
+            return None
 
     def is_multi_user(self) -> bool:
         return True
@@ -162,17 +197,16 @@ class SubsonicManager(Manager):
         SubsonicPlaylist]:
         resp = self._request("getPlaylist", {"id": playlist_id})
         playlist = resp.get("playlist")
-        tracks = []
-        if fetch_tracks:
-            for s in playlist.get("entry", []):
-                tracks.append(_parse_track(s))
-        return SubsonicPlaylist(id=playlist_id, name=playlist.get("name"), tracks=tracks, image=None)
+
+        cover = self._get_cover_art(playlist.get("coverArt"))
+        return _parse_playlist(playlist, fetch_tracks, cover) if playlist else None
 
     def get_user_playlists(self, user_id: str = None) -> List[SubsonicPlaylist]:
         resp = self._request("getPlaylists")
         playlists = []
-        for pl in resp.get("playlists", {}).get("playlist", []):
-            playlists.append(Playlist(id=pl.get("id"), name=pl.get("name"), tracks=[]))
+        playlists.extend(
+            [_parse_playlist(pl, fetch_tracks=False, cover=self._get_cover_art(pl.get("coverArt"))) for pl in
+             resp.get("playlists", {}).get("playlist", [])])
         return playlists
 
     def get_favorite_tracks(self, user_id: str = None) -> Optional[SubsonicFavoriteTracksPlaylist]:
@@ -181,7 +215,7 @@ class SubsonicManager(Manager):
         tracks = []
         for s in songs:
             tracks.append(_parse_track(s))
-        return SubsonicFavoriteTracksPlaylist(name="Starred", tracks=tracks)
+        return SubsonicFavoriteTracksPlaylist(name="Starred Tracks", tracks=tracks)
 
     def search_tracks_by_query(self, query: str) -> List[SubsonicTrack]:
         resp = self._request("search3", {"query": query})
@@ -212,25 +246,44 @@ class SubsonicManager(Manager):
         return True
 
     def get_lyrics(self, track: SubsonicTrack) -> str:
-        resp = self._request("getLyrics", {"artist": track.artist.name, "title": track.name})
-        return resp.get("lyrics", "")
+        resp = self._request("getLyricsBySongId", {"id": track.id})
+        if len(resp.get('lyricsList', {}).get('structuredLyrics', [])) > 0 and False:
+            def format_time(ms):
+                """Convert microseconds to [mm:ss.xx] format"""
+                seconds = ms / 1000
+                t = datetime.timedelta(seconds=seconds)
+                total_minutes = int(t.total_seconds() // 60)
+                seconds_left = t.total_seconds() % 60
+                return f"[{total_minutes:02}:{seconds_left:05.2f}]"
 
-    def create_empty_playlist(self, name: str, description: str = "", cover_url: str = "", user_id: str = None) -> \
+            output = ""
+            # Convert and print the output
+            for entry in resp.get('lyricsList', {}).get('structuredLyrics', [])[0].get('line', []):
+                timestamp = format_time(entry['start'])
+                output += f"{timestamp} {entry['value']}\n"
+
+            return output
+        else:
+            resp = self._request("getLyrics", {"artist": track.artist.name, "title": track.name})
+            return resp.get("lyrics", {}).get('value', "")
+
+    def create_empty_playlist(self, name: str, description: str = "", cover: bytes = None, user_id: str = None) -> \
             Optional[SubsonicPlaylist]:
         resp = self._request("createPlaylist", {"name": name})
         if resp.get("status") == "ok":
             pl_id = resp.get("playlist", {}).get("id")
             return SubsonicPlaylist(id=pl_id, name=name, tracks=[])
+
         return None
 
     def add_tracks_to_playlist(self, playlist: Playlist, tracks: List[SubsonicTrack]) -> bool:
-        track_ids = [t.id for t in tracks]
-        self._request("updatePlaylist", {
+        track_ids = tuple([track.id for track in tracks])
+        resp = self._request("updatePlaylist", {
             "playlistId": playlist.id,
-            "songId": track_ids
+            "songIdToAdd": track_ids
         })
-        return True
+        return resp.get("status") == "ok"
 
     def remove_playlist_by_id(self, playlist_id: str) -> bool:
-        self._request("deletePlaylist", {"id": playlist_id})
-        return True
+        resp = self._request("deletePlaylist", {"id": playlist_id})
+        return resp.get("status") == "ok"

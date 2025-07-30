@@ -19,7 +19,7 @@ class Playlist:
     name: str
     description: Optional[str] = None
     tracks: List['Track'] = field(default_factory=list)
-    image: str = ""
+    image: Optional[bytes] = None
 
 
 @dataclass

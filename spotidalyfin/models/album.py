@@ -21,7 +21,7 @@ class Album:
     artist: 'Artist'
     barcode: Optional[str] = None
     release_date: Optional[datetime.datetime] = None
-    cover_url: Optional[str] = None
+    cover: Optional[bytes] = None
     num_volumes: Optional[int] = None
     tracks: Optional[List['Track']] = None
 

@@ -14,10 +14,9 @@ from spotidalyfin.models.manager import Manager
 from spotidalyfin.models.playlist import JellyfinPlaylist, \
     JellyfinFavoriteTracksPlaylist, Playlist
 from spotidalyfin.models.track import JellyfinTrack
-from spotidalyfin.models.utils import get_as_base64
 
 
-def _parse_cover_url(jellyfin_item: dict) -> Optional[str]:
+def _parse_cover(jellyfin_item: dict) -> Optional[bytes]:
     cover_tag = jellyfin_item.get("ImageTags", {}).get("Primary") or jellyfin_item.get(
         "PrimaryImageTag") or jellyfin_item.get("AlbumPrimaryImageTag")
     if not cover_tag:
@@ -27,7 +26,7 @@ def _parse_cover_url(jellyfin_item: dict) -> Optional[str]:
 
     item_id = jellyfin_item.get("Id") or jellyfin_item.get("AlbumId")
     if cover_tag and item_id:
-        return f"{jellyfin_item.get('base_url', '')}/Items/{item_id}/Images/Primary?tag={cover_tag}"
+        return f"{jellyfin_item.get('base_url', '')}/Items/{item_id}/Images/Primary?tag={cover_tag}" # TODO : fix
     return None
 
 
@@ -35,7 +34,7 @@ def _parse_artist(jellyfin_artist: dict) -> JellyfinArtist:
     return JellyfinArtist(
         name=jellyfin_artist.get("Name"),
         id=jellyfin_artist.get("Id"),
-        image=_parse_cover_url(jellyfin_artist),
+        image=_parse_cover(jellyfin_artist),
     )
 
 
@@ -53,7 +52,7 @@ def _parse_album(jellyfin_album: dict) -> JellyfinAlbum:
         artist=artist,
         barcode="",
         release_date=release_date,
-        cover_url=_parse_cover_url(jellyfin_album),
+        cover=_parse_cover(jellyfin_album),
         num_volumes=None,
         tracks=None
     )
@@ -83,7 +82,7 @@ def _parse_quality(jellyfin_track: dict) -> TrackQuality:
         media_streams = jellyfin_track.get("MediaSources", [])[0].get("MediaStreams", [])
         audio_stream = next((s for s in media_streams if s.get("Type") == "Audio"), None)
         if not audio_stream:
-            return None
+            return TrackQuality.UNKNOWN
 
         codec = audio_stream.get("Codec", "").lower()
         bit_depth = audio_stream.get("BitDepth", 0)
@@ -111,14 +110,7 @@ def _parse_playlist(jellyfin_playlist: dict) -> JellyfinPlaylist:
         id=jellyfin_playlist.get("Id"),
         name=jellyfin_playlist.get("Name"),
         tracks=[_parse_track(item) for item in items],
-        image=_parse_cover_url(jellyfin_playlist)
-    )
-
-
-def _parse_favorite_tracks(jellyfin_playlist: list) -> JellyfinFavoriteTracksPlaylist:
-    return JellyfinFavoriteTracksPlaylist(
-        name="Favorite Tracks",
-        tracks=[_parse_track(item) for item in jellyfin_playlist],
+        image=_parse_cover(jellyfin_playlist)
     )
 
 
@@ -331,7 +323,10 @@ class JellyfinManager(Manager):
         if not jellyfin_favorites:
             return None
 
-        return _parse_favorite_tracks(jellyfin_favorites)
+        return JellyfinFavoriteTracksPlaylist(
+            name="Favorite Tracks",
+            tracks=[_parse_track(item) for item in jellyfin_favorites],
+        )
 
     def search_tracks_by_query(self, query: str) -> list[JellyfinTrack]:
         path = "Items"
@@ -400,7 +395,7 @@ class JellyfinManager(Manager):
 
         return output.strip()
 
-    def create_empty_playlist(self, name: str, description: str = "", cover_url: str = "", user_id: str = None) -> \
+    def create_empty_playlist(self, name: str, description: str = "", cover: bytes = None, user_id: str = None) -> \
             Optional[
                 JellyfinPlaylist]:
         if not user_id:
@@ -418,9 +413,8 @@ class JellyfinManager(Manager):
             logging.error("Failed to create playlist.")
             return None
 
-        if cover_url:
-            cover_bytes = get_as_base64(cover_url)
-            self._modify_image(result.get('Id'), cover_bytes)
+        if cover:
+            self._modify_image(result.get('Id'), cover)
 
         return self.get_playlist(result.get("Id"), fetch_tracks=False, fetch_albums=False)
 

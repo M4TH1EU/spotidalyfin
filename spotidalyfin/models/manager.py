@@ -52,7 +52,7 @@ class Manager(ABC):
 
     @abstractmethod
     def get_user_playlists(self, user_id: str = None) -> list[Playlist]:
-        """Retrieve all playlists for a user."""
+        """Retrieve all playlists for a user. Playlists tracks are not expected to be fetched"""
         raise NotImplementedError("This method should be implemented by subclasses.")
 
     @abstractmethod
@@ -136,7 +136,7 @@ class Manager(ABC):
         """Retrieve lyrics for a given track."""
         raise NotImplementedError("This method should be implemented by subclasses.")
 
-    def create_playlist(self, name: str, tracks: List[Track], description: str = "", cover_url: str = "",
+    def create_playlist(self, name: str, tracks: List[Track], description: str = "", cover: bytes = None,
                         user_id: str = None) -> Optional[
         Playlist]:
         """Create a new playlist."""
@@ -149,7 +149,7 @@ class Manager(ABC):
         self.remove_playlist_by_name(name, user_id)
 
         # Create an empty playlist first
-        new_playlist = self.create_empty_playlist(name, description, cover_url, user_id)
+        new_playlist = self.create_empty_playlist(name, description, cover, user_id)
         if not new_playlist:
             logging.error(f"Failed to create empty playlist: {name}")
             return None
@@ -162,7 +162,7 @@ class Manager(ABC):
         return new_playlist
 
     @abstractmethod
-    def create_empty_playlist(self, name: str, description: str = "", cover_url: str = "", user_id: str = None) -> \
+    def create_empty_playlist(self, name: str, description: str = "", cover: bytes = None, user_id: str = None) -> \
             Optional[Playlist]:
         """Create a new empty playlist."""
         raise NotImplementedError("This method should be implemented by subclasses.")

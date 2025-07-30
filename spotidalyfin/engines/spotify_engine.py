@@ -21,6 +21,12 @@ from spotidalyfin.models.playlist import SpotifyPlaylist, \
 from spotidalyfin.models.track import SpotifyTrack
 from spotidalyfin.models.utils import get_as_base64
 
+def _get_image(spotipy_object: dict) -> Optional[bytes]:
+    """Get the first image URL from a Spotipy object and convert it to base64."""
+    if 'images' in spotipy_object and spotipy_object['images']:
+        return get_as_base64(spotipy_object['images'][0].get('url', ''))
+    return None
+
 
 def _parse_track(spotipy_track: dict) -> SpotifyTrack:
     return SpotifyTrack(
@@ -39,7 +45,7 @@ def _parse_artist(spotipy_artist: dict) -> SpotifyArtist:
         name=spotipy_artist["name"],
         id=spotipy_artist["id"],
         genres=spotipy_artist.get("genres", []),
-        image=spotipy_artist.get("images", [{}])[0].get("url", ""),
+        image=_get_image(spotipy_artist)
     )
 
 
@@ -53,7 +59,7 @@ def _parse_album(spotipy_album: dict) -> SpotifyAlbum:
         ),
         barcode=spotipy_album.get('external_ids', {}).get('upc', ''),
         release_date=spotipy_album.get("release_date", None),
-        cover_url=spotipy_album.get('images', [{}])[0].get('url', ''),
+        cover=_get_image(spotipy_album),
         num_volumes=None,
         tracks=None
     )
@@ -65,7 +71,7 @@ def _parse_playlist(spotipy_playlist: dict) -> SpotifyPlaylist:
         name=spotipy_playlist['name'],
         description=spotipy_playlist.get('description', ''),
         tracks=[_parse_track(item["track"]) for item in spotipy_playlist.get("tracks", {}).get("items", [])],
-        image=spotipy_playlist.get("images", [{}])[0].get("url", "") if spotipy_playlist['images'] else ""
+        image=_get_image(spotipy_playlist)
     )
 
 
@@ -73,7 +79,7 @@ def _parse_favorite_tracks(spotipy_playlist: dict) -> SpotifyFavoriteTracksPlayl
     return SpotifyFavoriteTracksPlaylist(
         name="Liked Songs",
         tracks=[_parse_track(item["track"]) for item in spotipy_playlist.get("items", [])],
-        image=spotipy_playlist.get("images", [{"url": ""}])[0].get("url", "")
+        image=_get_image(spotipy_playlist)
     )
 
 
@@ -215,8 +221,18 @@ class SpotifyManager(Manager):
         try:
             if not user_id:
                 playlists = self.client.current_user_playlists()
+                total = playlists['total']
+                for offset in range(0, total, 50):
+                    playlists = self.client.current_user_playlists(limit=50, offset=offset)
+                    if not playlists['items']:
+                        break
             else:
                 playlists = self.client.user_playlists(user_id)
+                total = playlists['total']
+                for offset in range(0, total, 50):
+                    playlists = self.client.user_playlists(user_id, limit=50, offset=offset)
+                    if not playlists['items']:
+                        break
 
             return [_parse_playlist(playlist) for playlist in playlists['items']]
 
@@ -298,7 +314,7 @@ class SpotifyManager(Manager):
     def get_lyrics(self, track: Track) -> str:
         pass
 
-    def create_empty_playlist(self, name: str, description: str = "", cover_url: str = "", user_id: str = None) -> Optional[SpotifyPlaylist]:
+    def create_empty_playlist(self, name: str, description: str = "", cover: bytes = None, user_id: str = None) -> Optional[SpotifyPlaylist]:
         try:
             playlist = self.client.user_playlist_create(
                 user=self.username,
@@ -307,8 +323,8 @@ class SpotifyManager(Manager):
                 description=description
             )
 
-            if cover_url:
-                self.client.playlist_upload_cover_image(playlist['id'], get_as_base64(cover_url))
+            if cover:
+                self.client.playlist_upload_cover_image(playlist['id'], cover)
 
             return _parse_playlist(playlist)
         except Exception as e:
