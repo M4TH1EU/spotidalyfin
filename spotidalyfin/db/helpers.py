@@ -141,6 +141,31 @@ def get_jellyfin_api_key(db: Database, url: str) -> Optional[str]:
     return res[0] if res else None
 
 
+def get_authenticated_subsonic_profiles(db: Database) -> List[tuple[str]]:
+    """Get the authenticated Subsonic profiles."""
+    res = db.execute("SELECT url, username FROM subsonic_accounts").fetchall()
+    return [tuple(r) for r in res]
+
+def get_subsonic_login_password(db: Database, url: str, username: str) -> Optional[str]:
+    """Get the Subsonic login password for the given URL and username."""
+    cursor = db.execute("SELECT password FROM subsonic_accounts WHERE url=? AND username=?", (url, username))
+    res = cursor.fetchone()
+    return res[0] if res else None
+
+def remove_subsonic_profile(db: Database, url: str, username: str) -> None:
+    """Remove a Subsonic profile from the database."""
+    db.execute("DELETE FROM subsonic_accounts WHERE url=? AND username=?", (url, username))
+    db.commit()
+
+def save_subsonic_info_to_db(db: Database, url: str, username: str, password: str) -> None:
+    """Save Subsonic login information to the database."""
+    db.execute(
+        "INSERT INTO subsonic_accounts (url, username, password) VALUES (?, ?, ?)",
+        (url, username, password)
+    )
+    db.commit()
+
+
 def get_tidal_track_id_from_spotify_id(db: Database, spotify_id: str) -> Optional[str]:
     """Get the TIDAL track ID from the Spotify track ID."""
     if not spotify_id:

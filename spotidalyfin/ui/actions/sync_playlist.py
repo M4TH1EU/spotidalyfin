@@ -3,7 +3,7 @@ from typing import List
 import streamlit as st
 
 from spotidalyfin.db.helpers import get_authenticated_spotify_profiles, get_authenticated_tidal_profiles, \
-    get_authenticated_jellyfin_profiles
+    get_authenticated_jellyfin_profiles, get_authenticated_subsonic_profiles
 from spotidalyfin.models.enums import Platform
 from spotidalyfin.models.playlist import Playlist
 from spotidalyfin.models.utils import get_track_on_another_platform
@@ -26,12 +26,14 @@ if not st.session_state.sync_account_submitted:
         platform_options = [
             (Platform.SPOTIFY.value, Platform.SPOTIFY),
             (Platform.TIDAL.value, Platform.TIDAL),
-            (Platform.JELLYFIN.value, Platform.JELLYFIN)
+            (Platform.JELLYFIN.value, Platform.JELLYFIN),
+            (Platform.SUBSONIC.value, Platform.SUBSONIC)
         ]
         accounts_options = {
             Platform.SPOTIFY.value: get_authenticated_spotify_profiles(get_database()),
             Platform.TIDAL.value: get_authenticated_tidal_profiles(get_database()),
-            Platform.JELLYFIN.value: get_authenticated_jellyfin_profiles(get_database())
+            Platform.JELLYFIN.value: get_authenticated_jellyfin_profiles(get_database()),
+            Platform.SUBSONIC.value: get_authenticated_subsonic_profiles(get_database())
         }
 
         with st.container(border=1):
@@ -44,7 +46,8 @@ if not st.session_state.sync_account_submitted:
             )
             from_account = st.selectbox(
                 f"Choose {from_select[0]} account to use for fetching playlists:",
-                options=accounts_options[from_select[0]]
+                options=accounts_options[from_select[0]],
+                format_func=lambda x: x if isinstance(x, str) else f"{x[1]} ({x[0]})"
             )
 
             from_manager = get_manager_for_platform(from_account, from_select[1])
@@ -69,7 +72,8 @@ if not st.session_state.sync_account_submitted:
             )
             to_account = st.selectbox(
                 f"Choose {to_select[0]} account to sync the playlists to:",
-                options=accounts_options[to_select[0]]
+                options=accounts_options[to_select[0]],
+                format_func = lambda x: x if isinstance(x, str) else f"{x[1]} ({x[0]})"
             )
 
             to_manager = get_manager_for_platform(to_account, to_select[1])

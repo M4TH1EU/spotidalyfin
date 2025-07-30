@@ -3,10 +3,12 @@ import hashlib
 import logging
 import random
 import string
-from typing import List, Optional, Tuple
+from typing import List, Optional
 
 import requests
 
+from spotidalyfin.db.database import Database
+from spotidalyfin.db.helpers import get_subsonic_login_password, save_subsonic_info_to_db
 from spotidalyfin.models.album import SubsonicAlbum
 from spotidalyfin.models.artist import SubsonicArtist
 from spotidalyfin.models.enums import Platform, TrackQuality
@@ -104,15 +106,30 @@ def _generate_token(password: str, salt: str) -> str:
     return hashlib.md5((password + salt).encode("utf-8")).hexdigest()
 
 
+def login_subsonic(server_url: str, username: str, password: str, db: Database) -> (bool, str, dict):
+    subsonic_manager = SubsonicManager(url=server_url, username=username, db=db, password=password)
+    try:
+        resp = subsonic_manager._request("ping")
+        if resp.get("status") != "ok":
+            return False, f"Failed to authenticate with Subsonic server: {resp.get('error', 'Unknown error')}", {}
+
+        save_subsonic_info_to_db(db, server_url, username, password)
+
+        return True, "Successfully authenticated with Subsonic.", {}
+    except Exception as e:
+        return False, f"Failed to connect to Subsonic server: {e}", {}
+
+
 class SubsonicManager(Manager):
     PLATFORM = Platform.SUBSONIC
 
-    def __init__(self, url: str, username: str, password: str):
+    def __init__(self, url: str, username: str, db: Database, password: str = None):
         self.base_url = url.rstrip("/")
         self.username = username
-        self.password = password
+        self.password = password or get_subsonic_login_password(db, url, username)
         self.api_version = "1.16.1"
         self.client_name = "spotidalyfin"
+        self.db = db
 
     def _request(self, endpoint: str, params: dict = None) -> dict | bytes:
         salt = _generate_salt()
@@ -154,11 +171,7 @@ class SubsonicManager(Manager):
             return None
 
     def is_multi_user(self) -> bool:
-        return True
-
-    def get_users(self) -> List[Tuple[str, str]]:
-        resp = self._request("getUsers")
-        return [(u["username"], u["username"]) for u in resp.get("users", {}).get("user", [])]
+        return False
 
     def get_track(self, track_id: str) -> Optional[SubsonicTrack]:
         resp = self._request("getSong", {"id": track_id})

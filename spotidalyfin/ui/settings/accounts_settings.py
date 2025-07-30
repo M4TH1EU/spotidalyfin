@@ -3,9 +3,11 @@ from typing import List
 import streamlit as st
 
 from spotidalyfin.db.helpers import get_authenticated_spotify_profiles, remove_spotify_profile, remove_tidal_profile, \
-    get_authenticated_tidal_profiles, get_authenticated_jellyfin_profiles, remove_jellyfin_profile
+    get_authenticated_tidal_profiles, get_authenticated_jellyfin_profiles, remove_jellyfin_profile, \
+    get_authenticated_subsonic_profiles, remove_subsonic_profile
 from spotidalyfin.engines.jellyfin_engine import login_jellyfin
 from spotidalyfin.engines.spotify_engine import login_spotify, create_temp_oauth_spotify
+from spotidalyfin.engines.subsonic_engine import login_subsonic
 from spotidalyfin.engines.tidal_engine import login_tidal, create_temp_session_tidal
 from spotidalyfin.ui.helpers.dialogs import DialogContext, DialogStep, MultiStepDialog
 from spotidalyfin.ui.helpers.getters import get_database
@@ -264,7 +266,7 @@ def create_and_add_jellyfin_dialog():
 
     # Create the dialog steps
     step1 = DialogStep(
-        title="Step 1: Jellyfin Server URL",
+        title="Step 1: Jellyfin Details",
         content=step1_content,
         validation_func=validate_step1,
         next_button_text="Connect"
@@ -322,6 +324,105 @@ def jellyfin_servers_table():
         st.write("*You haven't added any accounts yet.*")
 
 
+def create_and_add_subsonic_dialog():
+    def step1_content(context: DialogContext):
+        """Step 1: Server URL"""
+        st.info("Enter your Subsonic URL and user details below.")
+
+        server_url = st.text_input("Subsonic Server URL", value=context.get("server_url", ""))
+        username = st.text_input("Username", value=context.get("username", ""))
+        password = st.text_input("Password", value=context.get("password", ""), type="password")
+
+        # Store values in context
+        context.set("server_url", server_url)
+        context.set("username", username)
+        context.set("password", password)
+
+    def validate_step1(context: DialogContext) -> tuple[bool, str, dict]:
+        """Validate authorization"""
+        if not context.get("server_url"):
+            return False, "Please enter your Subsonic server URL.", {}
+        if not context.get("server_url").startswith(("http://", "https://")):
+            return False, "Invalid Subsonic server URL. It should start with 'http://' or 'https://'.", {}
+
+        # this tries to authenticate, checks if the account is already authenticated and saves it to the database if not
+        return login_subsonic(
+            server_url=context.get("server_url"),
+            username=context.get("username"),
+            password=context.get("password"),
+            db=get_database())
+
+    def step2_content(context: DialogContext):
+        """Step 2: Completion"""
+        st.success("Your Subsonic server has been successfully connected.")
+
+        # Clear sensitive data
+        context.set("server_url", "")  # TODO: do that in dialog class not here
+        context.set("username", "")  # TODO: do that in dialog class not here
+        context.set("password", "")  # TODO: do that in dialog class not here
+
+    # Create the dialog steps
+    step1 = DialogStep(
+        title="Step 1: Subsonic Details",
+        content=step1_content,
+        validation_func=validate_step1,
+        next_button_text="Connect"
+    )
+
+    step2 = DialogStep(
+        title="Step 2: Setup Complete!",
+        content=step2_content,
+        next_button_text="Close"
+    )
+
+    # Create the dialog
+    subsonic_dialog = MultiStepDialog(
+        name="Subsonic Connection",
+        steps=[step1, step2],
+        show_progress_bar=True,
+    )
+
+    # Show the dialog
+    if st.button("Connect Subsonic account"):
+        # Create a temporary session for the dialog to use
+        subsonic_dialog.render()
+
+
+def subsonic_servers_table():
+    # Check if there are authenticated subsonic_dialog profiles
+    profiles = get_authenticated_subsonic_profiles(get_database())
+
+    if profiles:
+        # Prepare data for display_table
+        data: List[List] = [
+            ["Server URL", "Username", "Actions"]  # Header row
+        ]
+
+        for url, username in profiles:
+            data.append([
+                inline_code_html(url, "primary"),
+                inline_code_html(username, "primary"),
+                lambda u=url, n=username: st.button("Remove", key=f"{u}_{n}", on_click=remove_subsonic_profile,
+                                                    args=(get_database(), u, n))
+                # Remove button (attention late-binding)
+            ])
+
+        # Call display_table to render
+        display_table(
+            data=data,
+            columns=[3, 3, 2],  # Aligned column widths
+            text="Here you can see all the Subsonic accounts that you have added to Spotidalyfin.",
+            border=True,
+            header=True,
+            align="left",
+            gap="small",
+            vertical_alignment="center"
+        )
+    else:
+        # No profiles available
+        st.write("*You haven't added any accounts yet.*")
+
+
 # Main Page Layout
 st.title(":material/manage_accounts: Accounts Settings")
 st.write("Here you can manage all the accounts that you have added to Spotidalyfin.")
@@ -333,6 +434,8 @@ st.write("Here you can add or remove Spotify accounts.")
 spotify_accounts_table()
 create_and_add_spotify_dialog()
 
+st.markdown("---")  # Separator line
+
 # TIDAL Section
 subheader_custom_icon("TIDAL", "assets/ui/images/tidal_logo.svg", icon_position="right")
 st.write("Here you can add or remove TIDAL accounts.")
@@ -340,9 +443,20 @@ st.write("Here you can add or remove TIDAL accounts.")
 tidal_accounts_table()
 create_and_add_tidal_dialog()
 
+st.markdown("---")  # Separator line
+
 # Jellyfin Section
 subheader_custom_icon("Jellyfin", "assets/ui/images/jellyfin.svg", icon_position="right")
 st.write("Here you can add or remove Jellyfin servers.")
 
 jellyfin_servers_table()
 create_and_add_jellyfin_dialog()
+
+st.markdown("---")  # Separator line
+
+# Subsonic Section
+subheader_custom_icon("Subsonic", "assets/ui/images/subsonic.svg", icon_position="right")
+st.write("Here you can add or remove Subsonic servers.")
+
+subsonic_servers_table()
+create_and_add_subsonic_dialog()

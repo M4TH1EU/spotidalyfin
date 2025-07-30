@@ -66,6 +66,16 @@ class Database:
             );
         """)
 
+        self.con.execute("DROP TABLE IF EXISTS subsonic_accounts;")
+        self.con.execute("""
+            CREATE TABLE IF NOT EXISTS subsonic_accounts (
+                url TEXT NOT NULL,
+                username TEXT NOT NULL,
+                password TEXT NOT NULL,
+                PRIMARY KEY (url, username)
+            );
+        """)
+
         self.con.execute("DROP TABLE IF EXISTS matches;")
         self.con.execute("""
             CREATE TABLE IF NOT EXISTS matches (
