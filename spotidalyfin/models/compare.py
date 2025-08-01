@@ -23,6 +23,21 @@ def normalize_track_name(name: str) -> str:
     name = re.sub(r'\s+', ' ', name).strip()
     return name
 
+def normalize_artist_name(name: str) -> str:
+    """
+    Normalizes artist name by:
+    - Lowercasing
+    - Removing extra whitespace and punctuation
+    - Replacing '&' with 'and'
+    - Replacing single quotes with curly apostrophes
+    """
+    name = name.lower()
+    name = re.sub(r'[^\w\s]', '', name)  # Remove punctuation
+    name = re.sub(r'\s+', ' ', name).strip() # Remove extra whitespace
+    name = re.sub('& ', 'and ', name)  # Replace '&' with 'and')
+    name = re.sub('\'', '’', name)  # Replace single quotes with curly apostrophes
+    return name
+
 
 def compare_strings(s1: Optional[str], s2: Optional[str]) -> float:
     if not s1 or not s2:

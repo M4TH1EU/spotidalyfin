@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
 from spotidalyfin.models import Track, Album, Artist
-from spotidalyfin.models.compare import normalize_track_name, compare_strings
+from spotidalyfin.models.compare import normalize_track_name, compare_strings, normalize_artist_name
 from spotidalyfin.models.enums import Platform
 from spotidalyfin.models.playlist import Playlist, FavoriteTracksPlaylist
 
@@ -79,6 +79,12 @@ class Manager(ABC):
 
                         if not results:
                             artists = self.search_artists_by_query(artist_name)
+                            if not artists:
+                                artists = self.search_artists_by_query(normalize_artist_name(artist_name))
+
+                            if not artists:
+                                return []
+
                             best_artist_match = max(artists, key = lambda a: compare_strings(a.name, artist_name), default=None)
                             results = self.get_artist_tracks(best_artist_match.id)
             elif query:
