@@ -188,3 +188,8 @@ class Manager(ABC):
     def remove_playlist_by_id(self, playlist_id: str) -> bool:
         """Remove a playlist by its ID."""
         raise NotImplementedError("This method should be implemented by subclasses.")
+
+    @abstractmethod
+    def get_image(self, image_url: str) -> bytes:
+        """Retrieve an image from the given URL."""
+        raise NotImplementedError("This method should be implemented by subclasses.")

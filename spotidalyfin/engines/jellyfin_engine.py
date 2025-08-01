@@ -16,7 +16,7 @@ from spotidalyfin.models.playlist import JellyfinPlaylist, \
 from spotidalyfin.models.track import JellyfinTrack
 
 
-def _parse_cover(jellyfin_item: dict) -> Optional[bytes]:
+def _parse_cover_url(jellyfin_item: dict) -> Optional[str]:
     cover_tag = jellyfin_item.get("ImageTags", {}).get("Primary") or jellyfin_item.get(
         "PrimaryImageTag") or jellyfin_item.get("AlbumPrimaryImageTag")
     if not cover_tag:
@@ -26,7 +26,7 @@ def _parse_cover(jellyfin_item: dict) -> Optional[bytes]:
 
     item_id = jellyfin_item.get("Id") or jellyfin_item.get("AlbumId")
     if cover_tag and item_id:
-        return f"{jellyfin_item.get('base_url', '')}/Items/{item_id}/Images/Primary?tag={cover_tag}" # TODO : fix
+        return f"{jellyfin_item.get('base_url', '')}/Items/{item_id}/Images/Primary?tag={cover_tag}"
     return None
 
 
@@ -34,7 +34,7 @@ def _parse_artist(jellyfin_artist: dict) -> JellyfinArtist:
     return JellyfinArtist(
         name=jellyfin_artist.get("Name"),
         id=jellyfin_artist.get("Id"),
-        image=_parse_cover(jellyfin_artist),
+        image=_parse_cover_url(jellyfin_artist),
     )
 
 
@@ -52,7 +52,7 @@ def _parse_album(jellyfin_album: dict) -> JellyfinAlbum:
         artist=artist,
         barcode="",
         release_date=release_date,
-        cover=_parse_cover(jellyfin_album),
+        cover=_parse_cover_url(jellyfin_album),
         num_volumes=None,
         tracks=None
     )
@@ -110,7 +110,7 @@ def _parse_playlist(jellyfin_playlist: dict) -> JellyfinPlaylist:
         id=jellyfin_playlist.get("Id"),
         name=jellyfin_playlist.get("Name"),
         tracks=[_parse_track(item) for item in items],
-        image=_parse_cover(jellyfin_playlist)
+        image=_parse_cover_url(jellyfin_playlist)
     )
 
 
@@ -438,3 +438,5 @@ class JellyfinManager(Manager):
             return False
 
         return True
+
+    def get_image(self, image_url: str) -> bytes:
