@@ -71,7 +71,7 @@ def _parse_playlist(spotipy_playlist: dict) -> SpotifyPlaylist:
         name=spotipy_playlist['name'],
         description=spotipy_playlist.get('description', ''),
         tracks=[_parse_track(item["track"]) for item in spotipy_playlist.get("tracks", {}).get("items", [])],
-        image=_get_image(spotipy_playlist)
+        #image=_get_image(spotipy_playlist)
     )
 
 
@@ -79,7 +79,7 @@ def _parse_favorite_tracks(spotipy_playlist: dict) -> SpotifyFavoriteTracksPlayl
     return SpotifyFavoriteTracksPlaylist(
         name="Liked Songs",
         tracks=[_parse_track(item["track"]) for item in spotipy_playlist.get("items", [])],
-        image=_get_image(spotipy_playlist)
+        # image=_get_image(spotipy_playlist)
     )
 
 

@@ -126,7 +126,7 @@ class SubsonicManager(Manager):
     def __init__(self, url: str, username: str, db: Database, password: str = None):
         self.base_url = url.rstrip("/")
         self.username = username
-        self.password = password or get_subsonic_login_password(db, url, username)
+        self.password = password or get_subsonic_login_password(db, self.base_url, username)
         self.api_version = "1.16.1"
         self.client_name = "spotidalyfin"
         self.db = db
@@ -211,14 +211,14 @@ class SubsonicManager(Manager):
         resp = self._request("getPlaylist", {"id": playlist_id})
         playlist = resp.get("playlist")
 
-        cover = self._get_cover_art(playlist.get("coverArt"))
-        return _parse_playlist(playlist, fetch_tracks, cover) if playlist else None
+        # cover = self._get_cover_art(playlist.get("coverArt"))
+        return _parse_playlist(playlist, fetch_tracks, cover=None) if playlist else None
 
     def get_user_playlists(self, user_id: str = None) -> List[SubsonicPlaylist]:
         resp = self._request("getPlaylists")
         playlists = []
         playlists.extend(
-            [_parse_playlist(pl, fetch_tracks=False, cover=self._get_cover_art(pl.get("coverArt"))) for pl in
+            [_parse_playlist(pl, fetch_tracks=False, cover=None) for pl in # cover=self._get_cover_art(pl.get("coverArt"))
              resp.get("playlists", {}).get("playlist", [])])
         return playlists
 

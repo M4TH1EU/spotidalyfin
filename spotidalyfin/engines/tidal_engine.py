@@ -61,7 +61,7 @@ def _parse_album(tidal_album: tidalapi.Album, fetch_tracks: bool = False) -> Tid
         artist=_parse_artist(tidal_album.artist) if tidal_album.artist else None,
         barcode=tidal_album.upc,
         release_date=tidal_album.release_date,
-        cover=get_as_base64(f"https://resources.tidal.com/images/{tidal_album.cover.replace('-', '/')}/1280x1280.jpg"),
+        # cover=get_as_base64(f"https://resources.tidal.com/images/{tidal_album.cover.replace('-', '/')}/1280x1280.jpg"),
         tracks=tidal_album.tracks() if fetch_tracks else None,
     )
 
@@ -69,7 +69,7 @@ def _parse_playlist(tidal_playlist: tidalapi.Playlist, fetch_tracks: bool = Fals
     return TidalPlaylist(
         name=tidal_playlist.name,
         id=tidal_playlist.id,
-        image=get_as_base64(tidal_playlist.image(640)),
+        # image=get_as_base64(tidal_playlist.image(640)),
         tracks=_fetch_playlist_tracks(tidal_playlist) if fetch_tracks else None,
     )
 
@@ -182,7 +182,7 @@ class TidalManager(Manager):
             logging.exception(f"Failed to fetch TIDAL playlist with ID {playlist_id}: {e}")
             return None
 
-    def get_user_playlists(self, user_id: str = None, fetch_tracks: bool = False) -> list[TidalPlaylist]:
+    def get_user_playlists(self, user_id: str = None) -> list[TidalPlaylist]:
         """Retrieve all playlists for a user."""
         try:
             if not user_id:
@@ -190,7 +190,7 @@ class TidalManager(Manager):
             else:
                 playlists = self.client.get_user(int(user_id)).playlists()
 
-            return [_parse_playlist(playlist, fetch_tracks) for playlist in playlists]
+            return [_parse_playlist(playlist, False) for playlist in playlists]
         except Exception as e:
             logging.exception(f"Failed to fetch TIDAL playlists for user {user_id}: {e}")
             return []

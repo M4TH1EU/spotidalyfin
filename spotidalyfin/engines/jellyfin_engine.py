@@ -34,7 +34,7 @@ def _parse_artist(jellyfin_artist: dict) -> JellyfinArtist:
     return JellyfinArtist(
         name=jellyfin_artist.get("Name"),
         id=jellyfin_artist.get("Id"),
-        image=_parse_cover(jellyfin_artist),
+        # image=_parse_cover(jellyfin_artist),
     )
 
 
@@ -52,7 +52,7 @@ def _parse_album(jellyfin_album: dict) -> JellyfinAlbum:
         artist=artist,
         barcode="",
         release_date=release_date,
-        cover=_parse_cover(jellyfin_album),
+        # cover=_parse_cover(jellyfin_album),
         num_volumes=None,
         tracks=None
     )
@@ -110,7 +110,7 @@ def _parse_playlist(jellyfin_playlist: dict) -> JellyfinPlaylist:
         id=jellyfin_playlist.get("Id"),
         name=jellyfin_playlist.get("Name"),
         tracks=[_parse_track(item) for item in items],
-        image=_parse_cover(jellyfin_playlist)
+        # image=_parse_cover(jellyfin_playlist)
     )
 
 
