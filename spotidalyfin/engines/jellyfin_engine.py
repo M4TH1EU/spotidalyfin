@@ -141,7 +141,7 @@ class JellyfinManager(Manager):
 
         self.default_admin_user_id = self._get_default_admin_user_id()
 
-    def _request(self, path, params=None, method="GET", headers=None, data=None, timeout: int = 30) -> Optional[
+    def _request(self, path, params=None, method="GET", headers=None, data=None, count: int = 0) -> Optional[
         list | dict | bool]:
         """
         Perform a GET request to the Jellyfin API.
@@ -157,13 +157,17 @@ class JellyfinManager(Manager):
 
         response = None
         if method == "GET":
-            response = requests.get(url, params=params, headers=headers, timeout=timeout)
+            response = requests.get(url, params=params, headers=headers, timeout=10)
         elif method == "POST":
-            response = requests.post(url, params=params, headers=headers, timeout=timeout, data=data)
+            response = requests.post(url, params=params, headers=headers, timeout=10, data=data)
         elif method == "DELETE":
-            response = requests.delete(url, params=params, headers=headers, timeout=timeout)
+            response = requests.delete(url, params=params, headers=headers, timeout=10)
 
-        response.raise_for_status()
+        try:
+            response.raise_for_status()
+        except requests.Timeout:
+            log.error(f"Request to Jellyfin API timed out after {count} attempts. Retrying...")
+            return self._request(path, params, method, headers, data, count + 1) if count < 3 else []
 
         if response.status_code == 204:  # No Content
             return response.ok
@@ -478,22 +482,38 @@ class JellyfinManager(Manager):
             log.error(f"Failed to create empty playlist '{name}': {e}")
             return None
 
-    def add_tracks_to_playlist(self, playlist: Playlist, tracks: List[JellyfinTrack]) -> bool:
+    def add_tracks_to_playlist(self, playlist: Playlist, tracks: List[JellyfinTrack], user_id: str = None) -> bool:
         try:
             path = f"Playlists/{playlist.id}/Items"
-            params = {
-                "ids": ",".join(track.id for track in tracks),
-                "userId": "6dbbbaa045e34cc597554eb59891d110"
-            }
-            result = self._request(path, params, method="POST")
-            if not result:
-                log.error(f"Failed to add tracks to playlist {playlist.name}.")
-                return False
+
+            for offset in range(0, len(tracks), 10):
+                batch_tracks = tracks[offset:offset + 10]
+                if not batch_tracks:
+                    continue
+                params = {
+                    "ids": ",".join(track.id for track in batch_tracks),
+                    "userId": user_id,  # Jellyfin requires a user ID for adding items to playlists
+                }
+                result = self._request(path, params, method="POST")
+                if not result:
+                    log.error(f"Failed to add tracks to playlist {playlist.name}.")
+                    return False
+
+            # params = {
+            #     "ids": ",".join(track.id for track in tracks),
+            #     "userId": user_id,
+            # }
+            # result = self._request(path, params, method="POST")
+            # if not result:
+            #     log.error(f"Failed to add tracks to playlist {playlist.name}.")
+            #     return False
 
             return True
         except Exception as e:
             log.error(f"Failed to add tracks to playlist {playlist.name}: {e}")
             return False
+
+        # https://jellyfin.broillet.ch/Playlists/0a992713243ba5a49d5b974feb099eb0/Items?ids=d86fcae36930181015551268fdd19c4d&userId=5180b2a096734d748dec001c3a0d2bb6
 
     def remove_playlist_by_id(self, playlist_id: str) -> bool:
         try:

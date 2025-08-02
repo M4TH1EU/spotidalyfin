@@ -333,7 +333,7 @@ class SpotifyManager(Manager):
             log.exception(f"Failed to create TIDAL playlist '{name}': {e}")
             return None
 
-    def add_tracks_to_playlist(self, playlist: Playlist, tracks: List[SpotifyTrack]) -> bool:
+    def add_tracks_to_playlist(self, playlist: Playlist, tracks: List[SpotifyTrack], user_id: str = None) -> bool:
         try:
             track_ids = [track.id for track in tracks if track.id]
             if not track_ids:

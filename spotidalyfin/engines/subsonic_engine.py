@@ -129,7 +129,7 @@ class SubsonicManager(Manager):
         self.client_name = "spotidalyfin"
         self.db = db
 
-    def _request(self, endpoint: str, params: dict = None) -> dict | bytes:
+    def _request(self, endpoint: str, params: dict = None, count: int = 0) -> dict | bytes:
         salt = _generate_salt()
         token = _generate_token(self.password, salt)
 
@@ -142,8 +142,13 @@ class SubsonicManager(Manager):
             "f": "json"
         }
         all_params = {**default_params, **(params or {})}
-        response = requests.get(f"{self.base_url}/rest/{endpoint}.view", params=all_params)
-        response.raise_for_status()
+        response = requests.get(f"{self.base_url}/rest/{endpoint}.view", params=all_params, timeout=10)
+
+        try:
+            response.raise_for_status()
+        except requests.Timeout:
+            log.error(f"Request to {self.base_url}/rest/{endpoint}.view timed out.")
+            return self._request(endpoint, params, count + 1) if count < 3 else {}
 
         if response.headers.get("Content-Type") == "application/json":
             resp_json = response.json()
@@ -340,15 +345,28 @@ class SubsonicManager(Manager):
             log.error(f"Error creating empty playlist '{name}': {e}")
             return None
 
-    def add_tracks_to_playlist(self, playlist: Playlist, tracks: List[SubsonicTrack]) -> bool:
+    def add_tracks_to_playlist(self, playlist: Playlist, tracks: List[SubsonicTrack], user_id: str = None) -> bool:
         try:
 
             track_ids = tuple([track.id for track in tracks])
-            resp = self._request("updatePlaylist", {
-                "playlistId": playlist.id,
-                "songIdToAdd": track_ids
-            })
-            return resp.get("status") == "ok"
+            # resp = self._request("updatePlaylist", {
+            #     "playlistId": playlist.id,
+            #     "songIdToAdd": track_ids
+            # })
+            # return resp.get("status") == "ok"
+
+            for offset in range(0, len(track_ids), 10):
+                batch = track_ids[offset:offset + 100]
+                resp = self._request("updatePlaylist", {
+                    "playlistId": playlist.id,
+                    "songIdToAdd": batch
+                })
+                if resp.get("status") != "ok":
+                    log.error(f"Failed to add tracks {batch} to playlist {playlist.name}: {resp.get('error')}")
+                    return False
+
+            return True
+
         except Exception as e:
             log.error(f"Error adding tracks to playlist '{playlist.name}': {e}")
             return False

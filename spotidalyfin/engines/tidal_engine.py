@@ -333,7 +333,7 @@ class TidalManager(Manager):
             log.exception(f"Failed to create TIDAL playlist '{name}': {e}")
             return None
 
-    def add_tracks_to_playlist(self, playlist: Playlist, tracks: List[Track]) -> bool:
+    def add_tracks_to_playlist(self, playlist: Playlist, tracks: List[Track], user_id: str = None) -> bool:
         try:
             tidal_playlist = self.client.playlist(playlist.id)
 

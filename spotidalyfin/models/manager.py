@@ -167,7 +167,7 @@ class Manager(ABC):
             return None
 
         # If the playlist is created successfully, add the tracks to it
-        if not self.add_tracks_to_playlist(new_playlist, tracks):
+        if not self.add_tracks_to_playlist(new_playlist, tracks, user_id):
             logging.error(f"Failed to add tracks to playlist: {name}")
             return None
 
@@ -179,12 +179,12 @@ class Manager(ABC):
         """Create a new empty playlist."""
         raise NotImplementedError("This method should be implemented by subclasses.")
 
-    def add_tracks_to_playlist_with_id(self, playlist_id: str, tracks: List[Track]) -> bool:
+    def add_tracks_to_playlist_with_id(self, playlist_id: str, tracks: List[Track], user_id: str = None) -> bool:
         """Add tracks to an existing playlist."""
-        return self.add_tracks_to_playlist(self.get_playlist(playlist_id, fetch_tracks=False), tracks)
+        return self.add_tracks_to_playlist(self.get_playlist(playlist_id, fetch_tracks=False), tracks, user_id)
 
     @abstractmethod
-    def add_tracks_to_playlist(self, playlist: Playlist, tracks: List[Track]) -> bool:
+    def add_tracks_to_playlist(self, playlist: Playlist, tracks: List[Track], user_id: str = None) -> bool:
         raise NotImplementedError("This method should be implemented by subclasses.")
 
     def remove_playlist_by_name(self, name: str, user_id: str = None) -> bool:
