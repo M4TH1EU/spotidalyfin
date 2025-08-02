@@ -18,8 +18,14 @@ def get_track_on_another_platform(track: Track, manager: Manager) -> Optional[Tr
     if not results:
         return None
 
-    best_match = max(results, key=lambda t: compare_tracks(track, t), default=None)
-    return best_match
+    # Build a list of (track, score)
+    scored_results = [(t, compare_tracks(track, t)) for t in results]
+    best_match, best_score = max(scored_results, key=lambda x: x[1], default=(None, 0))
+
+    if best_match and best_score >= 75.0:
+        return best_match
+
+    return None
 
 
 def get_tracks_on_another_platform(tracks: list[Track], manager: Manager) -> list[Track]:

@@ -1,4 +1,3 @@
-import logging
 from datetime import datetime, timedelta
 from typing import Optional, List, Tuple
 
@@ -14,6 +13,7 @@ from spotidalyfin.models.manager import Manager
 from spotidalyfin.models.playlist import JellyfinPlaylist, \
     JellyfinFavoriteTracksPlaylist, Playlist
 from spotidalyfin.models.track import JellyfinTrack
+from spotidalyfin.utils.logger import log
 
 
 def _parse_cover(jellyfin_item: dict) -> Optional[bytes]:
@@ -26,7 +26,7 @@ def _parse_cover(jellyfin_item: dict) -> Optional[bytes]:
 
     item_id = jellyfin_item.get("Id") or jellyfin_item.get("AlbumId")
     if cover_tag and item_id:
-        return f"{jellyfin_item.get('base_url', '')}/Items/{item_id}/Images/Primary?tag={cover_tag}" # TODO : fix
+        return f"{jellyfin_item.get('base_url', '')}/Items/{item_id}/Images/Primary?tag={cover_tag}"  # TODO : fix
     return None
 
 
@@ -64,7 +64,6 @@ def _parse_track(jellyfin_track: dict) -> JellyfinTrack:
 
     # Extract duration from RunTimeTicks (100-nanosecond units)
     duration_ticks = jellyfin_track.get("RunTimeTicks", 0)
-    duration_ms = int(duration_ticks / 10_000_000) if duration_ticks else None
 
     return JellyfinTrack(
         name=jellyfin_track["Name"],
@@ -72,7 +71,7 @@ def _parse_track(jellyfin_track: dict) -> JellyfinTrack:
         artist=artist,
         album=album,
         isrc=None,
-        duration=duration_ms,
+        duration=int(duration_ticks / 10_000_000) if duration_ticks else None,
         quality=_parse_quality(jellyfin_track),
     )
 
@@ -182,12 +181,12 @@ class JellyfinManager(Manager):
             elif 'Id' in resp_json:
                 return resp_json
             else:
-                logging.warning(f"Unexpected response format: {resp_json}")
+                log.warning(f"Unexpected response format: {resp_json}")
                 return []
         except ValueError:
-            logging.exception("Failed to parse JSON response from Jellyfin API.")
+            log.exception("Failed to parse JSON response from Jellyfin API.")
         except requests.exceptions.RequestException as e:
-            logging.exception(f"Request to Jellyfin API failed: {e}")
+            log.exception(f"Request to Jellyfin API failed: {e}")
 
         return []
 
@@ -209,7 +208,7 @@ class JellyfinManager(Manager):
             if user.get("Policy", {}).get("IsAdministrator", False):
                 return str(user.get("Id"))
 
-        logging.warning("No admin user found in Jellyfin server.")
+        log.warning("No admin user found in Jellyfin server.")
         return None
 
     def get_track(self, track_id: str) -> Optional[JellyfinTrack]:
@@ -294,7 +293,7 @@ class JellyfinManager(Manager):
 
     def get_user_playlists(self, user_id: str = None) -> list[JellyfinPlaylist]:
         if user_id is None:
-            logging.warning("No user ID provided, returning empty playlist list.")
+            log.warning("No user ID provided, returning empty playlist list.")
             return []
 
         path = f"Users/{user_id}/Items"
@@ -310,7 +309,7 @@ class JellyfinManager(Manager):
 
     def get_favorite_tracks(self, user_id: str = None) -> Optional[JellyfinFavoriteTracksPlaylist]:
         if user_id is None:
-            logging.warning("No user ID provided, returning no favorites list.")
+            log.warning("No user ID provided, returning no favorites list.")
             return None
 
         path = f"Users/{user_id}/Items"
@@ -341,7 +340,7 @@ class JellyfinManager(Manager):
         return [_parse_track(item) for item in results]
 
     def search_tracks_by_isrc(self, isrc: str) -> list[JellyfinTrack]:
-        logging.warning("Jellyfin does not support searching by ISRC. Returning empty list.")
+        log.warning("Jellyfin does not support searching by ISRC. Returning empty list.")
         return []
 
     def search_albums_by_query(self, query: str) -> list[JellyfinAlbum]:
@@ -356,7 +355,7 @@ class JellyfinManager(Manager):
         return [_parse_album(item) for item in results]
 
     def search_albums_by_upc(self, upc: str) -> list[JellyfinAlbum]:
-        logging.warning("Jellyfin does not support searching by UPC. Returning empty list.")
+        log.warning("Jellyfin does not support searching by UPC. Returning empty list.")
         return []
 
     def search_artists_by_query(self, query: str) -> list[JellyfinArtist]:
@@ -399,7 +398,7 @@ class JellyfinManager(Manager):
             Optional[
                 JellyfinPlaylist]:
         if not user_id:
-            logging.error("No user ID provided, cannot create playlist.")
+            log.error("No user ID provided, cannot create playlist.")
 
         path = f"Playlists"
         params = {
@@ -410,7 +409,7 @@ class JellyfinManager(Manager):
 
         result = self._request(path, params, method="POST")
         if not result or "Id" not in result:
-            logging.error("Failed to create playlist.")
+            log.error("Failed to create playlist.")
             return None
 
         if cover:
@@ -426,7 +425,7 @@ class JellyfinManager(Manager):
         }
         result = self._request(path, params, method="POST")
         if not result:
-            logging.error(f"Failed to add tracks to playlist {playlist.name}.")
+            log.error(f"Failed to add tracks to playlist {playlist.name}.")
             return False
 
         return True

@@ -3,27 +3,36 @@ from typing import Optional
 
 from rapidfuzz import fuzz, utils
 
-from spotidalyfin.models import Track, TrackQuality, Artist
+from spotidalyfin.models import Track, TrackQuality
 
 
-def normalize_track_name(name: str) -> str:
+def normalize_track_name(name: str, remove_words_with_apostrophes: bool = False) -> str:
     """
     Normalizes track name by:
     - Removing dash/parentheses-based suffixes like ' - 2019 Remaster'
     - Replacing parentheses with dashes for consistency
     - Lowercasing
     - Removing extra whitespace and punctuation
+    - Remove '/' and '\' characters
+    - Optional: removing words with apostrophes (e.g., "Don't", "It's"), mostly for Jellyfin compatibility
     """
     name = name.lower()
+
+    if remove_words_with_apostrophes:
+        name = re.sub(r'\b\w*\'\w*\b', '', name)
+
     name = name.replace('–', '-')
     name = re.sub(r'\s*[\(\[]?(remaster(ed)?|mono|version|mix|live|edit|explicit|radio edit)[^\)\]]*[\)\]]?', '', name,
                   flags=re.IGNORECASE)
     name = re.sub(r'[-–]\s*\d{4}', '', name)  # Remove years like '- 2019'
+    name = name.replace('/', ' ').replace('\\', ' ')  # Remove slashes
     name = re.sub(r'[^\w\s]', '', name)  # Remove punctuation
     name = re.sub(r'\s+', ' ', name).strip()
+
     return name
 
-def normalize_artist_name(name: str) -> str:
+
+def normalize_artist_name(name: str, remove_words_with_double_quote: bool = False) -> str:
     """
     Normalizes artist name by:
     - Lowercasing
@@ -32,10 +41,15 @@ def normalize_artist_name(name: str) -> str:
     - Replacing single quotes with curly apostrophes
     """
     name = name.lower()
+
+    if remove_words_with_double_quote:
+        name = re.sub(r'\s*"\w+"\s*', ' ', name)
+
     name = re.sub(r'[^\w\s]', '', name)  # Remove punctuation
-    name = re.sub(r'\s+', ' ', name).strip() # Remove extra whitespace
+    name = re.sub(r'\s+', ' ', name).strip()  # Remove extra whitespace
     name = re.sub('& ', 'and ', name)  # Replace '&' with 'and')
     name = re.sub('\'', '’', name)  # Replace single quotes with curly apostrophes
+
     return name
 
 
@@ -54,7 +68,8 @@ def compare_tracks(track1: Track, track2: Track, use_track2_quality_as_criteria:
         if track1.isrc == track2.isrc:
             return 100.0  # ISRC match is a definitive match
         else:
-            return 0.0  # Conflicting ISRCs are assumed different
+            score += 0
+            weight_total += 0.1
 
     # 2. Name
     name_score = compare_strings(track1.name, track2.name)
@@ -106,7 +121,6 @@ def compare_tracks(track1: Track, track2: Track, use_track2_quality_as_criteria:
         return 0.0
 
     return round(score / weight_total, 2)
-
 
 # def compare_artists(artist1: Artist, artist2: Artist) -> float:
 #     """

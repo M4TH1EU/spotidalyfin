@@ -71,22 +71,28 @@ class Manager(ABC):
             if query and artist_name:
                 # artists = self.search_artists_by_query(artist_name)
                 results = self.search_tracks_by_query(f"{query} {artist_name}")
+
                 if not results:
                     results = self.search_tracks_by_query(query)
 
-                    if not results:
-                        results = self.search_tracks_by_query(normalize_track_name(query))
+                if not results:
+                    results = self.search_tracks_by_query(normalize_track_name(query))
+                if not results:
+                    results = self.search_tracks_by_query(normalize_track_name(query, remove_words_with_apostrophes=True))
 
-                        if not results:
-                            artists = self.search_artists_by_query(artist_name)
-                            if not artists:
-                                artists = self.search_artists_by_query(normalize_artist_name(artist_name))
+                if not results:
+                    artists = self.search_artists_by_query(artist_name)
+                    if not artists:
+                        artists = self.search_artists_by_query(normalize_artist_name(artist_name))
+                    if not artists:
+                        artists = self.search_artists_by_query(normalize_artist_name(artist_name, remove_words_with_double_quote=True))
 
-                            if not artists:
-                                return []
+                    if not artists:
+                        return []
 
-                            best_artist_match = max(artists, key = lambda a: compare_strings(a.name, artist_name), default=None)
-                            results = self.get_artist_tracks(best_artist_match.id)
+                    best_artist_match = max(artists, key=lambda a: compare_strings(a.name, artist_name), default=None)
+                    results = self.get_artist_tracks(best_artist_match.id)
+
             elif query:
                 results = self.search_tracks_by_query(query)
             elif artist_name:

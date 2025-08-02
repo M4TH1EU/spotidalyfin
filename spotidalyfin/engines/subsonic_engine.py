@@ -1,6 +1,5 @@
 import datetime
 import hashlib
-import logging
 import random
 import string
 from typing import List, Optional
@@ -16,6 +15,7 @@ from spotidalyfin.models.manager import Manager
 from spotidalyfin.models.playlist import Playlist, SubsonicPlaylist, \
     SubsonicFavoriteTracksPlaylist
 from spotidalyfin.models.track import SubsonicTrack
+from spotidalyfin.utils.logger import log
 
 
 def _parse_artist(subsonic_artist: dict) -> SubsonicArtist:
@@ -45,7 +45,6 @@ def _parse_album(subsonic_album: dict, artist: Optional[SubsonicArtist] = None) 
 
 def _parse_track(subsonic_song: dict, artist: Optional[SubsonicArtist] = None,
                  album: Optional[SubsonicAlbum] = None) -> SubsonicTrack:
-    duration = int(subsonic_song.get("duration", 0)) * 1000  # seconds to ms
 
     return SubsonicTrack(
         id=subsonic_song.get("id"),
@@ -54,7 +53,7 @@ def _parse_track(subsonic_song: dict, artist: Optional[SubsonicArtist] = None,
         album=album if album else _parse_album(subsonic_song, artist),
         isrc=subsonic_song.get("isrc", [""])[0] if isinstance(subsonic_song.get("isrc"), list) and len(
             subsonic_song.get("isrc")) > 0 else None,
-        duration=duration,
+        duration=int(subsonic_song.get("duration", 0)),
         quality=_parse_quality(subsonic_song)
     )
 
@@ -151,7 +150,7 @@ class SubsonicManager(Manager):
             resp_json = response.json()
 
             if resp_json.get("subsonic-response", {}).get("status") == "failed":
-                logging.error(f"Subsonic API error: {resp_json['subsonic-response'].get('error')}")
+                log.error(f"Subsonic API error: {resp_json['subsonic-response'].get('error')}")
                 return {}
 
             return resp_json["subsonic-response"]
@@ -159,7 +158,7 @@ class SubsonicManager(Manager):
                 "Content-Type") == "image/jpeg":
             return response.content
         else:
-            logging.error(f"Unexpected response type: {response.headers.get('Content-Type')}")
+            log.error(f"Unexpected response type: {response.headers.get('Content-Type')}")
             return {}
 
     def _get_cover_art(self, cover_art: str) -> Optional[bytes]:
@@ -167,7 +166,7 @@ class SubsonicManager(Manager):
         if isinstance(resp, bytes):
             return resp
         else:
-            logging.error(f"Failed to fetch cover art for ID {cover_art}")
+            log.error(f"Failed to fetch cover art for ID {cover_art}")
             return None
 
     def is_multi_user(self) -> bool:
@@ -218,7 +217,8 @@ class SubsonicManager(Manager):
         resp = self._request("getPlaylists")
         playlists = []
         playlists.extend(
-            [_parse_playlist(pl, fetch_tracks=False, cover=None) for pl in # cover=self._get_cover_art(pl.get("coverArt"))
+            [_parse_playlist(pl, fetch_tracks=False, cover=None) for pl in
+             # cover=self._get_cover_art(pl.get("coverArt"))
              resp.get("playlists", {}).get("playlist", [])])
         return playlists
 

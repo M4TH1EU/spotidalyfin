@@ -1,5 +1,4 @@
 import json
-import logging
 from json import JSONDecodeError
 from typing import Optional, List, cast
 
@@ -19,7 +18,7 @@ from spotidalyfin.models.manager import Manager
 from spotidalyfin.models.playlist import Playlist, TidalFavoriteTracksPlaylist, \
     TidalPlaylist
 from spotidalyfin.models.track import TidalTrack
-from spotidalyfin.models.utils import get_as_base64
+from spotidalyfin.utils.logger import log
 
 
 def _parse_real_track_quality(track: tidalapi.Track) -> TrackQuality:
@@ -65,6 +64,7 @@ def _parse_album(tidal_album: tidalapi.Album, fetch_tracks: bool = False) -> Tid
         tracks=tidal_album.tracks() if fetch_tracks else None,
     )
 
+
 def _parse_playlist(tidal_playlist: tidalapi.Playlist, fetch_tracks: bool = False) -> TidalPlaylist:
     return TidalPlaylist(
         name=tidal_playlist.name,
@@ -109,19 +109,18 @@ def login_tidal(session: tidalapi.Session(), response_url: str, db: Database = N
 
         return True, "", {}
     except Exception as e:
-        logging.exception("Failed to authenticate with TIDAL")
+        log.exception("Failed to authenticate with TIDAL")
 
         try:
             error = json.loads(e.response.content.decode()).get("error_description")
             if error:
                 return False, f"Failed to authenticate with TIDAL: {error}", {}
         except JSONDecodeError | TypeError:
-            logging.exception("Failed to parse TIDAL authentication error response")
+            log.exception("Failed to parse TIDAL authentication error response")
             return False, f"Failed to authenticate with TIDAL. Please try again.", {}
 
 
 class TidalManager(Manager):
-
     PLATFORM = Platform.TIDAL
 
     def __init__(self, username: str, db: Database):
@@ -145,7 +144,7 @@ class TidalManager(Manager):
             if tidal_track:
                 return _parse_track(tidal_track)
         except ObjectNotFound as e:
-            logging.exception(f"Failed to fetch TIDAL track with ID {track_id}: {e}")
+            log.exception(f"Failed to fetch TIDAL track with ID {track_id}: {e}")
             return None
 
     def get_album(self, album_id: str) -> Optional[TidalAlbum]:
@@ -154,7 +153,7 @@ class TidalManager(Manager):
             if tidal_album:
                 return _parse_album(tidal_album, fetch_tracks=True)
         except ObjectNotFound as e:
-            logging.exception(f"Failed to fetch TIDAL album with ID {album_id}: {e}")
+            log.exception(f"Failed to fetch TIDAL album with ID {album_id}: {e}")
             return None
 
     def get_artist(self, artist_id: str) -> Optional[TidalArtist]:
@@ -163,11 +162,11 @@ class TidalManager(Manager):
             if tidal_artist:
                 return _parse_artist(tidal_artist)
         except ObjectNotFound as e:
-            logging.exception(f"Failed to fetch TIDAL artist with ID {artist_id}: {e}")
+            log.exception(f"Failed to fetch TIDAL artist with ID {artist_id}: {e}")
             return None
 
     def get_artist_tracks(self, artist_id: str) -> list[TidalTrack]:
-        return [] # TODO: implement fetching artist tracks
+        return []  # TODO: implement fetching artist tracks
 
     def get_playlist(self, playlist_id: str, fetch_tracks: bool = True, fetch_albums: bool = False) -> Optional[
         TidalPlaylist]:
@@ -179,7 +178,7 @@ class TidalManager(Manager):
             if tidal_playlist:
                 return _parse_playlist(tidal_playlist, fetch_tracks=fetch_tracks)
         except ObjectNotFound as e:
-            logging.exception(f"Failed to fetch TIDAL playlist with ID {playlist_id}: {e}")
+            log.exception(f"Failed to fetch TIDAL playlist with ID {playlist_id}: {e}")
             return None
 
     def get_user_playlists(self, user_id: str = None) -> list[TidalPlaylist]:
@@ -192,7 +191,7 @@ class TidalManager(Manager):
 
             return [_parse_playlist(playlist, False) for playlist in playlists]
         except Exception as e:
-            logging.exception(f"Failed to fetch TIDAL playlists for user {user_id}: {e}")
+            log.exception(f"Failed to fetch TIDAL playlists for user {user_id}: {e}")
             return []
 
     def get_favorite_tracks(self, user_id: str = None) -> Optional[TidalFavoriteTracksPlaylist]:
@@ -213,7 +212,7 @@ class TidalManager(Manager):
                 tracks=[_parse_track(track) for track in tracks]
             )
         except Exception as e:
-            logging.exception("Failed to fetch favorite tracks from TIDAL")
+            log.exception("Failed to fetch favorite tracks from TIDAL")
             return None
 
     def _search(self,
@@ -235,7 +234,7 @@ class TidalManager(Manager):
             models = models or [media.Track]
             return self.client.search(sanitized_query, limit=limit, models=models)
         except Exception as e:
-            logging.exception(f"Failed to search TIDAL with query '{query}': {e}")
+            log.exception(f"Failed to search TIDAL with query '{query}': {e}")
             return None
 
     def search_tracks_by_query(self, query: str) -> list[TidalTrack]:
@@ -246,7 +245,7 @@ class TidalManager(Manager):
 
             return [_parse_track(track) for track in search_results.get('tracks', [])]
         except Exception as e:
-            logging.exception(f"Failed to search TIDAL tracks with query '{query}': {e}")
+            log.exception(f"Failed to search TIDAL tracks with query '{query}': {e}")
             return []
 
     def search_tracks_by_isrc(self, isrc: str) -> list[TidalTrack]:
@@ -255,7 +254,7 @@ class TidalManager(Manager):
             return [_parse_track(track) for track in tracks] if tracks else []
 
         except Exception as e:
-            logging.exception(f"Failed to search TIDAL tracks with ISRC '{isrc}': {e}")
+            log.exception(f"Failed to search TIDAL tracks with ISRC '{isrc}': {e}")
             return []
 
     def search_albums_by_query(self, query: str) -> list[TidalAlbum]:
@@ -266,7 +265,7 @@ class TidalManager(Manager):
 
             return [_parse_album(album) for album in search_results.get('albums', [])]
         except Exception as e:
-            logging.exception(f"Failed to search TIDAL albums with query '{query}': {e}")
+            log.exception(f"Failed to search TIDAL albums with query '{query}': {e}")
             return []
 
     def search_albums_by_upc(self, upc: str) -> list[TidalAlbum]:
@@ -275,7 +274,7 @@ class TidalManager(Manager):
             return [_parse_album(album) for album in albums] if albums else []
 
         except Exception as e:
-            logging.exception(f"Failed to search TIDAL albums with UPC '{upc}': {e}")
+            log.exception(f"Failed to search TIDAL albums with UPC '{upc}': {e}")
             return []
 
     def search_artists_by_query(self, query: str) -> list[TidalArtist]:
@@ -286,7 +285,7 @@ class TidalManager(Manager):
 
             return [_parse_artist(artist) for artist in search_results.get('artists', [])]
         except Exception as e:
-            logging.exception(f"Failed to search TIDAL artists with query '{query}': {e}")
+            log.exception(f"Failed to search TIDAL artists with query '{query}': {e}")
             return []
 
     def supports_lyrics(self) -> bool:
@@ -302,16 +301,17 @@ class TidalManager(Manager):
             lyrics = cast("Lyrics", lyrics)
             return lyrics.subtitles or lyrics.text
         except ObjectNotFound | Exception:
-            logging.exception(f"Lyrics not found for track {track.name} by {track.artist.name}")
+            log.exception(f"Lyrics not found for track {track.name} by {track.artist.name}")
             return ""
 
-    def create_empty_playlist(self, name: str, description: str = "", cover: bytes = None, user_id: str = None) -> Optional[TidalPlaylist]:
+    def create_empty_playlist(self, name: str, description: str = "", cover: bytes = None, user_id: str = None) -> \
+    Optional[TidalPlaylist]:
         try:
             new_playlist = self.client.user.create_playlist(title=name, description=description)
             # TODO: Handle cover
             return _parse_playlist(new_playlist, fetch_tracks=False)
         except Exception as e:
-            logging.exception(f"Failed to create TIDAL playlist '{name}': {e}")
+            log.exception(f"Failed to create TIDAL playlist '{name}': {e}")
             return None
 
     def add_tracks_to_playlist(self, playlist: Playlist, tracks: List[Track]) -> bool:
@@ -324,7 +324,7 @@ class TidalManager(Manager):
             return True
 
         except Exception as e:
-            logging.exception(f"Failed to add tracks to TIDAL playlist '{playlist.id}': {e}")
+            log.exception(f"Failed to add tracks to TIDAL playlist '{playlist.id}': {e}")
             return False
 
     def remove_playlist_by_id(self, playlist_id: str) -> bool:
@@ -333,10 +333,10 @@ class TidalManager(Manager):
             tidal_playlist.delete()
             return True
         except ObjectNotFound as e:
-            logging.exception(f"Playlist with ID {playlist_id} not found: {e}")
+            log.exception(f"Playlist with ID {playlist_id} not found: {e}")
             return False
         except Exception as e:
-            logging.exception(f"Failed to remove TIDAL playlist with ID {playlist_id}: {e}")
+            log.exception(f"Failed to remove TIDAL playlist with ID {playlist_id}: {e}")
             return False
 
 # OLD CODE TO MIGRATE
