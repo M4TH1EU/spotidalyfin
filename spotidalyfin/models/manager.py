@@ -144,7 +144,7 @@ class Manager(ABC):
         return False
 
     @abstractmethod
-    def get_lyrics(self, track: Track) -> str:
+    def get_lyrics(self, track: Track) -> Optional[str]:
         """Retrieve lyrics for a given track."""
         raise NotImplementedError("This method should be implemented by subclasses.")
 

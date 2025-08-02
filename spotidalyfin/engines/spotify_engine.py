@@ -312,7 +312,7 @@ class SpotifyManager(Manager):
     def supports_lyrics(self) -> bool:
         return False
 
-    def get_lyrics(self, track: Track) -> str:
+    def get_lyrics(self, track: Track) -> Optional[str]:
         pass
 
     def create_empty_playlist(self, name: str, description: str = "", cover: bytes = None, user_id: str = None) -> \

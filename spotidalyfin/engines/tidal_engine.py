@@ -143,8 +143,13 @@ class TidalManager(Manager):
             tidal_track = self.client.track(track_id)
             if tidal_track:
                 return _parse_track(tidal_track)
+
+            return None
         except ObjectNotFound as e:
             log.exception(f"Failed to fetch TIDAL track with ID {track_id}: {e}")
+            return None
+        except Exception as e:
+            log.exception(f"An error occurred while fetching TIDAL track with ID {track_id}: {e}")
             return None
 
     def get_album(self, album_id: str) -> Optional[TidalAlbum]:
@@ -152,8 +157,13 @@ class TidalManager(Manager):
             tidal_album = self.client.album(album_id)
             if tidal_album:
                 return _parse_album(tidal_album, fetch_tracks=True)
+
+            return None
         except ObjectNotFound as e:
             log.exception(f"Failed to fetch TIDAL album with ID {album_id}: {e}")
+            return None
+        except Exception as e:
+            log.exception(f"An error occurred while fetching TIDAL album with ID {album_id}: {e}")
             return None
 
     def get_artist(self, artist_id: str) -> Optional[TidalArtist]:
@@ -161,8 +171,13 @@ class TidalManager(Manager):
             tidal_artist = self.client.artist(artist_id)
             if tidal_artist:
                 return _parse_artist(tidal_artist)
+
+            return None
         except ObjectNotFound as e:
             log.exception(f"Failed to fetch TIDAL artist with ID {artist_id}: {e}")
+            return None
+        except Exception as e:
+            log.exception(f"An error occurred while fetching TIDAL artist with ID {artist_id}: {e}")
             return None
 
     def get_artist_tracks(self, artist_id: str) -> list[TidalTrack]:
@@ -177,8 +192,12 @@ class TidalManager(Manager):
             tidal_playlist = self.client.playlist(playlist_id)
             if tidal_playlist:
                 return _parse_playlist(tidal_playlist, fetch_tracks=fetch_tracks)
+            return None
         except ObjectNotFound as e:
             log.exception(f"Failed to fetch TIDAL playlist with ID {playlist_id}: {e}")
+            return None
+        except Exception as e:
+            log.exception(f"An error occurred while fetching TIDAL playlist with ID {playlist_id}: {e}")
             return None
 
     def get_user_playlists(self, user_id: str = None) -> list[TidalPlaylist]:
@@ -291,7 +310,7 @@ class TidalManager(Manager):
     def supports_lyrics(self) -> bool:
         return True
 
-    def get_lyrics(self, track: TidalTrack) -> str:
+    def get_lyrics(self, track: TidalTrack) -> Optional[str]:
         try:
             request = self.client.request.request("GET", "tracks/%s/lyrics" % track.id)
             json_obj = request.json()
@@ -302,7 +321,7 @@ class TidalManager(Manager):
             return lyrics.subtitles or lyrics.text
         except ObjectNotFound | Exception:
             log.exception(f"Lyrics not found for track {track.name} by {track.artist.name}")
-            return ""
+            return None
 
     def create_empty_playlist(self, name: str, description: str = "", cover: bytes = None, user_id: str = None) -> \
     Optional[TidalPlaylist]:

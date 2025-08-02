@@ -45,7 +45,6 @@ def _parse_album(subsonic_album: dict, artist: Optional[SubsonicArtist] = None) 
 
 def _parse_track(subsonic_song: dict, artist: Optional[SubsonicArtist] = None,
                  album: Optional[SubsonicAlbum] = None) -> SubsonicTrack:
-
     return SubsonicTrack(
         id=subsonic_song.get("id"),
         name=subsonic_song.get("title"),
@@ -106,8 +105,8 @@ def _generate_token(password: str, salt: str) -> str:
 
 
 def login_subsonic(server_url: str, username: str, password: str, db: Database) -> (bool, str, dict):
-    subsonic_manager = SubsonicManager(url=server_url, username=username, db=db, password=password)
     try:
+        subsonic_manager = SubsonicManager(url=server_url, username=username, db=db, password=password)
         resp = subsonic_manager._request("ping")
         if resp.get("status") != "ok":
             return False, f"Failed to authenticate with Subsonic server: {resp.get('error', 'Unknown error')}", {}
@@ -162,141 +161,202 @@ class SubsonicManager(Manager):
             return {}
 
     def _get_cover_art(self, cover_art: str) -> Optional[bytes]:
-        resp = self._request("getCoverArt", {"id": cover_art, "size": 500, "format": "png"})
-        if isinstance(resp, bytes):
-            return resp
-        else:
-            log.error(f"Failed to fetch cover art for ID {cover_art}")
+        try:
+            resp = self._request("getCoverArt", {"id": cover_art, "size": 500, "format": "png"})
+            if isinstance(resp, bytes):
+                return resp
+            else:
+                log.error(f"Failed to fetch cover art for ID {cover_art}")
+                return None
+        except Exception as e:
+            log.error(f"Unexpected error fetching cover art for ID {cover_art}: {e}")
             return None
 
     def is_multi_user(self) -> bool:
         return False
 
     def get_track(self, track_id: str) -> Optional[SubsonicTrack]:
-        resp = self._request("getSong", {"id": track_id})
-        song = resp.get("song")
-        if not song:
+        try:
+            resp = self._request("getSong", {"id": track_id})
+            song = resp.get("song")
+            if not song:
+                return None
+            return _parse_track(song)
+        except Exception as e:
+            log.error(f"Error fetching track {track_id}: {e}")
             return None
-        return _parse_track(song)
 
     def get_album(self, album_id: str) -> Optional[SubsonicAlbum]:
-        resp = self._request("getAlbum", {"id": album_id})
-        album_data = resp.get("album")
-        if not album_data:
+        try:
+            resp = self._request("getAlbum", {"id": album_id})
+            album_data = resp.get("album")
+            if not album_data:
+                return None
+            return _parse_album(album_data)
+        except Exception as e:
+            log.error(f"Error fetching album {album_id}: {e}")
             return None
-        return _parse_album(album_data)
 
     def get_artist(self, artist_id: str) -> Optional[SubsonicArtist]:
-        resp = self._request("getArtist", {"id": artist_id})
-        artist_data = resp.get("artist")
-        if not artist_data:
+        try:
+            resp = self._request("getArtist", {"id": artist_id})
+            artist_data = resp.get("artist")
+            if not artist_data:
+                return None
+            return _parse_artist(artist_data)
+        except Exception as e:
+            log.error(f"Error fetching artist {artist_id}: {e}")
             return None
-        return _parse_artist(artist_data)
 
     def get_artist_tracks(self, artist_id: str) -> List[SubsonicTrack]:
-        resp = self._request("getArtist", {"id": artist_id})
-        artist = _parse_artist(resp.get("artist"))
-        albums = resp.get("artist", {}).get("album", [])
-        tracks = []
-        for album in albums:
-            album_obj = _parse_album(album, artist)
-            album_detail = self._request("getAlbum", {"id": album["id"]}).get("album")
-            for song in album_detail.get("song", []):
-                tracks.append(_parse_track(song, artist, album_obj))
-        return tracks
+        try:
+            resp = self._request("getArtist", {"id": artist_id})
+            artist = _parse_artist(resp.get("artist"))
+            albums = resp.get("artist", {}).get("album", [])
+            tracks = []
+            for album in albums:
+                album_obj = _parse_album(album, artist)
+                album_detail = self._request("getAlbum", {"id": album["id"]}).get("album")
+                for song in album_detail.get("song", []):
+                    tracks.append(_parse_track(song, artist, album_obj))
+            return tracks
+        except Exception as e:
+            log.error(f"Error fetching tracks for artist {artist_id}: {e}")
+            return []
 
     def get_playlist(self, playlist_id: str, fetch_tracks: bool = True, fetch_albums: bool = False) -> Optional[
         SubsonicPlaylist]:
-        resp = self._request("getPlaylist", {"id": playlist_id})
-        playlist = resp.get("playlist")
+        try:
+            resp = self._request("getPlaylist", {"id": playlist_id})
+            playlist = resp.get("playlist")
 
-        # cover = self._get_cover_art(playlist.get("coverArt"))
-        return _parse_playlist(playlist, fetch_tracks, cover=None) if playlist else None
+            # cover = self._get_cover_art(playlist.get("coverArt"))
+            return _parse_playlist(playlist, fetch_tracks, cover=None) if playlist else None
+        except Exception as e:
+            log.error(f"Error fetching playlist {playlist_id}: {e}")
+            return None
 
     def get_user_playlists(self, user_id: str = None) -> List[SubsonicPlaylist]:
-        resp = self._request("getPlaylists")
-        playlists = []
-        playlists.extend(
-            [_parse_playlist(pl, fetch_tracks=False, cover=None) for pl in
-             # cover=self._get_cover_art(pl.get("coverArt"))
-             resp.get("playlists", {}).get("playlist", [])])
-        return playlists
+        try:
+            resp = self._request("getPlaylists")
+            playlists = []
+            playlists.extend(
+                [_parse_playlist(pl, fetch_tracks=False, cover=None) for pl in
+                 # cover=self._get_cover_art(pl.get("coverArt"))
+                 resp.get("playlists", {}).get("playlist", [])])
+            return playlists
+        except Exception as e:
+            log.error(f"Error fetching user playlists: {e}")
+            return []
 
     def get_favorite_tracks(self, user_id: str = None) -> Optional[SubsonicFavoriteTracksPlaylist]:
-        resp = self._request("getStarred")
-        songs = resp.get("starred", {}).get("song", [])
-        tracks = []
-        for s in songs:
-            tracks.append(_parse_track(s))
-        return SubsonicFavoriteTracksPlaylist(name="Starred Tracks", tracks=tracks)
+        try:
+            resp = self._request("getStarred")
+            songs = resp.get("starred", {}).get("song", [])
+            tracks = []
+            for s in songs:
+                tracks.append(_parse_track(s))
+            return SubsonicFavoriteTracksPlaylist(name="Starred Tracks", tracks=tracks)
+        except Exception as e:
+            log.error(f"Error fetching favorite tracks: {e}")
+            return None
 
     def search_tracks_by_query(self, query: str) -> List[SubsonicTrack]:
-        resp = self._request("search3", {"query": query})
-        songs = resp.get("searchResult3", {}).get("song", [])
-        results = []
-        for s in songs:
-            results.append(_parse_track(s))
-        return results
+        try:
+            resp = self._request("search3", {"query": query})
+            songs = resp.get("searchResult3", {}).get("song", [])
+            results = []
+            for s in songs:
+                results.append(_parse_track(s))
+            return results
+        except Exception as e:
+            log.error(f"Error searching tracks by query '{query}': {e}")
+            return []
 
     def search_tracks_by_isrc(self, isrc: str) -> List[SubsonicTrack]:
         return []  # Subsonic does not support ISRC natively
 
     def search_albums_by_query(self, query: str) -> List[SubsonicAlbum]:
-        resp = self._request("search3", {"query": query, "songCount": 0, "artistCount": 0})
-        albums = []
-        for a in resp.get("searchResult3", {}).get("album", []):
-            albums.append(_parse_album(a))
-        return albums
+        try:
+            resp = self._request("search3", {"query": query, "songCount": 0, "artistCount": 0})
+            albums = []
+            for a in resp.get("searchResult3", {}).get("album", []):
+                albums.append(_parse_album(a))
+            return albums
+        except Exception as e:
+            log.error(f"Error searching albums by query '{query}': {e}")
+            return []
 
     def search_albums_by_upc(self, upc: str) -> List[SubsonicAlbum]:
         return []  # Subsonic does not support UPC
 
     def search_artists_by_query(self, query: str) -> List[SubsonicArtist]:
-        resp = self._request("search3", {"query": query})
-        return [_parse_artist(a) for a in resp.get("searchResult3", {}).get("artist", [])]
+        try:
+            resp = self._request("search3", {"query": query})
+            return [_parse_artist(a) for a in resp.get("searchResult3", {}).get("artist", [])]
+        except Exception as e:
+            log.error(f"Error searching artists by query '{query}': {e}")
+            return []
 
     def supports_lyrics(self) -> bool:
         return True
 
-    def get_lyrics(self, track: SubsonicTrack) -> str:
-        resp = self._request("getLyricsBySongId", {"id": track.id})
-        if len(resp.get('lyricsList', {}).get('structuredLyrics', [])) > 0 and False:
-            def format_time(ms):
-                """Convert microseconds to [mm:ss.xx] format"""
-                seconds = ms / 1000
-                t = datetime.timedelta(seconds=seconds)
-                total_minutes = int(t.total_seconds() // 60)
-                seconds_left = t.total_seconds() % 60
-                return f"[{total_minutes:02}:{seconds_left:05.2f}]"
+    def get_lyrics(self, track: SubsonicTrack) -> Optional[str]:
+        try:
+            resp = self._request("getLyricsBySongId", {"id": track.id})
+            if len(resp.get('lyricsList', {}).get('structuredLyrics', [])) > 0 and False:
+                def format_time(ms):
+                    """Convert microseconds to [mm:ss.xx] format"""
+                    seconds = ms / 1000
+                    t = datetime.timedelta(seconds=seconds)
+                    total_minutes = int(t.total_seconds() // 60)
+                    seconds_left = t.total_seconds() % 60
+                    return f"[{total_minutes:02}:{seconds_left:05.2f}]"
 
-            output = ""
-            # Convert and print the output
-            for entry in resp.get('lyricsList', {}).get('structuredLyrics', [])[0].get('line', []):
-                timestamp = format_time(entry['start'])
-                output += f"{timestamp} {entry['value']}\n"
+                output = ""
+                # Convert and print the output
+                for entry in resp.get('lyricsList', {}).get('structuredLyrics', [])[0].get('line', []):
+                    timestamp = format_time(entry['start'])
+                    output += f"{timestamp} {entry['value']}\n"
 
-            return output
-        else:
-            resp = self._request("getLyrics", {"artist": track.artist.name, "title": track.name})
-            return resp.get("lyrics", {}).get('value', "")
+                return output
+            else:
+                resp = self._request("getLyrics", {"artist": track.artist.name, "title": track.name})
+                return resp.get("lyrics", {}).get('value', "")
+        except Exception as e:
+            log.error(f"Error fetching lyrics for track {track.id}: {e}")
+            return None
 
     def create_empty_playlist(self, name: str, description: str = "", cover: bytes = None, user_id: str = None) -> \
             Optional[SubsonicPlaylist]:
-        resp = self._request("createPlaylist", {"name": name})
-        if resp.get("status") == "ok":
-            pl_id = resp.get("playlist", {}).get("id")
-            return SubsonicPlaylist(id=pl_id, name=name, tracks=[])
+        try:
+            resp = self._request("createPlaylist", {"name": name})
+            if resp.get("status") == "ok":
+                pl_id = resp.get("playlist", {}).get("id")
+                return SubsonicPlaylist(id=pl_id, name=name, tracks=[])
 
-        return None
+            return None
+        except Exception as e:
+            log.error(f"Error creating empty playlist '{name}': {e}")
+            return None
 
     def add_tracks_to_playlist(self, playlist: Playlist, tracks: List[SubsonicTrack]) -> bool:
-        track_ids = tuple([track.id for track in tracks])
-        resp = self._request("updatePlaylist", {
-            "playlistId": playlist.id,
-            "songIdToAdd": track_ids
-        })
-        return resp.get("status") == "ok"
+        try:
+
+            track_ids = tuple([track.id for track in tracks])
+            resp = self._request("updatePlaylist", {
+                "playlistId": playlist.id,
+                "songIdToAdd": track_ids
+            })
+            return resp.get("status") == "ok"
+        except Exception as e:
+            log.error(f"Error adding tracks to playlist '{playlist.name}': {e}")
+            return False
 
     def remove_playlist_by_id(self, playlist_id: str) -> bool:
-        resp = self._request("deletePlaylist", {"id": playlist_id})
-        return resp.get("status") == "ok"
+        try:
+            resp = self._request("deletePlaylist", {"id": playlist_id})
+            return resp.get("status") == "ok"
+        except Exception as e:
+            log.error(f"Error removing playlist with ID '{playlist_id}': {e}")
+            return False

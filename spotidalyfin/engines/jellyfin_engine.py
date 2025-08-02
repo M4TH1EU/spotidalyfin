@@ -118,8 +118,8 @@ def login_jellyfin(server_url: str, api_key: str, db: Database) -> (bool, str, d
     Try to authenticate with Jellyfin server using the provided URL and API key.
     Returns a tuple of (success: bool, message: str).
     """
-    jellyfin_manager = JellyfinManager(url=server_url, db=db, api_key=api_key)
     try:
+        jellyfin_manager = JellyfinManager(url=server_url, db=db, api_key=api_key)
         users = jellyfin_manager.get_users()
         if not users:
             return False, "No users found on the Jellyfin server. Please check your API key and server URL.", {}
@@ -190,250 +190,319 @@ class JellyfinManager(Manager):
 
         return []
 
-    def _modify_image(self, item_id: str, data: bytes, type="Primary"):
-        self._request(f"Items/{item_id}/Images/{type}", method="POST", headers={'Content-Type': "image/jpeg"},
-                      data=data)
+    def _modify_image(self, item_id: str, data: bytes, type="Primary") -> bool:
+        try:
+            self._request(f"Items/{item_id}/Images/{type}", method="POST", headers={'Content-Type': "image/jpeg"},
+                          data=data)
+            return True
+        except Exception as e:
+            log.error(f"Failed to modify image for item {item_id}: {e}")
+            return False
 
     def is_multi_user(self) -> bool:
         return True
 
     def get_users(self) -> List[Tuple[str, str]]:
-        users = self._request("Users")
-        return [(str(user.get("Id")), str(user.get("Name"))) for user in users]
+        try:
+            users = self._request("Users")
+            return [(str(user.get("Id")), str(user.get("Name"))) for user in users]
+        except Exception as e:
+            log.error(f"Failed to retrieve users from Jellyfin: {e}")
+            return []
 
     def _get_default_admin_user_id(self) -> Optional[str]:
         """This method retrieves the first user with admin privileges to use in some API calls due to Jellyfin's API limitations."""
-        users = self._request("Users")
-        for user in users:
-            if user.get("Policy", {}).get("IsAdministrator", False):
-                return str(user.get("Id"))
+        try:
+            users = self._request("Users")
+            for user in users:
+                if user.get("Policy", {}).get("IsAdministrator", False):
+                    return user.get("Id")
 
-        log.warning("No admin user found in Jellyfin server.")
-        return None
+            log.warning("No admin user found in Jellyfin. Some features may not work.")
+            return None
+        except Exception as e:
+            log.error(f"Failed to retrieve admin user from Jellyfin: {e}")
+            return None
 
     def get_track(self, track_id: str) -> Optional[JellyfinTrack]:
-        path = f"Items"
-        params = {
-            "ids": track_id,
-            "mediaTypes": "Audio",
-            "fields": "MediaSources",
-            "includeItemTypes": "Audio"
-        }
-        result = self._request(path, params)
-        if not result:
+        try:
+            path = f"Items"
+            params = {
+                "ids": track_id,
+                "mediaTypes": "Audio",
+                "fields": "MediaSources",
+                "includeItemTypes": "Audio"
+            }
+            result = self._request(path, params)
+            if not result:
+                return None
+            jellyfin_track = result[0]
+            return _parse_track(jellyfin_track)
+        except Exception as e:
+            log.error(f"Failed to retrieve track {track_id} from Jellyfin: {e}")
             return None
-        jellyfin_track = result[0]
-        return _parse_track(jellyfin_track)
 
     def get_album(self, album_id: str) -> Optional[JellyfinAlbum]:
-        path = f"Items"
-        params = {
-            "ids": album_id,
-            "includeItemTypes": "MusicAlbum"
-        }
-        result = self._request(path, params)
-        if not result:
+        try:
+            path = f"Items"
+            params = {
+                "ids": album_id,
+                "includeItemTypes": "MusicAlbum"
+            }
+            result = self._request(path, params)
+            if not result:
+                return None
+            jellyfin_album = result[0]
+            return _parse_album(jellyfin_album)
+        except Exception as e:
+            log.error(f"Failed to retrieve album {album_id} from Jellyfin: {e}")
             return None
-        jellyfin_album = result[0]
-        return _parse_album(jellyfin_album)
 
     def get_artist(self, artist_id: str) -> Optional[JellyfinArtist]:
-        path = f"Items"
-        params = {
-            "ids": artist_id,
-            "includeItemTypes": "MusicArtist",
-        }
-        result = self._request(path, params)
-        if not result:
+        try:
+            path = f"Items"
+            params = {
+                "ids": artist_id,
+                "includeItemTypes": "MusicArtist",
+            }
+            result = self._request(path, params)
+            if not result:
+                return None
+            jellyfin_artist = result[0]
+            return _parse_artist(jellyfin_artist)
+        except Exception as e:
+            log.error(f"Failed to retrieve artist {artist_id} from Jellyfin: {e}")
             return None
-        jellyfin_artist = result[0]
-        return _parse_artist(jellyfin_artist)
 
     def get_artist_tracks(self, artist_id: str) -> list[JellyfinTrack]:
-        path = "Items"
-        params = {
-            "recursive": "true",
-            "limit": 50,
-            "fields": "MediaSources",
-            "includeItemTypes": "Audio",
-            "artistIds": artist_id
-        }
-        results = self._request(path, params)
-        return [_parse_track(item) for item in results]
+        try:
+            path = "Items"
+            params = {
+                "recursive": "true",
+                "limit": 50,
+                "fields": "MediaSources",
+                "includeItemTypes": "Audio",
+                "artistIds": artist_id
+            }
+            results = self._request(path, params)
+            return [_parse_track(item) for item in results]
+        except Exception as e:
+            log.error(f"Failed to retrieve tracks for artist {artist_id} from Jellyfin: {e}")
+            return []
 
     def get_playlist(self, playlist_id: str, fetch_tracks: bool = True, fetch_albums: bool = False) -> Optional[
         JellyfinPlaylist]:
-        path = f"Items"
-        params = {
-            "ids": playlist_id,
-            "includeItemTypes": "Playlist",
-        }
-        result = self._request(path, params)
-        if not result:
-            return None
-        jellyfin_playlist = result[0]
-
-        if fetch_tracks:
-            # path = f"Playlists/{playlist_id}/Items" # broken without browser session
-            path = f"Users/{self.default_admin_user_id}/Items"
+        try:
+            path = f"Items"
             params = {
-                "parentId": playlist_id,
-                "mediaTypes": "Audio",
+                "ids": playlist_id,
+                "includeItemTypes": "Playlist",
             }
-            items = self._request(path, params)
-            if not items:
-                items = []
-            jellyfin_playlist["Items"] = items
+            result = self._request(path, params)
+            if not result:
+                return None
+            jellyfin_playlist = result[0]
 
-        if fetch_albums:
-            # album data should already be included with the fetch_tracks call
-            pass
+            if fetch_tracks:
+                # path = f"Playlists/{playlist_id}/Items" # broken without browser session
+                path = f"Users/{self.default_admin_user_id}/Items"
+                params = {
+                    "parentId": playlist_id,
+                    "mediaTypes": "Audio",
+                }
+                items = self._request(path, params)
+                if not items:
+                    items = []
+                jellyfin_playlist["Items"] = items
 
-        return _parse_playlist(jellyfin_playlist)
+            if fetch_albums:
+                # album data should already be included with the fetch_tracks call
+                pass
+
+            return _parse_playlist(jellyfin_playlist)
+        except Exception as e:
+            log.error(f"Failed to retrieve playlist {playlist_id} from Jellyfin: {e}")
+            return None
 
     def get_user_playlists(self, user_id: str = None) -> list[JellyfinPlaylist]:
-        if user_id is None:
-            log.warning("No user ID provided, returning empty playlist list.")
-            return []
+        try:
+            if user_id is None:
+                log.warning("No user ID provided, returning empty playlist list.")
+                return []
 
-        path = f"Users/{user_id}/Items"
-        params = {
-            "includeItemTypes": "Playlist",
-            "recursive": "true",
-        }
-        result = self._request(path, params)
-        if not result:
-            return []
+            path = f"Users/{user_id}/Items"
+            params = {
+                "includeItemTypes": "Playlist",
+                "recursive": "true",
+            }
+            result = self._request(path, params)
+            if not result:
+                return []
 
-        return [_parse_playlist(item) for item in result]
+            return [_parse_playlist(item) for item in result]
+        except Exception as e:
+            log.error(f"Failed to retrieve playlists for user {user_id} from Jellyfin: {e}")
+            return []
 
     def get_favorite_tracks(self, user_id: str = None) -> Optional[JellyfinFavoriteTracksPlaylist]:
-        if user_id is None:
-            log.warning("No user ID provided, returning no favorites list.")
-            return None
+        try:
+            if user_id is None:
+                log.warning("No user ID provided, returning no favorites list.")
+                return None
 
-        path = f"Users/{user_id}/Items"
-        params = {
-            "Filters": "IsFavorite",
-            "Recursive": "true",
-            "IncludeItemTypes": "Audio",
-        }
-        jellyfin_favorites = self._request(path, params)
-        if not jellyfin_favorites:
-            return None
+            path = f"Users/{user_id}/Items"
+            params = {
+                "Filters": "IsFavorite",
+                "Recursive": "true",
+                "IncludeItemTypes": "Audio",
+            }
+            jellyfin_favorites = self._request(path, params)
+            if not jellyfin_favorites:
+                return None
 
-        return JellyfinFavoriteTracksPlaylist(
-            name="Favorite Tracks",
-            tracks=[_parse_track(item) for item in jellyfin_favorites],
-        )
+            return JellyfinFavoriteTracksPlaylist(
+                name="Favorite Tracks",
+                tracks=[_parse_track(item) for item in jellyfin_favorites],
+            )
+        except Exception as e:
+            log.error(f"Failed to retrieve favorite tracks for user {user_id} from Jellyfin: {e}")
+            return None
 
     def search_tracks_by_query(self, query: str) -> list[JellyfinTrack]:
-        path = "Items"
-        params = {
-            "searchTerm": query,
-            "recursive": "true",
-            "limit": 25,
-            "fields": "MediaSources",
-            "includeItemTypes": "Audio"
-        }
-        results = self._request(path, params)
-        return [_parse_track(item) for item in results]
+        try:
+            path = "Items"
+            params = {
+                "searchTerm": query,
+                "recursive": "true",
+                "limit": 25,
+                "fields": "MediaSources",
+                "includeItemTypes": "Audio"
+            }
+            results = self._request(path, params)
+            return [_parse_track(item) for item in results]
+        except Exception as e:
+            log.error(f"Failed to search tracks by query '{query}' in Jellyfin: {e}")
+            return []
 
     def search_tracks_by_isrc(self, isrc: str) -> list[JellyfinTrack]:
         log.warning("Jellyfin does not support searching by ISRC. Returning empty list.")
         return []
 
     def search_albums_by_query(self, query: str) -> list[JellyfinAlbum]:
-        path = "Items"
-        params = {
-            "searchTerm": query,
-            "includeItemTypes": "MusicAlbum",
-            "recursive": "true",
-            "limit": 15
-        }
-        results = self._request(path, params)
-        return [_parse_album(item) for item in results]
+        try:
+            path = "Items"
+            params = {
+                "searchTerm": query,
+                "includeItemTypes": "MusicAlbum",
+                "recursive": "true",
+                "limit": 15
+            }
+            results = self._request(path, params)
+            return [_parse_album(item) for item in results]
+        except Exception as e:
+            log.error(f"Failed to search albums by query '{query}' in Jellyfin: {e}")
+            return []
 
     def search_albums_by_upc(self, upc: str) -> list[JellyfinAlbum]:
         log.warning("Jellyfin does not support searching by UPC. Returning empty list.")
         return []
 
     def search_artists_by_query(self, query: str) -> list[JellyfinArtist]:
-        path = "Items"
-        params = {
-            "searchTerm": query,
-            "includeItemTypes": "MusicArtist",
-            "recursive": "true",
-            "limit": 15
-        }
-        results = self._request(path, params)
-        return [_parse_artist(item) for item in results]
+        try:
+            path = "Items"
+            params = {
+                "searchTerm": query,
+                "includeItemTypes": "MusicArtist",
+                "recursive": "true",
+                "limit": 15
+            }
+            results = self._request(path, params)
+            return [_parse_artist(item) for item in results]
+        except Exception as e:
+            log.error(f"Failed to search artists by query '{query}' in Jellyfin: {e}")
+            return []
 
     def supports_lyrics(self) -> bool:
         return True
 
-    def get_lyrics(self, track: Track) -> str:
-        path = f"Audio/{track.id}/Lyrics"
-        results = self._request(path)
-        if not results:
-            return ""
+    def get_lyrics(self, track: Track) -> Optional[str]:
+        try:
+            path = f"Audio/{track.id}/Lyrics"
+            results = self._request(path)
+            if not results:
+                return None
 
-        def format_time(ms):
-            """Convert microseconds to [mm:ss.xx] format"""
-            seconds = ms / 10_000_000
-            t = timedelta(seconds=seconds)
-            total_minutes = int(t.total_seconds() // 60)
-            seconds_left = t.total_seconds() % 60
-            return f"[{total_minutes:02}:{seconds_left:05.2f}]"
+            def format_time(ms):
+                """Convert microseconds to [mm:ss.xx] format"""
+                seconds = ms / 10_000_000
+                t = timedelta(seconds=seconds)
+                total_minutes = int(t.total_seconds() // 60)
+                seconds_left = t.total_seconds() % 60
+                return f"[{total_minutes:02}:{seconds_left:05.2f}]"
 
-        output = ""
-        # Convert and print the output
-        for entry in results:
-            timestamp = format_time(entry['Start'])
-            output += f"{timestamp} {entry['Text']}\n"
+            output = ""
+            # Convert and print the output
+            for entry in results:
+                timestamp = format_time(entry['Start'])
+                output += f"{timestamp} {entry['Text']}\n"
 
-        return output.strip()
+            return output.strip()
+        except Exception as e:
+            log.error(f"Failed to retrieve lyrics for track {track.name} by {track.artist.name} from Jellyfin: {e}")
+            return None
 
     def create_empty_playlist(self, name: str, description: str = "", cover: bytes = None, user_id: str = None) -> \
             Optional[
                 JellyfinPlaylist]:
-        if not user_id:
-            log.error("No user ID provided, cannot create playlist.")
+        try:
+            if not user_id:
+                log.error("No user ID provided, cannot create playlist.")
 
-        path = f"Playlists"
-        params = {
-            "name": name,
-            "userId": user_id,
-            "mediaType": "Audio",
-        }
+            path = f"Playlists"
+            params = {
+                "name": name,
+                "userId": user_id,
+                "mediaType": "Audio",
+            }
 
-        result = self._request(path, params, method="POST")
-        if not result or "Id" not in result:
-            log.error("Failed to create playlist.")
+            result = self._request(path, params, method="POST")
+            if not result or "Id" not in result:
+                log.error("Failed to create playlist.")
+                return None
+
+            if cover:
+                self._modify_image(result.get('Id'), cover)
+
+            return self.get_playlist(result.get("Id"), fetch_tracks=False, fetch_albums=False)
+        except Exception as e:
+            log.error(f"Failed to create empty playlist '{name}': {e}")
             return None
 
-        if cover:
-            self._modify_image(result.get('Id'), cover)
-
-        return self.get_playlist(result.get("Id"), fetch_tracks=False, fetch_albums=False)
-
     def add_tracks_to_playlist(self, playlist: Playlist, tracks: List[JellyfinTrack]) -> bool:
-        path = f"Playlists/{playlist.id}/Items"
-        params = {
-            "ids": ",".join(track.id for track in tracks),
-            "userId": "6dbbbaa045e34cc597554eb59891d110"
-        }
-        result = self._request(path, params, method="POST")
-        if not result:
-            log.error(f"Failed to add tracks to playlist {playlist.name}.")
-            return False
+        try:
+            path = f"Playlists/{playlist.id}/Items"
+            params = {
+                "ids": ",".join(track.id for track in tracks),
+                "userId": "6dbbbaa045e34cc597554eb59891d110"
+            }
+            result = self._request(path, params, method="POST")
+            if not result:
+                log.error(f"Failed to add tracks to playlist {playlist.name}.")
+                return False
 
-        return True
+            return True
+        except Exception as e:
+            log.error(f"Failed to add tracks to playlist {playlist.name}: {e}")
+            return False
 
     def remove_playlist_by_id(self, playlist_id: str) -> bool:
-        path = f"Items/{playlist_id}"
-        result = self._request(path, method="DELETE")
-        if not result:
-            return False
+        try:
+            path = f"Items/{playlist_id}"
+            result = self._request(path, method="DELETE")
+            if not result:
+                return False
 
-        return True
+            return True
+        except Exception as e:
+            log.error(f"Failed to remove playlist {playlist_id}: {e}")
+            return False
