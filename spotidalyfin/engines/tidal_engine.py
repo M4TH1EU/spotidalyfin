@@ -188,6 +188,9 @@ class TidalManager(Manager):
         if playlist_id == "favorite_tracks":
             return self.get_favorite_tracks()
 
+        if "tidal.com/playlist" in playlist_id and "http" in playlist_id:
+            playlist_id = playlist_id.split("/")[-1].split("?")[0]
+
         try:
             tidal_playlist = self.client.playlist(playlist_id)
             if tidal_playlist:

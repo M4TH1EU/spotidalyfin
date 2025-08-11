@@ -21,7 +21,7 @@ def create_state_if_missing(key: str, value: any):
     # return st.session_state[key]
 
 
-def get_manager_for_platform(identifier: str|tuple[str], platform: Platform) -> Manager:
+def get_manager_for_platform(identifier: str | tuple[str], platform: Platform) -> Manager:
     """Get the manager for the given platform."""
     if isinstance(platform, str):
         # fix for when sometimes platform is given as a str instead of a Platform object
@@ -37,7 +37,7 @@ def get_manager_for_platform(identifier: str|tuple[str], platform: Platform) -> 
         server, username = identifier
         return get_subsonic_manager(server, username)
     else:
-        raise ValueError(f"Unsupported platform: {platform}")
+        raise ValueError(f"Unsupported platform: {platform} ({platform.__class__.__name__})")
 
 
 def get_spotify_manager(username: str) -> SpotifyManager:
@@ -59,6 +59,7 @@ def get_jellyfin_manager(server: str) -> JellyfinManager:
     if key not in st.session_state:
         st.session_state[key] = JellyfinManager(url=server, db=get_database())
     return st.session_state[key]
+
 
 def get_subsonic_manager(server: str, username: str) -> SubsonicManager:
     key = f"subsonic_manager_{server}"

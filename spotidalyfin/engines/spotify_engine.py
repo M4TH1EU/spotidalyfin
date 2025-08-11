@@ -173,6 +173,10 @@ class SpotifyManager(Manager):
         if playlist_id == "favorite_tracks":
             return self.get_favorite_tracks()
 
+        if "https://open.spotify.com/playlist/" in playlist_id:
+            # Extract the playlist ID from the URL
+            playlist_id = playlist_id.split("/")[-1].split("?")[0]
+
         used_anonymous_client = False
         playlist = None
         try:
