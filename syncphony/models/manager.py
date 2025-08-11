@@ -6,7 +6,7 @@ from typing import List, Optional, Tuple
 from syncphony.db.database import Database
 from syncphony.db.helpers import get_match_for_itemid_from_db, save_match_to_db
 from syncphony.models import Track, Album, Artist
-from syncphony.models.compare import normalize_track_name, compare_strings, normalize_artist_name
+from syncphony.models.compare import normalize_track_name, compare_strings_set_ratio, normalize_artist_name
 from syncphony.models.enums import Platform
 from syncphony.models.playlist import Playlist, FavoriteTracksPlaylist
 
@@ -113,7 +113,7 @@ class Manager(ABC):
                     if not artists:
                         return []
 
-                    best_artist_match = max(artists, key=lambda a: compare_strings(a.name, artist_name), default=None)
+                    best_artist_match = max(artists, key=lambda a: compare_strings_set_ratio(a.name, artist_name), default=None)
                     results = self.get_artist_tracks(best_artist_match.id)
 
             elif query:
@@ -231,3 +231,12 @@ class Manager(ABC):
     def save_match_to_db(self, src_id: str, src_platform: Platform, dest_id: str) -> None:
         """Save a match between two platforms in the database."""
         save_match_to_db(self.db, src_id, src_platform, dest_id, self.PLATFORM)
+
+    @abstractmethod
+    def supports_downloading(self) -> bool:
+        """Check if the manager supports downloading tracks."""
+        raise NotImplementedError("This method should be implemented by subclasses.")
+
+    def download_track(self, track: Track, user_id: str = None) -> Optional[str]:
+        """Download a track and return the file path."""
+        raise NotImplementedError("This method should be implemented by subclasses.")

@@ -28,7 +28,12 @@ sync_playlist = st.Page(
     title="Sync playlists",
     icon=":material/sync:",
 )
-actions_pages = [sync_playlist]
+download_playlist = st.Page(
+    "actions/download_playlist.py",
+    title="Download playlist",
+    icon=":material/download:",
+)
+actions_pages = [sync_playlist, download_playlist]
 
 account_settings = st.Page(
     "settings/accounts_settings.py",

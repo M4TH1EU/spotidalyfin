@@ -356,3 +356,6 @@ class SpotifyManager(Manager):
         except SpotifyException as e:
             log.exception(f"Failed to remove playlist with ID {playlist_id}: {e}")
             return False
+
+    def supports_downloading(self) -> bool:
+        return False

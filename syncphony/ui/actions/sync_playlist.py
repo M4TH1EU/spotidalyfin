@@ -44,12 +44,6 @@ for key, value in DEFAULT_STATE.items():
     create_state_if_missing(key, value)
 
 
-# @st.cache_data(show_spinner=False)
-# def fetch_playlists_cached(platform: Platform, account: str, user: Optional[str]):
-#     """Fetch and cache playlists for a given platform/account/user."""
-#     manager = get_manager_for_platform(account, platform)
-#     return manager.get_user_playlists(user_id=user if manager.is_multi_user() else None)
-
 @st.cache_data(show_spinner=False)
 def fetch_playlists_cached(platform: Platform, account: str, user: Optional[str]):
     """Fetch and cache playlists for a given platform/account/user."""

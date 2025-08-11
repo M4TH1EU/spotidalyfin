@@ -1,196 +1,243 @@
-import os
+from typing import List, Tuple, Optional, Union
 
 import streamlit as st
-from syncphony.ui.helpers.platforms import get_user_playlists
-from spotipy import SpotifyException
 
-from syncphony.db.helpers import get_authenticated_spotify_profiles, get_authenticated_tidal_profiles
-from syncphony.ui.helpers.getters import get_database, get_spotify_manager, get_tidal_manager, \
-    create_state_if_missing
+from syncphony.db.helpers import (
+    get_authenticated_spotify_profiles,
+    get_authenticated_tidal_profiles,
+    get_authenticated_jellyfin_profiles,
+    get_authenticated_subsonic_profiles,
+)
+from syncphony.models.enums import Platform
+from syncphony.models.manager import Manager
+from syncphony.ui.helpers.getters import (
+    get_database,
+    create_state_if_missing,
+    get_manager_for_platform,
+)
 from syncphony.utils.logger import log
 
-create_state_if_missing('download_playlist_submitted', False)
-create_state_if_missing('download_playlist_completed', False)
-create_state_if_missing('download_playlist_form_data', {})
-create_state_if_missing('download_playlist_logs', [])
+PLATFORM_OPTIONS = [
+    (Platform.SPOTIFY.value, Platform.SPOTIFY),
+    (Platform.TIDAL.value, Platform.TIDAL),
+    (Platform.JELLYFIN.value, Platform.JELLYFIN),
+    (Platform.SUBSONIC.value, Platform.SUBSONIC),
+]
+
+ACCOUNT_FETCHERS = {
+    Platform.SPOTIFY.value: get_authenticated_spotify_profiles,
+    Platform.TIDAL.value: get_authenticated_tidal_profiles,
+    Platform.JELLYFIN.value: get_authenticated_jellyfin_profiles,
+    Platform.SUBSONIC.value: get_authenticated_subsonic_profiles,
+}
+
+DEFAULT_STATE = {
+    "sync_account_submitted": False,
+    "sync_account_completed": False,
+    "sync_account_form_data": {},
+    "sync_account_failed_tracks": [],
+    "sync_account_failed_playlists_fetch": [],
+}
+
+for key, value in DEFAULT_STATE.items():
+    create_state_if_missing(key, value)
+
+
+@st.cache_data(show_spinner=False)
+def fetch_playlists_cached(platform: Platform, account: str, user: Optional[str]):
+    """Fetch and cache playlists for a given platform/account/user."""
+    manager = get_manager_for_platform(account, platform)
+    return [
+        {"name": p.name, "id": p.id} for p in
+        manager.get_user_playlists(user_id=user if manager.is_multi_user() else None)
+    ]
+
+
+def select_platform_and_account(label_prefix: str) -> Tuple[Tuple[str, Platform], str, Optional[str]]:
+    """Renders platform/account selection UI and returns chosen platform tuple, account, and optional user."""
+    platform_choice = st.selectbox(
+        f"Choose the platform to {label_prefix}:",
+        options=PLATFORM_OPTIONS,
+        format_func=lambda x: x[0],
+        key=f"{label_prefix}_platform_select"
+
+    )
+    accounts = ACCOUNT_FETCHERS[platform_choice[0]](get_database())
+    account_choice = st.selectbox(
+        f"Choose {platform_choice[0]} account:",
+        options=accounts,
+        format_func=lambda x: x if isinstance(x, str) else f"{x[1]} ({x[0]})",
+        key=f"{label_prefix}_account_select"
+    )
+    manager = get_manager_for_platform(account_choice, platform_choice[1])
+
+    user_choice = None
+    if manager.is_multi_user():
+        users = manager.get_users()
+        if users:
+            selected_user = st.selectbox("Select user:", options=users, format_func=lambda x: x[1],
+                                         key=f"{label_prefix}_user_select")
+            user_choice = selected_user[0]
+
+    return platform_choice, account_choice, user_choice
+
+
+def display_failures():
+    """Displays failed tracks/playlists after sync."""
+    failures = {
+        "tracks": ("tracks failed to download", st.session_state.sync_account_failed_tracks,
+                   lambda t: f"{t.name} - {t.artist}"),
+        "playlists_fetch": ("playlists failed to fetch", st.session_state.sync_account_failed_playlists_fetch,
+                            lambda p: f"{p[0]} (ID: {p[1]})"),
+    }
+    any_failures = False
+
+    for key, (msg, data, fmt) in failures.items():
+        failed_items = [item for success, item in data if not success]
+        if failed_items:
+            any_failures = True
+            st.warning(f"{len(failed_items)} {msg}.", icon=":material/report:")
+            with st.expander(f"Details of {msg}", icon=":material/report:"):
+                for item in failed_items:
+                    st.write(fmt(item))
+
+    if not any_failures:
+        st.success("All playlists have been downloaded successfully!")
+    else:
+        st.warning("The download process completed with some issues. Please review the logs above.")
+
+
+def validate_and_prepare_playlists(from_manager, playlist_input: Union[str, List[Tuple[str, str]]]) -> List[
+    Tuple[str, str]]:
+    """Ensure playlists are in correct format before syncing."""
+    if isinstance(playlist_input, str):
+        playlist_obj = from_manager.get_playlist(playlist_input, fetch_tracks=False)
+        return [(playlist_obj.name, playlist_obj.id)]
+    return playlist_input
+
+
+def download_with_container(from_manager: Manager, playlists: List[Tuple[str, str]], destination_path: str):
+    """Run download for multiple playlists, each in its own container."""
+    for playlist_name, playlist_id in playlists:
+        with st.status(f"⏳ Fetching playlist `{playlist_name}`...", expanded=True) as status:
+            playlist = from_manager.get_playlist(playlist_id, fetch_tracks=True)
+            if not playlist:
+                status.update(label=f"❌ Failed to fetch `{playlist_name}`", state="error", expanded=True)
+                st.session_state.sync_account_failed_playlists_fetch.append((False, (playlist_name, playlist_id)))
+                return
+
+            # Track sync progress
+            total_tracks = len(playlist.tracks)
+            track_bar = st.progress(0, text=f"Downloading {total_tracks} tracks...")
+            to_tracks = []
+
+            status.update(label=f"🔄 Downloading tracks for `{playlist_name}`...", state="running", expanded=True)
+            for idx, track in enumerate(playlist.tracks, start=1):
+                downloaded_track = from_manager.download_track(track, destination_path)
+                if not downloaded_track:
+                    status.write(f"❌ Track not found: `{track.name} - {track.artist.name}`")
+                    st.session_state.sync_account_failed_tracks.append((False, track))
+                    continue
+                track_bar.progress(idx / total_tracks,
+                                   text=f"[{idx}/{total_tracks}] {track.name} - {track.artist.name}")
+                to_tracks.append(downloaded_track)
+                status.write(f"✅ Downloaded: `{track.name} - {track.artist.name}` to `{downloaded_track}`")
+
+            track_bar.empty()
+
+            if not to_tracks:
+                status.update(label=f"⚠️ No tracks to download for `{playlist.name}`", state="warning", expanded=True)
+                return
+
+            # Finish up
+            status.update(label=f"✅ Downloaded {len(to_tracks)} tracks from `{playlist_name}`", state="complete",
+                          expanded=False)
+
+            # # Create playlist on destination
+            # status.update(label=f"📦 Creating `{playlist.name}` on {to_manager.PLATFORM.value}...", state="running",
+            #               expanded=True)
+            # to_playlist = to_manager.create_playlist(
+            #     playlist.name, to_tracks, playlist.description, playlist.image, to_user
+            # )
+            #
+            # if not to_playlist:
+            #     st.session_state.sync_account_failed_playlists_create.append((False, playlist))
+            #     status.update(label=f"❌ Failed to create `{playlist.name}`", state="error", expanded=True)
+            # else:
+            #     status.update(label=f"✅ Created `{to_playlist.name}` on {to_manager.PLATFORM.value}", state="complete",
+            #                   expanded=False)
+
+
+if "page_loaded" not in st.session_state:
+    # first time page loaded
+    fetch_playlists_cached.clear()
+    st.session_state.page_loaded = True
 
 # Show input form (when not submitted)
-if not st.session_state.download_playlist_submitted:
+if not st.session_state.sync_account_submitted:
     # WARNING: no streamlit elements must be put here otherwise it messes with what is displayed
 
     with st.container():
-        st.title(":material/download: Download playlist")
-        st.write("Uses the Tidal API to download a playlist from Spotify in lossless quality.")
+        st.title(":material/download: Download a playlist")
+        st.write("Download a playlist using the account and source of your choice.")
 
-        logged_spotify_usernames = get_authenticated_spotify_profiles(get_database())
-        logged_tidal_usernames = get_authenticated_tidal_profiles(get_database())
+        # Source selection
+        with st.container(border=1):
+            st.subheader(":material/content_copy: Select source account")
+            from_select, from_account, from_user = select_platform_and_account("download from")
 
-        if not logged_spotify_usernames or not logged_tidal_usernames:
-            st.error("At least one Spotify and TIDAL account must be authenticated to download a playlist.")
-            st.stop()
+            input_mode = st.radio(
+                "What playlists would you like to download?",
+                options=[("All playlists", 0), ("Select playlists", 1), ("Enter playlist IDs manually", 2)],
+                format_func=lambda x: x[0]
+            )
 
-        # Form fields
-        spotify_username = st.selectbox("Choose Spotify account to use for fetching playlist:",
-                                        logged_spotify_usernames)
-        tidal_username = st.selectbox("Choose TIDAL account to use for downloading:", logged_tidal_usernames)
-
-        input_mode = st.radio(
-            "How would you like to specify the playlist?",
-            options=[("Select from account playlists", 0), ("Enter playlist ID/URL manually", 1)],
-            format_func=lambda x: x[0],
-        )
-
-        with st.form("download_form"):
-            if input_mode[1] == 0:
-                playlist_id = st.selectbox(
-                    "Select a playlist",
-                    options=get_user_playlists(spotify_username, Platform.SPOTIFY),
-                    format_func=lambda x: x[0]
+            playlists = None
+            if input_mode[1] in (0, 1):
+                playlists_list = fetch_playlists_cached(from_select[1], from_account, from_user)
+                playlists_tuples = [(p["name"], p["id"]) for p in playlists_list]
+                playlists = playlists_tuples if input_mode[1] == 0 else st.multiselect(
+                    "Select playlists to download", options=playlists_tuples, format_func=lambda x: x[0]
                 )
-            else:
-                playlist_id = st.text_input("Enter the playlist ID", value="")
+            elif input_mode[1] == 2:
+                playlists = st.text_input("Enter the playlist ID", value="")
 
-            quality = st.radio(
-                "Select the maximum quality you want to download",
-                [
-                    ("320kbps", TrackQuality.LOW),
-                    ("FLAC (lossless)", TrackQuality.LOSSLESS),
-                    (":rainbow[HiFi]", TrackQuality.HI_RES_LOSSLESS)
-                ],
-                format_func=lambda x: x[0],
-                captions=[
-                    "Standard quality, small file size",
-                    "Lossless quality, medium file size **(recommended)**",
-                    "Maximum quality, large file size"
-                ],
-                index=2
-            )
-
-            file_type = st.radio(
-                "Select the output file type, does not affect quality or size",
-                [(".flac", "flac"), (".m4a", "m4a")],
-                format_func=lambda x: x[0],
-                captions=["Better tags support (recommended)", "Embeds FLAC in MP4 container"],
-                index=0
-            )
-
-            # Output destination
-            output_dest = st.text_input("Output Destination:", os.path.expanduser("~/Music/Syncphony"))
-
-            # Submit button
-            if st.form_submit_button("Download"):
-                # Validate form data
-                if not playlist_id or not output_dest or not spotify_username or not tidal_username or not quality or not file_type or not output_dest:
-                    st.error("Please fill in all the required fields.")
+        # Submit form
+        with st.form("sync_form"):
+            if st.form_submit_button("Download playlists"):
+                if not playlists or not from_account:
+                    st.error("Please fill in all required fields.")
                     st.stop()
 
-                st.session_state.download_playlist_submitted = True
-                # Store form data in session state
-                st.session_state.download_playlist_form_data = {
-                    "spotify_username": spotify_username,
-                    "tidal_username": tidal_username,
-                    "playlist_id": playlist_id,
-                    "quality": quality,
-                    "file_type": file_type,
-                    "output_dest": output_dest
+                st.session_state.sync_account_submitted = True
+                st.session_state.sync_account_form_data = {
+                    "from_platform": from_select[1],
+                    "from_account": from_account,
+                    "from_user": from_user,
+                    "playlists": playlists,
                 }
                 st.rerun()
-
-# Show download progress (when submitted)
 else:
-    st.header("Downloading playlist")
+    st.header("Downloading playlist(s)...")
 
-    # Normalize playlist ID (if from selectbox)
-    if isinstance(st.session_state.download_playlist_form_data['playlist_id'], tuple):
-        playlist_name = st.session_state.download_playlist_form_data['playlist_id'][0]
-        playlist_id = st.session_state.download_playlist_form_data['playlist_id'][1]
-    else:
-        playlist_id = st.session_state.download_playlist_form_data['playlist_id']
+    if not st.session_state.sync_account_completed:
+        try:
+            form_data = st.session_state.sync_account_form_data
+            from_manager = get_manager_for_platform(form_data["from_account"], form_data["from_platform"])
 
-    progress_bar = st.progress(0, "Waiting for download to start...")
+            prepared_playlists = validate_and_prepare_playlists(from_manager, form_data["playlists"])
 
-    if not st.session_state.download_playlist_completed:
-        # Display form data summary
-        with st.expander(":material/bug_report: Development Info"):
-            text = """
-            Spotify Username: {spotify_username}
-            Tidal Username: {tidal_username}
-            Playlist ID: {playlist_id}
-            Quality: {quality}
-            File Type: {file_type}
-            Output Destination: {output_dest}
-            """.format(**st.session_state.download_playlist_form_data)
-            st.code(text)
+            download_with_container(from_manager, prepared_playlists, "/home/mathieub/Musique/Syncphony")
 
-        # Download playlist and log progress
-        with st.status("") as status:
-            try:
-                # Step 0
-                msg = f":material/login: Initializing accounts managers..."
-                status.update(label=msg, state="running", expanded=True)
-                status.write(f"**{msg}**")
-                spotify_manager = get_spotify_manager(st.session_state.download_playlist_form_data['spotify_username'])
-                tidal_manager = get_tidal_manager(st.session_state.download_playlist_form_data['tidal_username'])
+            st.session_state.sync_account_completed = True
+        except Exception as e:
+            log.exception("Failed to download playlists")
+            st.error(f"An error occurred: {e}")
 
-                # Step 1
-                msg = f":material/queue_music: Fetching Spotify playlist tracks..."
-                status.update(label=msg, state="running", expanded=True)
-                status.write(f"**{msg}**")
-                spotify_playlist = spotify_manager.get_playlist(playlist_id)
-                spotify_playlist_length = len(spotify_playlist.tracks)
+    display_failures()
 
-                status.divider()
-
-                # Step 2
-                msg = f":material/compare_arrows: Matching Spotify tracks to TIDAL tracks..."
-                status.update(label=msg, state="running", expanded=True)
-                status.write(f"**{msg}**")
-                tidal_playlist = tidal_manager.convert_spotify_playlist(spotify_playlist, status_container=status,
-                                                                        retrieve_streams=True)
-                tidal_playlist_length = len(tidal_playlist.tracks)
-
-                status.divider()
-
-                # Step 3
-                msg = f":material/downloading: Downloading tracks..."
-                status.update(label=msg, state="running", expanded=True)
-                status.write(f"**{msg}**")
-                st.session_state.download_playlist_logs = tidal_manager.download_playlist(
-                    playlist=tidal_playlist,
-                    quality=st.session_state.download_playlist_form_data['quality'][1],
-                    output_type=st.session_state.download_playlist_form_data['file_type'][1],
-                    destination=st.session_state.download_playlist_form_data['output_dest'],
-                    status_container=status,
-                    progress_bar=progress_bar
-                )
-
-                status.update(label="Download Complete!", state="complete", expanded=False)
-                st.session_state.download_playlist_completed = True
-            except SpotifyException as e:
-                status.update(label="Spotify Error", state="error", expanded=False)
-                st.error(f"An error occurred while fetching the playlist: {e}")
-                log.error(f"An error occurred while fetching the playlist: {e}")
-            # except Exception as e:
-            #     status.update(label="Download Failed", state="error", expanded=False)
-            #     st.error(f"An error occurred while downloading the playlist: {e}")
-            #     log.error(f"An error occurred while downloading the playlist: {e}")
-
-    # Show completion message and reset button
-    if st.session_state.download_playlist_completed:
-
-        # Display failed tracks if any
-        failed_tracks = [log for log in st.session_state.download_playlist_logs if log[0] == False]
-        if failed_tracks:
-            st.warning(f"{len(failed_tracks)} tracks failed to download.", icon=":material/report:")
-            with st.expander("Failed tracks", icon=":material/report:"):
-                for log_status, log_track in failed_tracks:
-                    st.write(f"{log_track.name} - {log_track.artist}")
-
-        # status.update(label="Download Complete!", state="complete", expanded=False)
-        st.success("All files have been downloaded successfully!")
-        if st.button("Go back"):
-            st.session_state.download_playlist_submitted = False
-            st.session_state.download_playlist_completed = False
-            st.session_state.download_playlist_form_data = {}
-            st.session_state.download_playlist_logs = []
-            st.rerun()
+    if st.button("Go back"):
+        for key, value in DEFAULT_STATE.items():
+            st.session_state[key] = value
+        fetch_playlists_cached.clear()
+        st.rerun()

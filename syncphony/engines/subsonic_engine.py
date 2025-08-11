@@ -84,11 +84,11 @@ def _parse_quality(subsonic_track: dict) -> TrackQuality:
             return TrackQuality.LOW
         elif codec == "flac":
             if (bit_depth <= 16 or bit_rate >= 500) and sample_rate >= 44100:  # 16-bit 44.1kHz
-                return TrackQuality.LOSSLESS
+                return TrackQuality.HIGH
             if (bit_depth > 16 or bit_rate >= 1500) and sample_rate >= 48000:  # 24-bit 192kHz
-                return TrackQuality.HI_RES_LOSSLESS
+                return TrackQuality.EXTREME
 
-            return TrackQuality.LOSSLESS  # fallback for flac
+            return TrackQuality.HIGH  # fallback for flac
 
     except (IndexError, AttributeError, TypeError):
         pass
@@ -378,3 +378,7 @@ class SubsonicManager(Manager):
         except Exception as e:
             log.error(f"Error removing playlist with ID '{playlist_id}': {e}")
             return False
+
+    def supports_downloading(self) -> bool:
+        return False
+

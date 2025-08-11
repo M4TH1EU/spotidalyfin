@@ -10,10 +10,11 @@ class Platform(Enum):
 
 class TrackQuality(Enum):
     UNKNOWN = 0
-    DOLBY_ATMOS = 0
-    LOW = 1
-    LOSSLESS = 2
-    HI_RES_LOSSLESS = 3
+    LOW = 1  # < 320K
+    MEDIUM = 2  # >= 320K
+    HIGH = 3  # Lossless (CD/FLAC)
+    EXTREME = 4  # Hi-Res Lossless (24-bit/192kHz)
+    DOLBY_ATMOS = 5  # Dolby Atmos
 
 
 class ArtistRole(Enum):

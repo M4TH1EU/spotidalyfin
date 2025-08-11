@@ -1,11 +1,14 @@
 import json
+import tempfile
 from json import JSONDecodeError
+from pathlib import Path
 from typing import Optional, List, cast
 
+import requests
 import tidalapi
 from tidalapi import media
-from tidalapi.exceptions import ObjectNotFound
-from tidalapi.media import Lyrics
+from tidalapi.exceptions import ObjectNotFound, TooManyRequests
+from tidalapi.media import Lyrics, Stream, AudioExtensions
 from tidalapi.session import SearchResults
 
 from syncphony.db.database import Database
@@ -18,7 +21,9 @@ from syncphony.models.manager import Manager
 from syncphony.models.playlist import Playlist, TidalFavoriteTracksPlaylist, \
     TidalPlaylist
 from syncphony.models.track import TidalTrack
+from syncphony.utils.ffmpeg import convert_m4a_bytes_to_flac
 from syncphony.utils.logger import log
+from syncphony.utils.metadata import process_metadata
 
 
 def _parse_real_track_quality(track: tidalapi.Track) -> TrackQuality:
@@ -26,9 +31,11 @@ def _parse_real_track_quality(track: tidalapi.Track) -> TrackQuality:
     if track.is_dolby_atmos:
         return TrackQuality.DOLBY_ATMOS
     elif track.is_hi_res_lossless:
-        return TrackQuality.HI_RES_LOSSLESS
+        return TrackQuality.EXTREME
     elif track.is_lossless:
-        return TrackQuality.LOSSLESS
+        return TrackQuality.HIGH
+    elif track.audio_quality == "HIGH":
+        return TrackQuality.MEDIUM
     else:
         return TrackQuality.LOW
 
@@ -132,7 +139,7 @@ class TidalManager(Manager):
         login_info = get_tidal_login_info(db, username)
         self.client.load_oauth_session(access_token=login_info[0], refresh_token=login_info[1], token_type="Bearer",
                                        is_pkce=True)
-        self.client.audio_quality = TrackQuality.HI_RES_LOSSLESS.name  # TODO: allow configuration
+        self.client.audio_quality = "HI_RES_LOSSLESS"
         self.db = db
 
     def is_multi_user(self) -> bool:
@@ -327,7 +334,7 @@ class TidalManager(Manager):
             return None
 
     def create_empty_playlist(self, name: str, description: str = "", cover: bytes = None, user_id: str = None) -> \
-    Optional[TidalPlaylist]:
+            Optional[TidalPlaylist]:
         try:
             new_playlist = self.client.user.create_playlist(title=name, description=description)
             # TODO: Handle cover
@@ -336,7 +343,7 @@ class TidalManager(Manager):
             log.exception(f"Failed to create TIDAL playlist '{name}': {e}")
             return None
 
-    def add_tracks_to_playlist(self, playlist: Playlist, tracks: List[Track], user_id: str = None) -> bool:
+    def add_tracks_to_playlist(self, playlist: Playlist, tracks: List[TidalTrack], user_id: str = None) -> bool:
         try:
             tidal_playlist = self.client.playlist(playlist.id)
 
@@ -361,25 +368,109 @@ class TidalManager(Manager):
             log.exception(f"Failed to remove TIDAL playlist with ID {playlist_id}: {e}")
             return False
 
+    def supports_downloading(self) -> bool:
+        return True
+
+    def download_track(self, track: TidalTrack, user_id: str = None, quality: TrackQuality = TrackQuality.HIGH,
+                       retry: int = 0) -> Optional[str]:
+        def _get_tidal_quality(quality: TrackQuality) -> str:
+            if quality == TrackQuality.DOLBY_ATMOS:
+                return "DOLBY_ATMOS"
+            elif quality == TrackQuality.EXTREME:
+                return "HI_RES_LOSSLESS"
+            elif quality == TrackQuality.HIGH:
+                return "LOSSLESS"
+            elif quality == TrackQuality.MEDIUM:
+                return "HIGH"
+            else:
+                return "LOW"
+
+        # Get stream info
+        stream = None
+        try:
+            params = {
+                "playbackmode": "STREAM",
+                "audioquality": _get_tidal_quality(quality),
+                "assetpresentation": "FULL",
+            }
+
+            request = self.client.request.request("GET", "tracks/%s/playbackinfopostpaywall" % track.id, params)
+        except ObjectNotFound:
+            log.exception(f"No stream available for track {track.name} by {track.artist.name}")
+            return None
+        except TooManyRequests:
+            log.exception(
+                f"Rate limited by TIDAL when trying to get stream for track {track.name} by {track.artist.name}")
+            if retry < 3:
+                import time
+                time.sleep(2 ** retry)
+                return self.download_track(track, user_id, quality, retry + 1)
+
+            return None
+        except Exception as e:
+            log.exception(f"Failed to get stream for track {track.name} by {track.artist.name}: {e}")
+            return None
+        else:
+            json_obj = request.json()
+            stream = self.client.request.map_json(json_obj, parse=Stream().parse)
+            assert not isinstance(stream, list)
+            stream = cast("Stream", stream)
+
+        if not stream:
+            log.error(f"No stream manifest available for track {track.name} by {track.artist.name}")
+            return None
+
+        # Get stream manifest
+        stream_manifest = stream.get_stream_manifest()
+        if not stream_manifest:
+            log.error(f"No stream manifest available for track {track.name} by {track.artist.name}")
+            return None
+
+        # Determine file extension
+        match stream_manifest.file_extension:
+            case AudioExtensions.M4A:
+                file_extension = "m4a"
+            case AudioExtensions.FLAC:
+                file_extension = "flac"
+            case AudioExtensions.MP4:
+                log.error(f"TIDAL MP4 streams are not supported for track {track.name} by {track.artist.name}")
+                return None
+            case _:
+                log.error(f"Unknown TIDAL stream format for track {track.name} by {track.artist.name}")
+                return None
+
+        # Get download URLs
+        download_urls = stream_manifest.urls
+
+        # Download the track data
+        audio_bytes = bytearray()
+        for url in download_urls:
+            response = requests.get(url, stream=True, timeout=30)
+            response.raise_for_status()
+            audio_bytes.extend(response.content)
+
+        # Convert M4A to FLAC if necessary
+        if file_extension == "m4a":
+            audio_bytes = convert_m4a_bytes_to_flac(audio_bytes, timeout=15, re_encode_flac=False)
+
+        # Save to temporary file
+        bytes_response = bytes(audio_bytes)
+        with tempfile.NamedTemporaryFile(delete=False, suffix=f".{file_extension}") as temp_file:
+            temp_file.write(bytes_response)
+            temp_file_path = temp_file.name
+
+            track_metadata = process_metadata(track, Path(temp_file_path))
+
+            # acoustid = get_acoustid_fingerprint(Path(temp_file_path))
+            # log.debug(f"AcoustID fingerprint for track {track.name} by {track.artist.name}: {acoustid}")
+            #
+            # musicbrainzid = query_musicbrainz_by_acoustid(acoustid)
+
+        # return bytes(bytes_response), file_extension
+
+        return None
+
 # OLD CODE TO MIGRATE
-
-# tidal_search = self.search_tracks(track_name=spotify_track.name, artist_name=spotify_track.artist.name,
-#                                   isrc=spotify_track.isrc, retrieve_streams=retrieve_streams)
-# list_of_matches: list[Track] = []
-# for tidal_track in tidal_search:
-#     match, score = spotify_track.matches(other=tidal_track)
-#
-#     if match:
-#         list_of_matches.append(tidal_track)
-#
-# if not list_of_matches:
-#     raise TrackNotFoundException(
-#         f"No matches found on TIDAL for track {spotify_track.name} - {spotify_track.artist.name}")
-#
-# list_of_matches.sort(key=lambda x: x.quality.value + x.score, reverse=True)
-# save_match(self.db, spotify_track.track_id, list_of_matches[0].track_id)
-# return list_of_matches[0]
-
 
 # def download_track(self,
 #                    track: Track,

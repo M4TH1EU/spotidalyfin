@@ -88,13 +88,13 @@ def _parse_quality(jellyfin_track: dict) -> TrackQuality:
         sample_rate = audio_stream.get("SampleRate", 0)
 
         if codec in ["mp3", "aac", "opus"]:
-            return TrackQuality.LOW
+            return TrackQuality.MEDIUM
         if codec == "flac":
             if bit_depth == 16 and sample_rate == 44100:
-                return TrackQuality.LOSSLESS
+                return TrackQuality.HIGH
             if bit_depth == 24 and sample_rate >= 48000:
-                return TrackQuality.HI_RES_LOSSLESS
-            return TrackQuality.LOSSLESS  # fallback for flac
+                return TrackQuality.EXTREME
+            return TrackQuality.HIGH  # fallback for flac
 
     except (IndexError, AttributeError, TypeError):
         pass
@@ -526,3 +526,6 @@ class JellyfinManager(Manager):
         except Exception as e:
             log.error(f"Failed to remove playlist {playlist_id}: {e}")
             return False
+
+    def supports_downloading(self) -> bool:
+        return False

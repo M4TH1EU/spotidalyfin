@@ -53,10 +53,16 @@ def normalize_artist_name(name: str, remove_words_with_double_quote: bool = Fals
     return name
 
 
-def compare_strings(s1: Optional[str], s2: Optional[str]) -> float:
+def compare_strings_set_ratio(s1: Optional[str], s2: Optional[str]) -> float:
     if not s1 or not s2:
         return 0.0
     return fuzz.token_set_ratio(s1, s2, processor=utils.default_process)
+
+
+def compare_strings(s1: Optional[str], s2: Optional[str]) -> float:
+    if not s1 or not s2:
+        return 0.0
+    return fuzz.ratio(s1, s2, processor=utils.default_process)
 
 
 def compare_tracks(track1: Track, track2: Track, use_track2_quality_as_criteria: bool = False) -> float:
@@ -72,7 +78,7 @@ def compare_tracks(track1: Track, track2: Track, use_track2_quality_as_criteria:
             weight_total += 0.1
 
     # 2. Name
-    name_score = compare_strings(track1.name, track2.name)
+    name_score = compare_strings_set_ratio(track1.name, track2.name)
     score += name_score * 0.3
     weight_total += 0.3
 
@@ -90,28 +96,30 @@ def compare_tracks(track1: Track, track2: Track, use_track2_quality_as_criteria:
         weight_total += 0.2
 
     # 4. Artist name
-    artist_score = compare_strings(track1.artist.name, track2.artist.name)
+    artist_score = compare_strings_set_ratio(track1.artist.name, track2.artist.name)
     score += artist_score * 0.25
     weight_total += 0.25
 
     # 5. Album name
-    album_score = compare_strings(track1.album.name, track2.album.name)
+    album_score = compare_strings_set_ratio(track1.album.name, track2.album.name)
     score += album_score * 0.15
     weight_total += 0.15
 
     # 6. Album artist
     if track1.album.artist and track2.album.artist:
-        album_artist_score = compare_strings(track1.album.artist.name, track2.album.artist.name)
+        album_artist_score = compare_strings_set_ratio(track1.album.artist.name, track2.album.artist.name)
         score += album_artist_score * 0.1
         weight_total += 0.1
 
     # 7. Quality (if applicable)
     if use_track2_quality_as_criteria and track2.quality:
-        if track2.quality == TrackQuality.HI_RES_LOSSLESS:
+        if track2.quality == TrackQuality.EXTREME:
             score += 100 * 0.25
-        elif track2.quality == TrackQuality.LOSSLESS:
+        elif track2.quality == TrackQuality.HIGH:
             score += 75 * 0.25
-        elif track2.quality == TrackQuality.LOW:
+        elif track2.quality == TrackQuality.MEDIUM:
+            score += 25 * 0.25
+        else:
             score += 0
 
         weight_total += 0.25
@@ -122,11 +130,72 @@ def compare_tracks(track1: Track, track2: Track, use_track2_quality_as_criteria:
 
     return round(score / weight_total, 2)
 
-# def compare_artists(artist1: Artist, artist2: Artist) -> float:
-#     """
-#     Compare two artists based on their names.
-#     """
-#     if not artist1 or not artist2:
-#         return 0.0
-#
-#     return compare_strings(artist1.name, artist2.name)
+
+def compare_acoustid_track(recording: dict, track: Track):
+    score = 0.0
+    weight_total = 0.0
+
+    # 1. Name
+    name_score = compare_strings(track.name, recording.get('title', ''))
+    score += name_score * 0.3
+    weight_total += 0.3
+
+    # 2. Artist name
+    artist_score = compare_strings(track.artist.name,
+                                   recording.get('artists', [{}])[0].get('name', ''))
+    score += artist_score * 0.25
+    weight_total += 0.25
+
+    # 3. Duration (in seconds, allow small delta)
+    if track.duration:
+        duration_diff = abs(track.duration - recording.get('duration', 0))
+        if duration_diff <= 2:
+            score += 100 * 0.2
+        elif duration_diff <= 5:
+            score += 75 * 0.2
+        elif duration_diff <= 10:
+            score += 50 * 0.2
+        else:
+            score += 0
+        weight_total += 0.2
+
+    # Normalize score
+    if weight_total == 0:
+        return 0.0
+
+    return round(score / weight_total, 2)
+
+
+def compare_musicbrainz_release_track(release: dict, track: Track):
+    score = 0.0
+    weight_total = 0.0
+
+    # 1. Name
+    name_score = compare_strings(track.name, release.get('title', ''))
+    score += name_score * 0.3
+    weight_total += 0.3
+
+    # 2. Artist name
+    artist_score = compare_strings(track.artist.name,
+                                   release.get('artist-credit', [{}])[0].get('artist', {}).get('name', ''))
+    score += artist_score * 0.25
+    weight_total += 0.25
+
+    # 3. Duration (in seconds, allow small delta)
+    if track.duration:
+        duration_diff = abs(track.duration - release.get('length', 0) / 1000)  # length is in milliseconds
+        if duration_diff <= 2:
+            score += 100 * 0.2
+        elif duration_diff <= 5:
+            score += 75 * 0.2
+        elif duration_diff <= 10:
+            score += 50 * 0.2
+        else:
+            score += 0
+        weight_total += 0.2
+
+    # Normalize score
+    if weight_total == 0:
+        return 0.0
+
+    return round(score / weight_total, 2)
