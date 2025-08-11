@@ -23,6 +23,10 @@ def create_state_if_missing(key: str, value: any):
 
 def get_manager_for_platform(identifier: str|tuple[str], platform: Platform) -> Manager:
     """Get the manager for the given platform."""
+    if isinstance(platform, str):
+        # fix for when sometimes platform is given as a str instead of a Platform object
+        platform = Platform(platform)
+
     if platform == Platform.SPOTIFY:
         return get_spotify_manager(identifier)
     elif platform == Platform.TIDAL:

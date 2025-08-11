@@ -13,7 +13,21 @@ from spotidalyfin.utils.logger import log
 create_state_if_missing('sync_account_submitted', False)
 create_state_if_missing('sync_account_completed', False)
 create_state_if_missing('sync_account_form_data', {})
-create_state_if_missing('sync_account_logs', [])
+create_state_if_missing('sync_account_failed_tracks', [])
+create_state_if_missing('sync_account_failed_playlists_fetch', [])
+create_state_if_missing('sync_account_failed_playlists_create', [])
+
+
+@st.cache_data(show_spinner=False)
+def fetch_playlists_cached(platform: Platform, account: str, user: str):
+    manager = get_manager_for_platform(account, platform)
+    return manager.get_user_playlists(user_id=user if manager.is_multi_user() else None)
+
+
+if "page_loaded" not in st.session_state:
+    # first time page loaded
+    fetch_playlists_cached.clear()
+    st.session_state.page_loaded = True
 
 # Show input form (when not submitted)
 if not st.session_state.sync_account_submitted:
@@ -52,15 +66,44 @@ if not st.session_state.sync_account_submitted:
 
             from_manager = get_manager_for_platform(from_account, from_select[1])
 
+            from_user = None
             if from_manager.is_multi_user():
                 from_users = from_manager.get_users()
                 if from_users:
                     from_user_select = st.selectbox(
                         "Select user:",
                         options=from_users,
-                        format_func=lambda x: x[1]
+                        format_func=lambda x: x[1],
                     )
                     from_user = from_user_select[0]
+
+            input_mode = st.radio(
+                "What playlists would you like to sync?",
+                options=[("All playlists", 0), ("Select playlists", 1), ("Enter playlist IDs manually", 2)],
+                format_func=lambda x: x[0],
+            )
+            cache_key = f"{from_account}_{from_user}"
+
+            # Use a cache key based on platform, account, user
+            if input_mode[1] in (0, 1):
+                with st.spinner("Loading playlists (this may take a while)..."):
+                    playlists = fetch_playlists_cached(from_select[1], from_account, from_user)
+                    playlists_tuples = [(p.name, p.id) for p in playlists]
+
+                if input_mode[1] == 0:
+                    playlists = playlists_tuples
+                else:
+                    playlists = st.multiselect(
+                        "Select playlists to sync",
+                        options=playlists_tuples,
+                        format_func=lambda x: x[0],
+                        key="playlists_multiselect"
+                    )
+            elif input_mode[1] == 2:
+                playlists = st.text_input("Enter the playlist ID", value="", key="playlist_manual")
+            else:
+                st.error("Invalid input mode.")
+                st.stop()
 
         with st.container(border=1):
             st.subheader(":material/content_paste: Select destination platform and account")
@@ -73,7 +116,7 @@ if not st.session_state.sync_account_submitted:
             to_account = st.selectbox(
                 f"Choose {to_select[0]} account to sync the playlists to:",
                 options=accounts_options[to_select[0]],
-                format_func = lambda x: x if isinstance(x, str) else f"{x[1]} ({x[0]})"
+                format_func=lambda x: x if isinstance(x, str) else f"{x[1]} ({x[0]})"
             )
 
             to_manager = get_manager_for_platform(to_account, to_select[1])
@@ -91,29 +134,7 @@ if not st.session_state.sync_account_submitted:
             st.error("Source and destination platforms must be different.")
             st.stop()
 
-        input_mode = st.radio(
-            "What playlists would you like to sync?",
-            options=[("All playlists", 0), ("Select playlists", 1), ("Enter playlist IDs manually", 2)],
-            format_func=lambda x: x[0],
-        )
-
         with st.form("sync_form", border=input_mode[1] != 0):
-            match input_mode[1]:
-                case 0:
-                    playlists = [(p.name, p.id) for p in
-                                 from_manager.get_user_playlists(user_id=from_user if from_manager.is_multi_user() else None)]
-                case 1:
-                    playlists = st.multiselect(
-                        "Select playlists to sync",
-                        options=[(p.name, p.id) for p in
-                                 from_manager.get_user_playlists(user_id=from_user if from_manager.is_multi_user() else None)],
-                        format_func=lambda x: x[0]
-                    )
-                case 2:
-                    playlists = st.text_input("Enter the playlist ID", value="")
-                case _:
-                    st.error("Invalid input mode.")
-                    st.stop()
 
             # Submit button
             if st.form_submit_button("Sync playlists"):
@@ -176,7 +197,8 @@ Playlists: {playlists}
                 status.write(f"**{msg}**")
 
                 if isinstance(st.session_state.sync_account_form_data['playlists'], str):
-                    playlist_name = from_manager.get_playlist(st.session_state.sync_account_form_data['playlists'], fetch_tracks=False).name
+                    playlist_name = from_manager.get_playlist(st.session_state.sync_account_form_data['playlists'],
+                                                              fetch_tracks=False).name
                     playlists = [(st.session_state.sync_account_form_data['playlists'], playlist_name)]
                 else:
                     playlists = st.session_state.sync_account_form_data['playlists']
@@ -195,6 +217,9 @@ Playlists: {playlists}
                     from_playlist = from_manager.get_playlist(playlist[1], fetch_tracks=True)
                     if not from_playlist:
                         st.error(f":red[-> Failed to fetch playlist: `{playlist[0]}`]")
+                        st.session_state.sync_account_failed_playlists_fetch.append((False, playlist))
+                        continue
+
                     from_playlists.append(from_playlist)
                     status.write(f":green[-> Fetched playlist: {playlist[0]}]")
 
@@ -217,7 +242,7 @@ Playlists: {playlists}
                         if not to_track:
                             status.write(
                                 f":red[-> Track not found on {to_manager.PLATFORM.value}: {track.name} - {track.artist.name}]")
-                            st.session_state.sync_account_logs.append((False, track))
+                            st.session_state.sync_account_failed_tracks.append((False, track))
                             continue
                         to_tracks.append(to_track)
                         track_status_container.write(
@@ -229,7 +254,8 @@ Playlists: {playlists}
 
                     status.write(
                         f":material/playlist_add: Creating playlist on {to_manager.PLATFORM.value}: {from_playlist.name}")
-                    to_playlist = to_manager.create_playlist(from_playlist.name, to_tracks, from_playlist.description, from_playlist.image, to_user)
+                    to_playlist = to_manager.create_playlist(from_playlist.name, to_tracks, from_playlist.description,
+                                                             from_playlist.image, to_user)
                     if not to_playlist:
                         status.write(f":red[-> Failed to create playlist: {from_playlist.name}]")
                         continue
@@ -248,17 +274,39 @@ Playlists: {playlists}
     # Show completion message and reset button
     if st.session_state.sync_account_completed:
         # Display failed tracks if any
-        failed_tracks = [log for log in st.session_state.sync_account_logs if log[0] == False]
+        failed_tracks = [log for log in st.session_state.sync_account_failed_tracks if log[0] == False]
+        failed_playlists_fetch = [log for log in st.session_state.sync_account_failed_playlists_fetch if
+                                  log[0] == False]
+        failed_playlists_create = [log for log in st.session_state.sync_account_failed_playlists_create if
+                                   log[0] == False]
+
         if failed_tracks:
             st.warning(f"{len(failed_tracks)} tracks failed to sync.", icon=":material/report:")
-            with st.expander("Failed tracks", icon=":material/report:"):
+            with st.expander("No match found for the following tracks", icon=":material/report:"):
                 for log_status, log_track in failed_tracks:
                     st.write(f"{log_track.name} - {log_track.artist}")
+        if failed_playlists_fetch:
+            st.warning(f"{len(failed_playlists_fetch)} playlists failed to fetch.", icon=":material/report:")
+            with st.expander("The following playlists failed to fetch", icon=":material/report:"):
+                for log_status, log_playlist in failed_playlists_fetch:
+                    st.write(f"{log_playlist[0]} (ID: {log_playlist[1]})")
+        if failed_playlists_create:
+            st.warning(f"{len(failed_playlists_create)} playlists failed to create.", icon=":material/report:")
+            with st.expander("The following playlists failed to create", icon=":material/report:"):
+                for log_status, log_playlist in failed_playlists_create:
+                    st.write(f"{log_playlist.name}")
 
-        st.success("All playlists have been synced successfully!")
+        if not failed_tracks and not failed_playlists_fetch and not failed_playlists_create:
+            st.success("All playlists have been synced successfully!")
+        else:
+            st.warning("The sync process has completed with some issues. Please review the logs above.")
+
         if st.button("Go back"):
             st.session_state.sync_account_submitted = False
             st.session_state.sync_account_completed = False
             st.session_state.sync_account_form_data = {}
-            st.session_state.sync_account_logs = []
+            st.session_state.sync_account_failed_tracks = []
+            st.session_state.sync_account_failed_playlists_fetch = []
+            st.session_state.sync_account_failed_playlists_create = []
+            fetch_playlists_cached.clear()
             st.rerun()
