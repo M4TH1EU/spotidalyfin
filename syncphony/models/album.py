@@ -22,8 +22,11 @@ class Album:
     barcode: Optional[str] = None
     release_date: Optional[datetime.datetime] = None
     cover: Optional[bytes] = None
-    num_volumes: Optional[int] = None
     tracks: Optional[List['Track']] = None
+    duration: Optional[int] = None
+    num_tracks: Optional[int] = None
+    num_volumes: Optional[int] = None
+    copyright: Optional[str] = None
 
 
 @dataclass
@@ -39,6 +42,7 @@ class TidalAlbum(PlatformBound, Album):
 @dataclass
 class JellyfinAlbum(PlatformBound, Album):
     PLATFORM = Platform.JELLYFIN
+
 
 @dataclass
 class SubsonicAlbum(PlatformBound, Album):

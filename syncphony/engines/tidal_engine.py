@@ -40,15 +40,19 @@ def _parse_real_track_quality(track: tidalapi.Track) -> TrackQuality:
         return TrackQuality.LOW
 
 
-def _parse_track(tidal_track: tidalapi.Track) -> TidalTrack:
+def _parse_track(tidal_track: tidalapi.Track, album: tidalapi.Album = None) -> TidalTrack:
     return TidalTrack(
         name=tidal_track.name,
         id=str(tidal_track.id),
         artist=_parse_artist(tidal_track.artist) if tidal_track.artist else None,
-        album=_parse_album(tidal_track.album) if tidal_track.album else None,
+        album=_parse_album(album or tidal_track.album) if album or tidal_track.album else None,
         duration=tidal_track.duration,
         quality=_parse_real_track_quality(tidal_track),
-        isrc=tidal_track.isrc.upper()
+        isrc=tidal_track.isrc.upper(),
+        replay_gain=tidal_track.replay_gain,
+        replay_peak=tidal_track.peak,
+        track_number=tidal_track.track_num,
+        vol_number=tidal_track.volume_num
     )
 
 
@@ -69,15 +73,20 @@ def _parse_album(tidal_album: tidalapi.Album, fetch_tracks: bool = False) -> Tid
         release_date=tidal_album.release_date,
         # cover=get_as_base64(f"https://resources.tidal.com/images/{tidal_album.cover.replace('-', '/')}/1280x1280.jpg"),
         tracks=tidal_album.tracks() if fetch_tracks else None,
+        num_volumes=tidal_album.num_volumes,
+        num_tracks=tidal_album.num_tracks,
+        duration=tidal_album.duration,
+        copyright=tidal_album.copyright
     )
 
 
-def _parse_playlist(tidal_playlist: tidalapi.Playlist, fetch_tracks: bool = False) -> TidalPlaylist:
+def _parse_playlist(tidal_playlist: tidalapi.Playlist, fetch_tracks: bool = False,
+                    fetch_albums: bool = False) -> TidalPlaylist:
     return TidalPlaylist(
         name=tidal_playlist.name,
         id=tidal_playlist.id,
         # image=get_as_base64(tidal_playlist.image(640)),
-        tracks=_fetch_playlist_tracks(tidal_playlist) if fetch_tracks else None,
+        tracks=_fetch_playlist_tracks(tidal_playlist, fetch_albums) if fetch_tracks else None,
     )
 
 
@@ -89,12 +98,13 @@ def _parse_favorites_tracks(tidal_playlist: tidalapi.Playlist) -> TidalFavoriteT
     )
 
 
-def _fetch_playlist_tracks(tidal_playlist: tidalapi.Playlist) -> List[Track]:
+def _fetch_playlist_tracks(tidal_playlist: tidalapi.Playlist, fetch_albums: bool = False) -> List[Track]:
     """Fetch tracks from a TIDAL playlist."""
     total = tidal_playlist.num_tracks
     tracks = []
     for offset in range(0, total, 100):
-        tracks.extend(_parse_track(track) for track in tidal_playlist.tracks(offset=offset, limit=100))
+        tracks.extend(_parse_track(track, track.session.album(track.album.id) if fetch_albums else None) for track in
+                      tidal_playlist.tracks(offset=offset, limit=100))
 
     return tracks
 
@@ -201,7 +211,7 @@ class TidalManager(Manager):
         try:
             tidal_playlist = self.client.playlist(playlist_id)
             if tidal_playlist:
-                return _parse_playlist(tidal_playlist, fetch_tracks=fetch_tracks)
+                return _parse_playlist(tidal_playlist, fetch_tracks=fetch_tracks, fetch_albums=fetch_albums)
             return None
         except ObjectNotFound as e:
             log.exception(f"Failed to fetch TIDAL playlist with ID {playlist_id}: {e}")

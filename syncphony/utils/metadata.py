@@ -57,9 +57,12 @@ def process_metadata(track: Track, tempfile_path: Path) -> Optional[TrackWithMet
             if best_match and best_score >= 75.0:
                 # Found a good match, proceed with MusicBrainz query
                 try:
-                    musicbrainz_res: dict = musicbrainzngs.get_recording_by_id(best_match.get('id'),
-                                                                               includes=["artists", "releases", "isrcs",
-                                                                                         "tags", "release-group-rels"])
+                    musicbrainz_res: dict = musicbrainzngs.get_recording_by_id(
+                        best_match.get('id'),
+                        includes=["artists", "releases", "isrcs", "tags", "discids"],
+                        release_status=['official'],
+                        release_type=['album', 'single']
+                    )
                     recording = musicbrainz_res.get("recording", {})
                     scored_releases_list = [(r, compare_musicbrainz_release_track(r, track)) for r in
                                             recording.get("release-list", [])]
@@ -84,7 +87,8 @@ def process_metadata(track: Track, tempfile_path: Path) -> Optional[TrackWithMet
                 if (compare_strings(title, track.name) >= 75.0 and
                         compare_strings(artist_name, track.artist.name >= 75.0)):
                     recording = musicbrainz_res.get("recording", {})
-                    musicbrainz_data = _parse_musicbrainz_data(recording)
+                    musicbrainz_data = _parse_musicbrainz_data(recording, recording.get("release-list", [{}])[0],
+                                                               track.isrc)
                     break
 
 

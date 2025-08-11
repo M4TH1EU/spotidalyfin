@@ -20,6 +20,10 @@ class Track:
     artist: 'Artist'
     album: 'Album'
     isrc: Optional[str] = None
+    track_number: Optional[int] = None
+    vol_number: Optional[int] = None
+    replay_gain: Optional[int] = None
+    replay_peak: Optional[int] = None
     duration: Optional[int] = None
     quality: Optional[TrackQuality] = None
 
@@ -37,6 +41,7 @@ class TidalTrack(PlatformBound, Track):
 @dataclass
 class JellyfinTrack(PlatformBound, Track):
     PLATFORM = Platform.JELLYFIN
+
 
 @dataclass
 class SubsonicTrack(PlatformBound, Track):

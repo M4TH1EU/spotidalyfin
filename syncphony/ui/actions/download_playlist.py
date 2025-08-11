@@ -120,7 +120,7 @@ def download_with_container(from_manager: Manager, playlists: List[Tuple[str, st
     """Run download for multiple playlists, each in its own container."""
     for playlist_name, playlist_id in playlists:
         with st.status(f"⏳ Fetching playlist `{playlist_name}`...", expanded=True) as status:
-            playlist = from_manager.get_playlist(playlist_id, fetch_tracks=True)
+            playlist = from_manager.get_playlist(playlist_id, fetch_tracks=True, fetch_albums=True)
             if not playlist:
                 status.update(label=f"❌ Failed to fetch `{playlist_name}`", state="error", expanded=True)
                 st.session_state.sync_account_failed_playlists_fetch.append((False, (playlist_name, playlist_id)))
@@ -152,20 +152,6 @@ def download_with_container(from_manager: Manager, playlists: List[Tuple[str, st
             # Finish up
             status.update(label=f"✅ Downloaded {len(to_tracks)} tracks from `{playlist_name}`", state="complete",
                           expanded=False)
-
-            # # Create playlist on destination
-            # status.update(label=f"📦 Creating `{playlist.name}` on {to_manager.PLATFORM.value}...", state="running",
-            #               expanded=True)
-            # to_playlist = to_manager.create_playlist(
-            #     playlist.name, to_tracks, playlist.description, playlist.image, to_user
-            # )
-            #
-            # if not to_playlist:
-            #     st.session_state.sync_account_failed_playlists_create.append((False, playlist))
-            #     status.update(label=f"❌ Failed to create `{playlist.name}`", state="error", expanded=True)
-            # else:
-            #     status.update(label=f"✅ Created `{to_playlist.name}` on {to_manager.PLATFORM.value}", state="complete",
-            #                   expanded=False)
 
 
 if "page_loaded" not in st.session_state:

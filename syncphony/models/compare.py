@@ -170,8 +170,8 @@ def compare_musicbrainz_release_track(release: dict, track: Track):
     score = 0.0
     weight_total = 0.0
 
-    # 1. Name
-    name_score = compare_strings(track.name, release.get('title', ''))
+    # 1. Album Name
+    name_score = compare_strings(track.album.name, release.get('title', ''))
     score += name_score * 0.3
     weight_total += 0.3
 
@@ -181,18 +181,43 @@ def compare_musicbrainz_release_track(release: dict, track: Track):
     score += artist_score * 0.25
     weight_total += 0.25
 
-    # 3. Duration (in seconds, allow small delta)
-    if track.duration:
-        duration_diff = abs(track.duration - release.get('length', 0) / 1000)  # length is in milliseconds
-        if duration_diff <= 2:
-            score += 100 * 0.2
-        elif duration_diff <= 5:
-            score += 75 * 0.2
-        elif duration_diff <= 10:
-            score += 50 * 0.2
+    # 3. Release date (if available)
+    if track.album.release_date and 'date' in release:
+        release_date = release.get('date', '')
+        if release_date:
+            # Compare only the year for simplicity
+            if track.album.release_date.year == release_date[:4]:
+                score += 100 * 0.25
+            else:
+                score += 0
+            weight_total += 0.25
+
+    # 4. Barcode (if available)
+    if track.album.barcode and 'barcode' in release:
+        # Compare barcode if available
+        if track.album.barcode == release.get('barcode', ''):
+            score += 100 * 0.25
         else:
             score += 0
-        weight_total += 0.2
+        weight_total += 0.25
+
+    # 5. Track number (if available)
+    if track.album.num_tracks and release.get('medium-count') > 0:
+        track_number = release.get('medium-list')[0].get('track-list', [])[0].get('position', 0)
+        if track.track_number == track_number:
+            score += 100 * 0.25
+        else:
+            score += 0
+        weight_total += 0.25
+
+    # 6. Track count (if available)
+    if track.album.num_tracks and release.get('medium-count') > 0:
+        track_num = release.get('medium-list')[0].get('track-count', 0)
+        if track.album.num_tracks == track_num:
+            score += 100 * 0.25
+        else:
+            score += 0
+        weight_total += 0.25
 
     # Normalize score
     if weight_total == 0:
