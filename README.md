@@ -1,6 +1,6 @@
 ![logo](.github/logo.webp)
 
-# Spotidalyfin
+# Syncphony
 
 This project is an easy to use tool to download all your Spotify songs and playlists in **FLAC High Quality** using a
 trial *(or not)* Tidal account.
@@ -56,16 +56,16 @@ Now just run the tool with the parameter `--secrets <path_to_your_secret_file>`.
 To see the available commands and options, run the following command:
 
 ```bash
-$ spotidalyfin --help
+$ syncphony --help
 
- Usage: spotidalyfin-1.0.0_linux_x86_64 [OPTIONS] COMMAND [ARGS]...                                           
+ Usage: syncphony-1.0.0_linux_x86_64 [OPTIONS] COMMAND [ARGS]...                                           
                                                                                                               
 ╭─ Options ──────────────────────────────────────────────────────────────────────────────────────────────────╮
 │ --debug                 --no-debug             [default: no-debug]                                         │
 │ --quality                             INTEGER  [default: 3]                                                │
-│ --out-dir                             PATH     [default: /home/mathieu/Music/spotidalyfin]                 │
-│ --dl-dir                              PATH     [default: /tmp/spotidalyfin]                                │
-│ --secrets                             PATH     [default: /tmp/_MEI3PpYzy/spotidalyfin.secrets]             │
+│ --out-dir                             PATH     [default: /home/mathieu/Music/syncphony]                 │
+│ --dl-dir                              PATH     [default: /tmp/syncphony]                                │
+│ --secrets                             PATH     [default: /tmp/_MEI3PpYzy/syncphony.secrets]             │
 │ --install-completion                           Install completion for the current shell.                   │
 │ --show-completion                              Show completion for the current shell, to copy it or        │
 │                                                customize the installation.                                 │
@@ -81,19 +81,19 @@ $ spotidalyfin --help
 #### Download all your Spotify liked songs
 
 ```bash
-$ spotidalyfin download liked
+$ syncphony download liked
 ```
 
 #### Download a specific playlist
 
 ```bash
-$ spotidalyfin download playlist <spotify_playlist_id>
+$ syncphony download playlist <spotify_playlist_id>
 ```
 
 #### Download a specific track
 
 ```bash
-$ spotidalyfin download track <spotify_track_id>
+$ syncphony download track <spotify_track_id>
 ```
 
 #### Download from a list of Spotify URIs
@@ -101,7 +101,7 @@ $ spotidalyfin download track <spotify_track_id>
 **Note:** The URIs file should contain one URI per line.
 
 ```bash
-$ spotidalyfin download file <path_to_file>
+$ syncphony download file <path_to_file>
 ```
 
 ## Development
@@ -126,7 +126,7 @@ $ ./build.sh
 If you encounter the following error:
 
 ```
-./spotidalyfin: /lib/x86_64-linux-gnu/libc.so.6: version `GLIBC_ABI_DT_RELR' not found (required by /tmp/.../libz.so.1)
+./syncphony: /lib/x86_64-linux-gnu/libc.so.6: version `GLIBC_ABI_DT_RELR' not found (required by /tmp/.../libz.so.1)
 ```
 
 It means your glibc version is too old. You can either try to update your system or manually install the required

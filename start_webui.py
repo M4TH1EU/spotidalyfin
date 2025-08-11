@@ -12,7 +12,7 @@ if __name__ == "__main__":
 
     sys.argv = [
         "streamlit", "run",
-        f"{str(getattr(sys, '_MEIPASS', os.path.abspath(os.path.dirname(__file__)))) + '/spotidalyfin/ui/'}streamlit_app.py",
+        f"{str(getattr(sys, '_MEIPASS', os.path.abspath(os.path.dirname(__file__)))) + '/syncphony/ui/'}streamlit_app.py",
         "--server.port=8501",
         "--global.developmentMode=false",
         "--client.toolbarMode=viewer",
