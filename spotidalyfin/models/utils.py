@@ -13,8 +13,7 @@ def get_track_on_another_platform(track: Track, manager: Manager) -> Optional[Tr
     if track.platform == manager.PLATFORM:
         return track
 
-    results = manager.search_tracks(query=track.name, artist_name=track.artist.name if track.artist else None,
-                                    isrc=track.isrc)
+    results = manager.search_tracks_from_track(track)
     if not results:
         return None
 
@@ -23,6 +22,8 @@ def get_track_on_another_platform(track: Track, manager: Manager) -> Optional[Tr
     best_match, best_score = max(scored_results, key=lambda x: x[1], default=(None, 0))
 
     if best_match and best_score >= 75.0:
+        manager.save_match_to_db(src_id=track.id, src_platform=track.platform,
+                                 dest_id=best_match.id)
         return best_match
 
     return None

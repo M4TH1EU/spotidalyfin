@@ -3,6 +3,8 @@ from abc import abstractmethod, ABC
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
+from spotidalyfin.db.database import Database
+from spotidalyfin.db.helpers import get_match_for_itemid_from_db, save_match_to_db
 from spotidalyfin.models import Track, Album, Artist
 from spotidalyfin.models.compare import normalize_track_name, compare_strings, normalize_artist_name
 from spotidalyfin.models.enums import Platform
@@ -12,6 +14,7 @@ from spotidalyfin.models.playlist import Playlist, FavoriteTracksPlaylist
 @dataclass
 class Manager(ABC):
     PLATFORM: Platform
+    db: Database
 
     @abstractmethod
     def is_multi_user(self) -> bool:
@@ -60,6 +63,24 @@ class Manager(ABC):
         """Retrieve the favorite tracks playlist."""
         raise NotImplementedError("This method should be implemented by subclasses.")
 
+    def search_tracks_from_track(self, track: Track) -> list[Track]:
+        """Search for tracks based on a Track object. Looks in the database as opposed to search_tracks() which doesn't."""
+        if not track:
+            return []
+
+        db_match = self.search_db_for_match(track.id, track.platform)
+        if db_match:
+            return [self.get_track(db_match)]
+
+        results = self.search_tracks(query=track.name, artist_name=track.artist.name if track.artist else None,
+                                     isrc=track.isrc)
+
+        if not results:
+            logging.warning(
+                f"No results found for track: {track.name} by {track.artist.name if track.artist else 'Unknown Artist'}")
+
+        return results
+
     def search_tracks(self, query: str = None, artist_name: str = None, isrc: str = None) -> list[Track]:
         """Search for tracks based on a query, artist name, or ISRC code."""
         results = []
@@ -78,14 +99,16 @@ class Manager(ABC):
                 if not results:
                     results = self.search_tracks_by_query(normalize_track_name(query))
                 if not results:
-                    results = self.search_tracks_by_query(normalize_track_name(query, remove_words_with_apostrophes=True))
+                    results = self.search_tracks_by_query(
+                        normalize_track_name(query, remove_words_with_apostrophes=True))
 
                 if not results:
                     artists = self.search_artists_by_query(artist_name)
                     if not artists:
                         artists = self.search_artists_by_query(normalize_artist_name(artist_name))
                     if not artists:
-                        artists = self.search_artists_by_query(normalize_artist_name(artist_name, remove_words_with_double_quote=True))
+                        artists = self.search_artists_by_query(
+                            normalize_artist_name(artist_name, remove_words_with_double_quote=True))
 
                     if not artists:
                         return []
@@ -200,3 +223,11 @@ class Manager(ABC):
     def remove_playlist_by_id(self, playlist_id: str) -> bool:
         """Remove a playlist by its ID."""
         raise NotImplementedError("This method should be implemented by subclasses.")
+
+    def search_db_for_match(self, item_id: str, src_platform: Platform) -> Optional[str]:
+        """Search the database for a match of the given ID on the destination platform."""
+        return get_match_for_itemid_from_db(self.db, item_id, src_platform, self.PLATFORM)
+
+    def save_match_to_db(self, src_id: str, src_platform: Platform, dest_id: str) -> None:
+        """Save a match between two platforms in the database."""
+        save_match_to_db(self.db, src_id, src_platform, dest_id, self.PLATFORM)

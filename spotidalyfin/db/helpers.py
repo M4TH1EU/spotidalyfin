@@ -1,11 +1,11 @@
-import sqlite3
-from typing import List, Optional
+from typing import List
+from typing import Optional
 
 from spotipy import CacheHandler, SpotifyOAuth
 
 from spotidalyfin import SPOTIFY_SCOPES, SPOTIFY_REDIRECT_URI
 from spotidalyfin.db.database import Database
-from spotidalyfin.utils.logger import log
+from spotidalyfin.models.enums import Platform
 
 
 class SpotipyCacheDatabaseHandler(CacheHandler):
@@ -146,16 +146,19 @@ def get_authenticated_subsonic_profiles(db: Database) -> List[tuple[str]]:
     res = db.execute("SELECT url, username FROM subsonic_accounts").fetchall()
     return [tuple(r) for r in res]
 
+
 def get_subsonic_login_password(db: Database, url: str, username: str) -> Optional[str]:
     """Get the Subsonic login password for the given URL and username."""
     cursor = db.execute("SELECT password FROM subsonic_accounts WHERE url=? AND username=?", (url, username))
     res = cursor.fetchone()
     return res[0] if res else None
 
+
 def remove_subsonic_profile(db: Database, url: str, username: str) -> None:
     """Remove a Subsonic profile from the database."""
     db.execute("DELETE FROM subsonic_accounts WHERE url=? AND username=?", (url, username))
     db.commit()
+
 
 def save_subsonic_info_to_db(db: Database, url: str, username: str, password: str) -> None:
     """Save Subsonic login information to the database."""
@@ -166,43 +169,39 @@ def save_subsonic_info_to_db(db: Database, url: str, username: str, password: st
     db.commit()
 
 
-def get_tidal_track_id_from_spotify_id(db: Database, spotify_id: str) -> Optional[str]:
-    """Get the TIDAL track ID from the Spotify track ID."""
-    if not spotify_id:
-        log.error(
-            "Error while retrieving TIDAL track ID from Spotify ID: spotify_id must be a non-empty string: " + str(
-                spotify_id))
-        return None
-
-    try:
-        cursor = db.execute("SELECT tidal_id FROM matches WHERE spotify_id=?", (str(spotify_id),))
-        res = cursor.fetchone()
-        return str(res[0]) if res else None
-    except sqlite3.InterfaceError as e:
-        log.error(f"SQLite InterfaceError: {e}, Parameters: {spotify_id}")
-    except Exception as e:
-        log.error(f"Unexpected error while retrieving TIDAL track ID from Spotify ID: {e}")
-
-    return None
+def get_match_for_itemid_from_db(db: Database, item_id: str, src_platform: Platform, dest_platform: Platform) -> \
+        Optional[str]:
+    """Search the database for a match of the given ID on the destination platform."""
+    cursor = db.execute(
+        f"SELECT {f"{dest_platform.value.lower()}_id"} FROM matches WHERE {f"{src_platform.value.lower()}_id"} = ?",
+        (item_id,)
+    )
+    res = cursor.fetchone()
+    return res[0] if res and res[0] else None
 
 
-def save_match(db: Database, spotify_id: str, tidal_id: str) -> None:
-    """Save a match between a Spotify and TIDAL track."""
-    if not spotify_id or not tidal_id:
-        log.error(f"Error while saving match: spotify_id and tidal_id must be non-empty strings: "
-                  f"{spotify_id}, {tidal_id}")
-        return
+def save_match_to_db(
+        db: Database,
+        src_id: str,
+        src_platform: Platform,
+        dest_id: str,
+        dest_platform: Platform
+) -> None:
+    """Save a match between two platforms in the database."""
 
-    try:
-        db.execute(
-            """
-            INSERT OR REPLACE INTO matches (spotify_id, tidal_id)
-            VALUES (?, ?)
-            """,
-            (str(spotify_id), str(tidal_id)),
-        )
-        db.commit()
-    except sqlite3.InterfaceError as e:
-        log.error(f"SQLite InterfaceError: {e}, Parameters: {spotify_id}, {tidal_id}")
-    except Exception as e:
-        log.error(f"Unexpected error while saving match: {e}")
+    # Explicitly tell type checker: dict[str, Optional[str]]
+    columns: dict[str, Optional[str]] = {f"{p.value.lower()}_id": None for p in Platform}
+
+    # Fill in source and destination IDs
+    columns[f"{src_platform.value.lower()}_id"] = src_id
+    columns[f"{dest_platform.value.lower()}_id"] = dest_id
+
+    # Build the SQL dynamically
+    placeholders = ", ".join(["?"] * len(columns))
+    sql = f"""
+        INSERT OR REPLACE INTO matches ({", ".join(columns)})
+        VALUES ({placeholders})
+    """
+
+    db.execute(sql, tuple(columns.values()))
+    db.commit()

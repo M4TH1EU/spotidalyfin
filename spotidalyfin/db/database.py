@@ -79,8 +79,11 @@ class Database:
         self.con.execute("DROP TABLE IF EXISTS matches;")
         self.con.execute("""
             CREATE TABLE IF NOT EXISTS matches (
-                spotify_id TEXT PRIMARY KEY,
-                tidal_id TEXT NOT NULL
+                spotify_id TEXT,
+                tidal_id TEXT,
+                jellyfin_id TEXT,
+                subsonic_id TEXT,
+                PRIMARY KEY (spotify_id, tidal_id, jellyfin_id, subsonic_id)
             );
         """)
-        self.con.commit()
+
