@@ -51,13 +51,13 @@ def _parse_artist(spotipy_artist: dict) -> SpotifyArtist:
 
 
 def _parse_album(spotipy_album: dict) -> SpotifyAlbum:
+    if not len(spotipy_album.get('artists')) > 0: # TODO: investigate why this happens
+        log.error(f"Album {spotipy_album.get('name', 'Unknown')} has no artists, skipping.")
+
     return SpotifyAlbum(
         name=spotipy_album["name"],
         id=spotipy_album["id"],
-        artist=SpotifyArtist(
-            name=spotipy_album["artists"][0]["name"],
-            id=spotipy_album["artists"][0]["id"]
-        ),
+        artist=_parse_artist(spotipy_album["artists"][0]) if spotipy_album.get("artists") else None,
         barcode=spotipy_album.get('external_ids', {}).get('upc', ''),
         release_date=spotipy_album.get("release_date", None),
         # cover=_get_image(spotipy_album),
