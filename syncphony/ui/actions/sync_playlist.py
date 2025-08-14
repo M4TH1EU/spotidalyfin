@@ -40,6 +40,7 @@ DEFAULT_STATE = {
     "sync_account_failed_playlists_create": [],
 }
 
+
 for key, value in DEFAULT_STATE.items():
     create_state_if_missing(key, value)
 

@@ -17,11 +17,15 @@ pyinstaller --noconfirm \
     --hidden-import "tidalapi" \
     --hidden-import "cachebox" \
     --hidden-import "spotipy" \
+    --hidden-import "sqlite3" \
+    --hidden-import "spotipy_anon" \
+    --hidden-import "acoustid" \
     --hidden-import "pyacoustid" \
     --hidden-import "musicbrainzngs" \
     --hidden-import "Unidecode" \
+    --hidden-import "rapidfuzz" \
     --add-data "assets":"./assets" \
-    --add-data "syncphony/ui":"./syncphony/ui" \
+    --add-data "syncphony/":"./syncphony/" \
     --add-data "buildenv/lib/python3.13/site-packages/streamlit/static":"./streamlit/static" \
     --console \
     --name syncphony-${VERSION}_linux_x86_64  \
