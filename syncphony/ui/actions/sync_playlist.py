@@ -76,17 +76,22 @@ def select_platform_and_account(label_prefix: str) -> Tuple[Tuple[str, Platform]
         format_func=lambda x: x if isinstance(x, str) else f"{x[1]} ({x[0]})",
         key=f"{label_prefix}_account_select"
     )
-    manager = get_manager_for_platform(account_choice, platform_choice[1])
 
-    user_choice = None
-    if manager.is_multi_user():
-        users = manager.get_users()
-        if users:
-            selected_user = st.selectbox("Select user:", options=users, format_func=lambda x: x[1],
-                                         key=f"{label_prefix}_user_select")
-            user_choice = selected_user[0]
+    if accounts and account_choice:
+        manager = get_manager_for_platform(account_choice, platform_choice[1])
 
-    return platform_choice, account_choice, user_choice
+        user_choice = None
+        if manager.is_multi_user():
+            users = manager.get_users()
+            if users:
+                selected_user = st.selectbox("Select user:", options=users, format_func=lambda x: x[1],
+                                             key=f"{label_prefix}_user_select")
+                user_choice = selected_user[0]
+
+        return platform_choice, account_choice, user_choice
+    else:
+        st.error(f"No accounts found for {platform_choice[0]}. Please add an account first.")
+        st.stop()
 
 
 def display_failures():
