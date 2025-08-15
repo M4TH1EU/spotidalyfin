@@ -40,7 +40,6 @@ DEFAULT_STATE = {
     "sync_account_failed_playlists_create": [],
 }
 
-
 for key, value in DEFAULT_STATE.items():
     create_state_if_missing(key, value)
 
@@ -53,6 +52,12 @@ def fetch_playlists_cached(platform: Platform, account: str, user: Optional[str]
         {"name": p.name, "id": p.id} for p in
         manager.get_user_playlists(user_id=user if manager.is_multi_user() else None)
     ]
+
+
+if "page_loaded" not in st.session_state:
+    # first time page loaded
+    fetch_playlists_cached.clear()
+    st.session_state.page_loaded = True
 
 
 def select_platform_and_account(label_prefix: str) -> Tuple[Tuple[str, Platform], str, Optional[str]]:
@@ -170,11 +175,6 @@ def sync_with_containers(from_manager, to_manager,
                               expanded=False)
 
 
-if "page_loaded" not in st.session_state:
-    # first time page loaded
-    fetch_playlists_cached.clear()
-    st.session_state.page_loaded = True
-
 # Show input form (when not submitted)
 if not st.session_state.sync_account_submitted:
     # WARNING: no streamlit elements must be put here otherwise it messes with what is displayed
@@ -188,21 +188,22 @@ if not st.session_state.sync_account_submitted:
             st.subheader(":material/content_copy: Select source")
             from_select, from_account, from_user = select_platform_and_account("sync from")
 
-            input_mode = st.radio(
-                "What playlists would you like to sync?",
-                options=[("All playlists", 0), ("Select playlists", 1), ("Enter playlist IDs manually", 2)],
-                format_func=lambda x: x[0]
-            )
-
-            playlists = None
-            if input_mode[1] in (0, 1):
-                playlists_list = fetch_playlists_cached(from_select[1], from_account, from_user)
-                playlists_tuples = [(p["name"], p["id"]) for p in playlists_list]
-                playlists = playlists_tuples if input_mode[1] == 0 else st.multiselect(
-                    "Select playlists to sync", options=playlists_tuples, format_func=lambda x: x[0]
+            with st.spinner("Loading playlists (this may take a while)..."):
+                input_mode = st.radio(
+                    "What playlists would you like to sync?",
+                    options=[("All playlists", 0), ("Select playlists", 1), ("Enter playlist IDs manually", 2)],
+                    format_func=lambda x: x[0]
                 )
-            elif input_mode[1] == 2:
-                playlists = st.text_input("Enter the playlist ID", value="")
+
+                playlists = None
+                if input_mode[1] in (0, 1):
+                    playlists_list = fetch_playlists_cached(from_select[1], from_account, from_user)
+                    playlists_tuples = [(p["name"], p["id"]) for p in playlists_list]
+                    playlists = playlists_tuples if input_mode[1] == 0 else st.multiselect(
+                        "Select playlists to sync", options=playlists_tuples, format_func=lambda x: x[0]
+                    )
+                elif input_mode[1] == 2:
+                    playlists = st.text_input("Enter the playlist ID", value="")
 
         # Destination selection
         with st.container(border=1):
