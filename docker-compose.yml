@@ -1,0 +1,11 @@
+version: '3'
+services:
+  syncphony:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "5800:5800"
+    volumes:
+      - "./config:/syncphony/config:rw"
+      - "./music:/syncphony/download:rw"

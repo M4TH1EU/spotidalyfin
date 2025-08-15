@@ -15,11 +15,8 @@ if __name__ == "__main__":
         f"{str(getattr(sys, '_MEIPASS', os.path.abspath(os.path.dirname(__file__)))) + '/syncphony/ui/'}streamlit_app.py",
         "--server.port=8501",
         "--server.address=0.0.0.0",
-        "--server.headless=true",
         "--server.showEmailPrompt=false",
         "--global.developmentMode=false",
-        "--client.toolbarMode=minimal",
-        "--client.showErrorDetails=none",
         "--browser.gatherUsageStats=false",
 
         "--theme.primaryColor=#00c6a1",
@@ -28,5 +25,12 @@ if __name__ == "__main__":
         # "--theme.textColor=#000000",
         "--theme.font=sans serif",
     ]
+
+    if not os.environ.get("DEV", "false").lower() == "true":
+        sys.argv.extend([
+            "--server.headless=true",
+            "--client.showErrorDetails=none",
+            "--client.toolbarMode=minimal",
+        ])
 
     cli.main()
