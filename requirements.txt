@@ -1,3 +1,4 @@
+sqlmodel
 mutagen~=1.47.0
 tidalapi~=0.8.5
 cachebox~=5.0.1
