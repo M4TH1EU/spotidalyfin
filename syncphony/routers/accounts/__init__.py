@@ -2,7 +2,7 @@ from enum import Enum
 
 from fastapi import APIRouter
 
-from syncphony.routers.accounts import spotify, tidal
+from syncphony.routers.accounts import spotify, tidal, jellyfin, subsonic
 
 
 class AccountType(str, Enum):
@@ -15,6 +15,8 @@ class AccountType(str, Enum):
 router = APIRouter()
 router.include_router(spotify.router)
 router.include_router(tidal.router)
+router.include_router(jellyfin.router)
+router.include_router(subsonic.router)
 
 
 @router.get("/list")

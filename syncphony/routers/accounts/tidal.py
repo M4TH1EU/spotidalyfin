@@ -1,13 +1,9 @@
-import spotipy
 import tidalapi
 from fastapi import APIRouter, HTTPException, Query, Depends
-from spotipy import MemoryCacheHandler
-from spotipy.oauth2 import SpotifyOAuth
 from sqlmodel import Session, select
 
 from syncphony.db.db import get_session
-from syncphony.db.models import SpotifyAccount, TidalAccount
-from syncphony.storage.oauth_spotify import store_temp_oauth, get_temp_oauth, remove_temp_oauth
+from syncphony.db.models import TidalAccount
 from syncphony.storage.oauth_tidal import store_temp_session, get_temp_session, remove_temp_session
 
 router = APIRouter()
@@ -25,7 +21,7 @@ def start_tidal_auth():
 
 
 @router.post("/tidal/finish")
-def finish_spotify_auth(
+def finish_tidal_auth(
         session_id: str = Query(...),
         redirect_uri: str = Query(..., regex=r"^https?://"),
         db: Session = Depends(get_session)
@@ -58,4 +54,4 @@ def finish_spotify_auth(
 
     remove_temp_session(session_id)
 
-    return {"message": "Spotify account linked successfully", "account": tidal_account}
+    return {"message": "Tidal account linked successfully", "account": tidal_account}
