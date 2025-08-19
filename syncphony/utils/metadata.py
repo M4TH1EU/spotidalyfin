@@ -5,8 +5,8 @@ from typing import Optional
 import acoustid
 import musicbrainzngs
 
-from syncphony.models import Track
-from syncphony.models.compare import compare_acoustid_track, compare_strings, compare_musicbrainz_release_track
+from syncphony.types import Track
+from syncphony.types.compare import compare_acoustid_track, compare_strings, compare_musicbrainz_release_track
 from syncphony.utils.logger import log
 
 

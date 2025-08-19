@@ -8,13 +8,13 @@ import requests
 
 from syncphony.db.database import Database
 from syncphony.db.helpers import get_subsonic_login_password, save_subsonic_info_to_db
-from syncphony.models.album import SubsonicAlbum
-from syncphony.models.artist import SubsonicArtist
-from syncphony.models.enums import Platform, TrackQuality
-from syncphony.models.manager import Manager
-from syncphony.models.playlist import Playlist, SubsonicPlaylist, \
+from syncphony.types.album import SubsonicAlbum
+from syncphony.types.artist import SubsonicArtist
+from syncphony.types.enums import Platform, TrackQuality
+from syncphony.types.manager import Manager
+from syncphony.types.playlist import Playlist, SubsonicPlaylist, \
     SubsonicFavoriteTracksPlaylist
-from syncphony.models.track import SubsonicTrack
+from syncphony.types.track import SubsonicTrack
 from syncphony.utils.logger import log
 
 

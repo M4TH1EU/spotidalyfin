@@ -1,12 +1,12 @@
 import streamlit as st
 
 from syncphony.db.database import Database
-from syncphony.engines.jellyfin_engine import JellyfinManager
-from syncphony.engines.spotify_engine import SpotifyManager
-from syncphony.engines.subsonic_engine import SubsonicManager
-from syncphony.engines.tidal_engine import TidalManager
-from syncphony.models.enums import Platform
-from syncphony.models.manager import Manager
+from syncphony.managers.jellyfin_manager import JellyfinManager
+from syncphony.managers.spotify_manager import SpotifyManager
+from syncphony.managers.subsonic_manager import SubsonicManager
+from syncphony.managers.tidal_manager import TidalManager
+from syncphony.types.enums import Platform
+from syncphony.types.manager import Manager
 
 
 def get_database():

@@ -3,23 +3,61 @@ import time
 from typing import Optional, List
 
 import spotipy
-from spotipy import SpotifyOAuth, MemoryCacheHandler
-from spotipy.exceptions import SpotifyException, SpotifyOauthError
+from spotipy import SpotifyOAuth, MemoryCacheHandler, CacheHandler
+from spotipy.exceptions import SpotifyException
 from spotipy_anon import SpotifyAnon
+from sqlmodel import Session, select
 
-from syncphony import SPOTIFY_REDIRECT_URI, SPOTIFY_SCOPES
-from syncphony.db.database import Database
-from syncphony.db.helpers import get_spotify_oauth, get_authenticated_spotify_profiles, save_spotify_into_db
-from syncphony.models import Track, TrackQuality
-from syncphony.models.album import SpotifyAlbum
-from syncphony.models.artist import SpotifyArtist
-from syncphony.models.enums import Platform
-from syncphony.models.manager import Manager
-from syncphony.models.playlist import SpotifyPlaylist, \
+from syncphony.constants import SPOTIFY_SCOPES, SPOTIFY_REDIRECT_URI
+from syncphony.db.models import SpotifyAccount
+from syncphony.types import Track, TrackQuality
+from syncphony.types.album import SpotifyAlbum
+from syncphony.types.artist import SpotifyArtist
+from syncphony.types.enums import Platform
+from syncphony.types.manager import Manager
+from syncphony.types.playlist import SpotifyPlaylist, \
     SpotifyFavoriteTracksPlaylist, Playlist
-from syncphony.models.track import SpotifyTrack
-from syncphony.models.utils import get_as_base64
+from syncphony.types.track import SpotifyTrack
+from syncphony.types.utils import get_as_base64
 from syncphony.utils.logger import log
+
+
+class SpotipyCacheDatabaseHandler(CacheHandler):
+    """
+    Handles reading and writing cached Spotify authorization tokens
+    in the Syncphony database.
+    """
+
+    def __init__(self, db_session: Session, client_id: str, client_secret: str, username: str):
+        self.client_id = client_id
+        self.client_secret = client_secret
+        self.username = username
+        self.db_session = db_session
+
+    def get_cached_token(self) -> dict:
+        token_info = self.db_session.exec(
+            select(SpotifyAccount).where(SpotifyAccount.username == self.username)).first()
+
+        if token_info:
+            return {
+                "access_token": token_info.access_token,
+                "token_type": "Bearer",
+                # "expires_in": 0,
+                "expires_at": token_info.expires_at,
+                "refresh_token": token_info.refresh_token,
+                "scope": " ".join(SPOTIFY_SCOPES)
+            }
+
+        return {}
+
+    def save_token_to_cache(self, token_info) -> None:
+        token_info_rec = self.db_session.exec(
+            select(SpotifyAccount).where(SpotifyAccount.username == self.username)).first()
+        token_info_rec.access_token = token_info["access_token"]
+        token_info_rec.expires_at = token_info["expires_at"]
+        token_info_rec.refresh_token = token_info.get("refresh_token", "")
+        self.db_session.add(token_info_rec)
+        self.db_session.commit()
 
 
 def _get_image(spotipy_object: dict) -> Optional[bytes]:
@@ -51,7 +89,7 @@ def _parse_artist(spotipy_artist: dict) -> SpotifyArtist:
 
 
 def _parse_album(spotipy_album: dict) -> SpotifyAlbum:
-    if not len(spotipy_album.get('artists')) > 0: # TODO: investigate why this happens
+    if not len(spotipy_album.get('artists')) > 0:  # TODO: investigate why this happens
         log.error(f"Album {spotipy_album.get('name', 'Unknown')} has no artists, skipping.")
 
     return SpotifyAlbum(
@@ -96,37 +134,29 @@ def create_temp_oauth_spotify(client_id: str, client_secret: str) -> SpotifyOAut
     )
 
 
-def login_spotify(oauth: SpotifyOAuth, response_url: str, db: Database = None) -> (bool, str, dict):
-    try:
-        code = oauth.parse_response_code(response_url)
-        if code:
-            oauth.get_access_token(code, check_cache=False)
-
-            if db:
-                username = spotipy.Spotify(auth_manager=oauth).current_user()["id"]
-                if username in get_authenticated_spotify_profiles(db):
-                    return False, "This account is already authenticated, please remove it and try again.", {}
-
-                save_spotify_into_db(db, username, oauth)
-
-            return True, "Login successful", {}
-    except SpotifyOauthError as e:
-        if hasattr(e, "error_description"):
-            return False, f"Failed to authenticate with Spotify: {e.error_description}", {}
-
-    return False, "Failed to authenticate with Spotify. Please try again.", {}
-
-
 class SpotifyManager(Manager):
     PLATFORM = Platform.SPOTIFY
 
-    def __init__(self, username: str, db: Database):
+    def __init__(self, username: str, db_session: Session):
         self.username = username
-        self.db = db
+        self.db_session = db_session
 
         # Initialize Spotify client(s)
-        self.oauth = get_spotify_oauth(db, username)
-        self.client = spotipy.Spotify(auth_manager=self.oauth)
+        account = db_session.exec(
+            select(SpotifyAccount).where(SpotifyAccount.username == username)
+        ).first()
+        if not account:
+            raise ValueError(f"No Spotify account found for username {username}")
+
+        oauth = SpotifyOAuth(
+            client_id=account.client_id,
+            client_secret=account.client_secret,
+            redirect_uri=SPOTIFY_REDIRECT_URI,
+            scope=SPOTIFY_SCOPES,
+            cache_handler=SpotipyCacheDatabaseHandler(db_session, account.client_id, account.client_secret, username),
+            open_browser=False
+        )
+        self.client = spotipy.Spotify(auth_manager=oauth)
         self.anonymous_client = spotipy.Spotify(auth_manager=SpotifyAnon())
 
     def is_multi_user(self) -> bool:

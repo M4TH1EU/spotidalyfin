@@ -3,7 +3,7 @@ from typing import Optional
 
 from rapidfuzz import fuzz, utils
 
-from syncphony.models import Track, TrackQuality
+from syncphony.types import Track, TrackQuality
 
 
 def normalize_track_name(name: str, remove_words_with_apostrophes: bool = False) -> str:

@@ -15,7 +15,7 @@ from tidalapi import Role
 from tidalapi.media import StreamManifest, AudioExtensions
 from unidecode import unidecode
 
-from syncphony.models.enums import Platform, TrackQuality
+from syncphony.types.enums import Platform, TrackQuality
 from syncphony.utils.comparisons import weighted_word_overlap
 from syncphony.utils.file_utils import open_image_url
 from syncphony.utils.logger import log
@@ -38,52 +38,52 @@ def _generate_artists_string(artists: list[Artist]) -> str:
 
     return output.strip()
 
-
-def get_acoustid_fingerprint(file: Path) -> str:
-    """Query AcoustID for metadata based on the audio file."""
-    duration, fingerprint = acoustid.fingerprint_file(file)
-    duration = 170
-    print(f"Fingerprint: {fingerprint}, Duration: {duration}")
-
-    res = acoustid.lookup("YjwCJxwC0r", fingerprint, duration)  # public key for testing, please don't abuse
-
-    return res['results'][0]['id'] if res['results'] else ""
-
-
-def query_musicbrainz(irsc: str) -> dict:
-    """Query MusicBrainz for additional metadata based on the ISRC."""
-    musicbrainzngs.set_useragent("syncphony", "0.1")
-    try:
-        result: dict = musicbrainzngs.get_recordings_by_isrc(irsc, includes=["artists", "releases"])
-    except Exception as e:
-        log.error(f"No results found for ISRC {irsc} on MusicBrainz: {e}")
-        return {}
-
-    if not result.get("isrc", {}).get("recording-list"):
-        return {}
-
-    artist_ids = []
-    for artist in result.get('isrc', {}).get('recording-list', [{}])[0].get('artist-credit', []):
-        # TOOD: investigate why when artist is a string and it causes an AtributeError it is not caught by the except
-        # and just skips the rest of the metadata writing in download_track ???
-        if isinstance(artist, str):
-            continue
-
-        if artist.get('artist', {}).get('id'):
-            artist_ids.append(artist.get('artist', {}).get('id'))
-
-    return {
-        "MUSICBRAINZ_TRACKID": result.get("isrc", {}).get("recording-list", [{}])[0].get("id"),
-        "MUSICBRAINZ_ALBUMID": result.get("isrc", {}).get("recording-list", [{}])[0].get("release-list", [{}])[0].get(
-            "id"),
-        "BARCODE": result.get("isrc", {}).get("recording-list", [{}])[0].get("release-list", [{}])[0].get("barcode"),
-        "MUSICBRAINZ_ARTISTID": artist_ids,
-        "MUSICBRAINZ_ALBUMARTISTID": artist_ids,
-        "DATE": result.get("isrc", {}).get("recording-list", [{}])[0].get("release-list", [{}])[0].get("date"),
-        "ORIGINALDATE": result.get("isrc", {}).get("recording-list", [{}])[0].get("release-list", [{}])[0].get("date"),
-        "ORIGINALYEAR": result.get("isrc", {}).get("recording-list", [{}])[0].get("release-list", [{}])[0].get("date")[
-                        :4],
-    }
+#
+# def get_acoustid_fingerprint(file: Path) -> str:
+#     """Query AcoustID for metadata based on the audio file."""
+#     duration, fingerprint = acoustid.fingerprint_file(file)
+#     duration = 170
+#     print(f"Fingerprint: {fingerprint}, Duration: {duration}")
+#
+#     res = acoustid.lookup("YjwCJxwC0r", fingerprint, duration)  # public key for testing, please don't abuse
+#
+#     return res['results'][0]['id'] if res['results'] else ""
+#
+#
+# def query_musicbrainz(irsc: str) -> dict:
+#     """Query MusicBrainz for additional metadata based on the ISRC."""
+#     musicbrainzngs.set_useragent("syncphony", "0.1")
+#     try:
+#         result: dict = musicbrainzngs.get_recordings_by_isrc(irsc, includes=["artists", "releases"])
+#     except Exception as e:
+#         log.error(f"No results found for ISRC {irsc} on MusicBrainz: {e}")
+#         return {}
+#
+#     if not result.get("isrc", {}).get("recording-list"):
+#         return {}
+#
+#     artist_ids = []
+#     for artist in result.get('isrc', {}).get('recording-list', [{}])[0].get('artist-credit', []):
+#         # TOOD: investigate why when artist is a string and it causes an AtributeError it is not caught by the except
+#         # and just skips the rest of the metadata writing in download_track ???
+#         if isinstance(artist, str):
+#             continue
+#
+#         if artist.get('artist', {}).get('id'):
+#             artist_ids.append(artist.get('artist', {}).get('id'))
+#
+#     return {
+#         "MUSICBRAINZ_TRACKID": result.get("isrc", {}).get("recording-list", [{}])[0].get("id"),
+#         "MUSICBRAINZ_ALBUMID": result.get("isrc", {}).get("recording-list", [{}])[0].get("release-list", [{}])[0].get(
+#             "id"),
+#         "BARCODE": result.get("isrc", {}).get("recording-list", [{}])[0].get("release-list", [{}])[0].get("barcode"),
+#         "MUSICBRAINZ_ARTISTID": artist_ids,
+#         "MUSICBRAINZ_ALBUMARTISTID": artist_ids,
+#         "DATE": result.get("isrc", {}).get("recording-list", [{}])[0].get("release-list", [{}])[0].get("date"),
+#         "ORIGINALDATE": result.get("isrc", {}).get("recording-list", [{}])[0].get("release-list", [{}])[0].get("date"),
+#         "ORIGINALYEAR": result.get("isrc", {}).get("recording-list", [{}])[0].get("release-list", [{}])[0].get("date")[
+#                         :4],
+#     }
 
 
 @dataclass
@@ -219,116 +219,116 @@ class Metadata:
         return base_path / sanitized_albumartist / sanitized_album / f"{track_number_str} - {sanitized_title}.{extension}"
 
 
-@dataclass
-class Track:
-    """
-    Represents a track with associated metadata and utility methods for comparison and download.
-    """
-    platform: Platform
-    name: str
-    artist: Artist
-    album: Album
-    duration: int  # Duration in seconds
-    artists: List[Artist]
-    isrc: Optional[str] = None
-    track_id: Optional[str] = None
-    lyrics: Optional[str] = None
-    quality: Optional[TrackQuality] = None
-    stream_manifest: Optional[StreamManifest] = None
-    download_urls: Optional[List[str]] = None
-    file_extension: Optional[str] = None
-    copyright: Optional[str] = None
-    track_number: Optional[int] = None
-    disc_number: Optional[int] = None
-    release_date: Optional[datetime] = None
-    cover_url: Optional[str] = None
-    score: Optional[float] = None
-
-    def matches(self, other: Track) -> (bool, float):
-        """
-        Checks if two Track objects represent the same track across engines.
-
-        Scoring criteria:
-        - Duration similarity
-        - ISRC match
-        - Title and album name similarity
-        - Artist overlap
-
-        Returns:
-            bool: True if the tracks are considered a match, False otherwise.
-            float: The match score as a float between
-        """
-        if not isinstance(other, Track):
-            return False
-
-        score = 0
-        if abs(self.duration - other.duration) <= 2:  # Allow a slight variation in duration
-            score += 1
-        if self.isrc and self.isrc == other.isrc:
-            score += 2
-        if weighted_word_overlap(self.name, other.name) > 0.7:
-            score += 1
-        if weighted_word_overlap(self.album.name, other.album.name) > 0.35:
-            score += 1.5
-        if other.album.name == self.name:  # If the album name is the same as the track name (e.g. singles)
-            score += 0.5
-        if all(artist in self.artists for artist in other.artists):
-            score += 1
-
-        # Save the score in the other track for reference
-        other.score = score
-
-        return score >= 3.5, score
-
-    def raw_data(self, retry_count=3) -> (bytes, str):
-        """
-        Downloads the track's audio file based on the platform and manifest.
-
-        Returns:
-            bytes: The audio file as a byte stream.
-            str: The file extension of the audio file.
-
-        Raises:
-            DownloadTrackException: If the download fails.
-        """
-
-        def _download():
-            if self.platform == Platform.SPOTIFY:
-                raise NotImplementedError("Downloading from Spotify is not supported.")
-            elif self.platform == Platform.TIDAL:
-                if not self.stream_manifest:
-                    raise ValueError("Stream manifest is missing.")
-                download_urls = self.stream_manifest.get_urls()
-
-                match self.stream_manifest.file_extension:
-                    case AudioExtensions.M4A:
-                        file_extension = "m4a"
-                    case AudioExtensions.FLAC:
-                        file_extension = "flac"
-                    case AudioExtensions.MP4:
-                        raise ValueError("Video files are not supported.")
-                    case _:
-                        raise ValueError(f"Unsupported file extension: {self.stream_manifest.file_extension}")
-
-                # Use bytearray for efficient byte concatenation
-                bytes_response = bytearray()
-
-                for url in download_urls:
-                    response = requests.get(url, stream=True, timeout=30)
-                    response.raise_for_status()
-                    bytes_response.extend(response.content)
-
-                return bytes(bytes_response), file_extension
-            else:
-                raise NotImplementedError(f"Downloading is not supported for {self.platform}.")
-
-        try:
-            return _download()
-        except Exception as e:
-            if retry_count <= 0:
-                # log.exception(f"Download failed: {e}")
-                raise Exception(f"Download failed for track {self.name} by {self.artist.name} : {e}")
-            else:
-                log.warning(
-                    f"Download failed for track {self.name} by {self.artist.name}. Retrying {retry_count} more times. Error: {e}")
-                return self.raw_data(retry_count - 1)
+# @dataclass
+# class Track:
+#     """
+#     Represents a track with associated metadata and utility methods for comparison and download.
+#     """
+#     platform: Platform
+#     name: str
+#     artist: Artist
+#     album: Album
+#     duration: int  # Duration in seconds
+#     artists: List[Artist]
+#     isrc: Optional[str] = None
+#     track_id: Optional[str] = None
+#     lyrics: Optional[str] = None
+#     quality: Optional[TrackQuality] = None
+#     stream_manifest: Optional[StreamManifest] = None
+#     download_urls: Optional[List[str]] = None
+#     file_extension: Optional[str] = None
+#     copyright: Optional[str] = None
+#     track_number: Optional[int] = None
+#     disc_number: Optional[int] = None
+#     release_date: Optional[datetime] = None
+#     cover_url: Optional[str] = None
+#     score: Optional[float] = None
+#
+#     def matches(self, other: Track) -> (bool, float):
+#         """
+#         Checks if two Track objects represent the same track across managers.
+#
+#         Scoring criteria:
+#         - Duration similarity
+#         - ISRC match
+#         - Title and album name similarity
+#         - Artist overlap
+#
+#         Returns:
+#             bool: True if the tracks are considered a match, False otherwise.
+#             float: The match score as a float between
+#         """
+#         if not isinstance(other, Track):
+#             return False
+#
+#         score = 0
+#         if abs(self.duration - other.duration) <= 2:  # Allow a slight variation in duration
+#             score += 1
+#         if self.isrc and self.isrc == other.isrc:
+#             score += 2
+#         if weighted_word_overlap(self.name, other.name) > 0.7:
+#             score += 1
+#         if weighted_word_overlap(self.album.name, other.album.name) > 0.35:
+#             score += 1.5
+#         if other.album.name == self.name:  # If the album name is the same as the track name (e.g. singles)
+#             score += 0.5
+#         if all(artist in self.artists for artist in other.artists):
+#             score += 1
+#
+#         # Save the score in the other track for reference
+#         other.score = score
+#
+#         return score >= 3.5, score
+#
+#     def raw_data(self, retry_count=3) -> (bytes, str):
+#         """
+#         Downloads the track's audio file based on the platform and manifest.
+#
+#         Returns:
+#             bytes: The audio file as a byte stream.
+#             str: The file extension of the audio file.
+#
+#         Raises:
+#             DownloadTrackException: If the download fails.
+#         """
+#
+#         def _download():
+#             if self.platform == Platform.SPOTIFY:
+#                 raise NotImplementedError("Downloading from Spotify is not supported.")
+#             elif self.platform == Platform.TIDAL:
+#                 if not self.stream_manifest:
+#                     raise ValueError("Stream manifest is missing.")
+#                 download_urls = self.stream_manifest.get_urls()
+#
+#                 match self.stream_manifest.file_extension:
+#                     case AudioExtensions.M4A:
+#                         file_extension = "m4a"
+#                     case AudioExtensions.FLAC:
+#                         file_extension = "flac"
+#                     case AudioExtensions.MP4:
+#                         raise ValueError("Video files are not supported.")
+#                     case _:
+#                         raise ValueError(f"Unsupported file extension: {self.stream_manifest.file_extension}")
+#
+#                 # Use bytearray for efficient byte concatenation
+#                 bytes_response = bytearray()
+#
+#                 for url in download_urls:
+#                     response = requests.get(url, stream=True, timeout=30)
+#                     response.raise_for_status()
+#                     bytes_response.extend(response.content)
+#
+#                 return bytes(bytes_response), file_extension
+#             else:
+#                 raise NotImplementedError(f"Downloading is not supported for {self.platform}.")
+#
+#         try:
+#             return _download()
+#         except Exception as e:
+#             if retry_count <= 0:
+#                 # log.exception(f"Download failed: {e}")
+#                 raise Exception(f"Download failed for track {self.name} by {self.artist.name} : {e}")
+#             else:
+#                 log.warning(
+#                     f"Download failed for track {self.name} by {self.artist.name}. Retrying {retry_count} more times. Error: {e}")
+#                 return self.raw_data(retry_count - 1)

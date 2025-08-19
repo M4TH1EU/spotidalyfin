@@ -5,10 +5,10 @@ import streamlit as st
 from syncphony.db.helpers import get_authenticated_spotify_profiles, remove_spotify_profile, remove_tidal_profile, \
     get_authenticated_tidal_profiles, get_authenticated_jellyfin_profiles, remove_jellyfin_profile, \
     get_authenticated_subsonic_profiles, remove_subsonic_profile
-from syncphony.engines.jellyfin_engine import login_jellyfin
-from syncphony.engines.spotify_engine import login_spotify, create_temp_oauth_spotify
-from syncphony.engines.subsonic_engine import login_subsonic
-from syncphony.engines.tidal_engine import login_tidal, create_temp_session_tidal
+from syncphony.managers.jellyfin_manager import login_jellyfin
+from syncphony.managers.spotify_manager import login_spotify, create_temp_oauth_spotify
+from syncphony.managers.subsonic_manager import login_subsonic
+from syncphony.managers.tidal_manager import login_tidal, create_temp_session_tidal
 from syncphony.ui.helpers.dialogs import DialogContext, DialogStep, MultiStepDialog
 from syncphony.ui.helpers.getters import get_database
 from syncphony.ui.helpers.ui import subheader_custom_icon, display_table, inline_code_html

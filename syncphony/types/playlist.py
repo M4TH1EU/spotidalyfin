@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from typing import List, Optional
 
-from syncphony.models.enums import Platform
+from syncphony.types.enums import Platform
 
 
 @dataclass

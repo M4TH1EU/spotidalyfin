@@ -3,9 +3,9 @@ from typing import Optional
 
 import requests
 
-from syncphony.models import Track
-from syncphony.models.compare import compare_tracks
-from syncphony.models.manager import Manager
+from syncphony.types import Track
+from syncphony.types.compare import compare_tracks
+from syncphony.types.manager import Manager
 from syncphony.utils.logger import log
 
 

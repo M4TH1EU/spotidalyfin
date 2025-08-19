@@ -3,18 +3,19 @@ from abc import abstractmethod, ABC
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
-from syncphony.db.database import Database
-from syncphony.db.helpers import get_match_for_itemid_from_db, save_match_to_db
-from syncphony.models import Track, Album, Artist
-from syncphony.models.compare import normalize_track_name, compare_strings_set_ratio, normalize_artist_name
-from syncphony.models.enums import Platform
-from syncphony.models.playlist import Playlist, FavoriteTracksPlaylist
+from sqlmodel import Session, select
+
+from syncphony.db.models import Match
+from syncphony.types import Track, Album, Artist
+from syncphony.types.compare import normalize_track_name, compare_strings_set_ratio, normalize_artist_name
+from syncphony.types.enums import Platform
+from syncphony.types.playlist import Playlist, FavoriteTracksPlaylist
 
 
 @dataclass
 class Manager(ABC):
     PLATFORM: Platform
-    db: Database
+    db_session: Session
 
     @abstractmethod
     def is_multi_user(self) -> bool:
@@ -113,7 +114,8 @@ class Manager(ABC):
                     if not artists:
                         return []
 
-                    best_artist_match = max(artists, key=lambda a: compare_strings_set_ratio(a.name, artist_name), default=None)
+                    best_artist_match = max(artists, key=lambda a: compare_strings_set_ratio(a.name, artist_name),
+                                            default=None)
                     results = self.get_artist_tracks(best_artist_match.id)
 
             elif query:
@@ -226,17 +228,48 @@ class Manager(ABC):
 
     def search_db_for_match(self, item_id: str, src_platform: Platform) -> Optional[str]:
         """Search the database for a match of the given ID on the destination platform."""
-        return get_match_for_itemid_from_db(self.db, item_id, src_platform, self.PLATFORM)
+        # Dynamically get column names based on enum value
+        src_col = f"{src_platform.value.lower()}_id"
+        dest_col = f"{self.PLATFORM.value.lower()}_id"
+
+        # Build query dynamically
+        stmt = select(getattr(Match, dest_col)).where(getattr(Match, src_col) == item_id)
+        result = self.db_session.exec(stmt).first()
+
+        return result if result else None
 
     def save_match_to_db(self, src_id: str, src_platform: Platform, dest_id: str) -> None:
         """Save a match between two platforms in the database."""
-        save_match_to_db(self.db, src_id, src_platform, dest_id, self.PLATFORM)
 
-    @abstractmethod
-    def supports_downloading(self) -> bool:
-        """Check if the manager supports downloading tracks."""
-        raise NotImplementedError("This method should be implemented by subclasses.")
+        src_col = f"{src_platform.value.lower()}_id"
+        dest_col = f"{self.PLATFORM.value.lower()}_id"
 
-    def download_track(self, track: Track, user_id: str = None) -> Optional[str]:
-        """Download a track and return the file path."""
-        raise NotImplementedError("This method should be implemented by subclasses.")
+        # Check if a row already exists for this src_id
+        stmt = select(Match).where(getattr(Match, src_col) == src_id)
+        match = self.db_session.exec(stmt).first()
+
+        if match:
+            # Update existing row
+            setattr(match, dest_col, dest_id)
+        else:
+            # Create a new row with all platform IDs set to None initially
+            data = {f"{p.value.lower()}_id": None for p in Platform}
+            data[src_col] = src_id
+            data[dest_col] = dest_id
+            match = Match(**data)
+            self.db_session.add(match)
+
+        self.db_session.commit()
+
+
+@abstractmethod
+
+
+def supports_downloading(self) -> bool:
+    """Check if the manager supports downloading tracks."""
+    raise NotImplementedError("This method should be implemented by subclasses.")
+
+
+def download_track(self, track: Track, user_id: str = None) -> Optional[str]:
+    """Download a track and return the file path."""
+    raise NotImplementedError("This method should be implemented by subclasses.")

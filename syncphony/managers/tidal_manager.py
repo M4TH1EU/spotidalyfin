@@ -1,26 +1,24 @@
-import json
 import tempfile
-from json import JSONDecodeError
 from pathlib import Path
 from typing import Optional, List, cast
 
 import requests
 import tidalapi
+from sqlmodel import Session, select
 from tidalapi import media
 from tidalapi.exceptions import ObjectNotFound, TooManyRequests
 from tidalapi.media import Lyrics, Stream, AudioExtensions
 from tidalapi.session import SearchResults
 
-from syncphony.db.database import Database
-from syncphony.db.helpers import get_authenticated_tidal_profiles, save_tidal_info_to_db, get_tidal_login_info
-from syncphony.models import Track, TrackQuality
-from syncphony.models.album import TidalAlbum
-from syncphony.models.artist import TidalArtist
-from syncphony.models.enums import Platform
-from syncphony.models.manager import Manager
-from syncphony.models.playlist import Playlist, TidalFavoriteTracksPlaylist, \
+from syncphony.db.models import TidalAccount
+from syncphony.types import Track, TrackQuality
+from syncphony.types.album import TidalAlbum
+from syncphony.types.artist import TidalArtist
+from syncphony.types.enums import Platform
+from syncphony.types.manager import Manager
+from syncphony.types.playlist import Playlist, TidalFavoriteTracksPlaylist, \
     TidalPlaylist
-from syncphony.models.track import TidalTrack
+from syncphony.types.track import TidalTrack
 from syncphony.utils.ffmpeg import convert_m4a_bytes_to_flac
 from syncphony.utils.logger import log
 from syncphony.utils.metadata import process_metadata
@@ -114,43 +112,52 @@ def create_temp_session_tidal(config: tidalapi.Config = tidalapi.Config()) -> ti
     return tidalapi.Session(config=config)
 
 
-def login_tidal(session: tidalapi.Session(), response_url: str, db: Database = None) -> (bool, str, dict):
-    """Try to authenticate with TIDAL using the given redirect URL. Optionally save the account into the database."""
-    try:
-        response: dict = session.pkce_get_auth_token(response_url)
-        if db and "user" in response:
-            if response.get("user").get("username") in get_authenticated_tidal_profiles(db):
-                return False, "This account is already authenticated, please remove it and try again.", {}
-
-            save_tidal_info_to_db(db, response)
-
-        return True, "", {}
-    except Exception as e:
-        log.exception("Failed to authenticate with TIDAL")
-
-        try:
-            error = json.loads(e.response.content.decode()).get("error_description")
-            if error:
-                return False, f"Failed to authenticate with TIDAL: {error}", {}
-        except JSONDecodeError | TypeError:
-            log.exception("Failed to parse TIDAL authentication error response")
-            return False, f"Failed to authenticate with TIDAL. Please try again.", {}
+#
+# def login_tidal(session: tidalapi.Session(), response_url: str, db: Database = None) -> (bool, str, dict):
+#     """Try to authenticate with TIDAL using the given redirect URL. Optionally save the account into the database."""
+#     try:
+#         response: dict = session.pkce_get_auth_token(response_url)
+#         if db and "user" in response:
+#             if response.get("user").get("username") in get_authenticated_tidal_profiles(db):
+#                 return False, "This account is already authenticated, please remove it and try again.", {}
+#
+#             save_tidal_info_to_db(db, response)
+#
+#         return True, "", {}
+#     except Exception as e:
+#         log.exception("Failed to authenticate with TIDAL")
+#
+#         try:
+#             error = json.loads(e.response.content.decode()).get("error_description")
+#             if error:
+#                 return False, f"Failed to authenticate with TIDAL: {error}", {}
+#         except JSONDecodeError | TypeError:
+#             log.exception("Failed to parse TIDAL authentication error response")
+#             return False, f"Failed to authenticate with TIDAL. Please try again.", {}
 
 
 class TidalManager(Manager):
     PLATFORM = Platform.TIDAL
 
-    def __init__(self, username: str, db: Database):
+    def __init__(self, username: str, db_session: Session):
         self.username = username
-        self.db = db
+        self.db_session = db_session
 
         # Initialize TIDAL session
         self.client = tidalapi.Session()
-        login_info = get_tidal_login_info(db, username)
-        self.client.load_oauth_session(access_token=login_info[0], refresh_token=login_info[1], token_type="Bearer",
-                                       is_pkce=True)
+        account = db_session.exec(
+            select(TidalAccount).where(TidalAccount.username == self.username)
+        ).first()
+        if not account:
+            raise ValueError(f"No TIDAL account found for username {username}")
+
+        self.client.load_oauth_session(
+            access_token=account.access_token,
+            refresh_token=account.refresh_token,
+            token_type="Bearer",
+            is_pkce=True
+        )
         self.client.audio_quality = "HI_RES_LOSSLESS"
-        self.db = db
 
     def is_multi_user(self) -> bool:
         return False
@@ -260,10 +267,10 @@ class TidalManager(Manager):
                 limit: int = 7
                 ) -> Optional[SearchResults]:
         """
-        Performs a search on TIDAL with the given query and models.
+        Performs a search on TIDAL with the given query and types.
 
         :param query: The search query string.
-        :param models: A list of models to search for (default: Track, available: Track, Album, Artist).
+        :param models: A list of types to search for (default: Track, available: Track, Album, Artist).
         :param limit: Maximum number of results to return (default: 7).
 
         :return: Search results.

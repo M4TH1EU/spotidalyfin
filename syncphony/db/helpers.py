@@ -3,9 +3,9 @@ from typing import Optional
 
 from spotipy import CacheHandler, SpotifyOAuth
 
-from syncphony import SPOTIFY_SCOPES, SPOTIFY_REDIRECT_URI
+from syncphony.constants import SPOTIFY_SCOPES, SPOTIFY_REDIRECT_URI
 from syncphony.db.database import Database
-from syncphony.models.enums import Platform
+from syncphony.types.enums import Platform
 
 
 class SpotipyCacheDatabaseHandler(CacheHandler):

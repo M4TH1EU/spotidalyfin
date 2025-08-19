@@ -1,3 +1,7 @@
+import re
+from typing import Annotated
+from urllib.parse import parse_qs, urlparse
+
 import spotipy
 from fastapi import APIRouter, HTTPException, Query, Depends
 from spotipy import MemoryCacheHandler
@@ -10,19 +14,12 @@ from syncphony.storage.oauth_spotify import store_temp_oauth, get_temp_oauth, re
 
 router = APIRouter()
 
-SPOTIFY_REDIRECT_URI = "http://127.0.0.1:8000/accounts/spotify/callback"  # or your server redirect URL
-SPOTIFY_SCOPES = ['playlist-read-private', 'playlist-read-collaborative', 'user-library-read', 'playlist-modify-public',
-                  'playlist-modify-private']
-
 
 @router.post("/spotify/start")
 def start_spotify_auth(
-        client_id: str = Query(..., min_length=32, max_length=32),
-        client_secret: str = Query(..., min_length=32, max_length=32),
+        client_id: Annotated[str, Query(min_length=32, max_length=32)],
+        client_secret: Annotated[str, Query(min_length=32, max_length=32)]
 ):
-    if len(client_id) != 32 or len(client_secret) != 32:
-        raise HTTPException(status_code=400, detail="Invalid Spotify client ID or secret")
-
     # Create temporary OAuth object
     oauth = SpotifyOAuth(
         client_id=client_id,
@@ -41,18 +38,18 @@ def start_spotify_auth(
 
 @router.post("/spotify/finish")
 def finish_spotify_auth(
-        session_id: str = Query(...),
-        redirect_uri: str = Query(..., regex=r"^https?://"),
+        session_id: Annotated[str, Query(min_length=64, max_length=64)],
+        redirect_uri: Annotated[str, Query()],
         db: Session = Depends(get_session)
 ):
     oauth = get_temp_oauth(session_id)
     if not oauth:
         raise HTTPException(status_code=400, detail="Invalid session ID")
 
-    if "code=" not in redirect_uri:
-        raise HTTPException(status_code=400, detail="Invalid redirect URI, missing authorization code")
-
-    code = redirect_uri.split("code=")[-1]
+    query = urlparse(redirect_uri).query
+    code = parse_qs(query).get("code", [None])[0]
+    if not code:
+        raise ValueError("Missing code param in redirect_uri")
 
     # Get the access token
     token_info = oauth.get_access_token(code=code, as_dict=True)

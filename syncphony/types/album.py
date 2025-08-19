@@ -2,7 +2,7 @@ import datetime
 from dataclasses import dataclass, field
 from typing import Optional, List
 
-from syncphony.models.enums import Platform
+from syncphony.types.enums import Platform
 
 
 @dataclass

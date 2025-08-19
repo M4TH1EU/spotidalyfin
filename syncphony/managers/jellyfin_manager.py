@@ -5,14 +5,14 @@ import requests
 
 from syncphony.db.database import Database
 from syncphony.db.helpers import save_jellyfin_info_to_db, get_jellyfin_api_key
-from syncphony.models import Track, TrackQuality
-from syncphony.models.album import JellyfinAlbum
-from syncphony.models.artist import JellyfinArtist
-from syncphony.models.enums import Platform
-from syncphony.models.manager import Manager
-from syncphony.models.playlist import JellyfinPlaylist, \
+from syncphony.types import Track, TrackQuality
+from syncphony.types.album import JellyfinAlbum
+from syncphony.types.artist import JellyfinArtist
+from syncphony.types.enums import Platform
+from syncphony.types.manager import Manager
+from syncphony.types.playlist import JellyfinPlaylist, \
     JellyfinFavoriteTracksPlaylist, Playlist
-from syncphony.models.track import JellyfinTrack
+from syncphony.types.track import JellyfinTrack
 from syncphony.utils.logger import log
 
 

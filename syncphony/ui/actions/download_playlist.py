@@ -8,8 +8,8 @@ from syncphony.db.helpers import (
     get_authenticated_jellyfin_profiles,
     get_authenticated_subsonic_profiles,
 )
-from syncphony.models.enums import Platform
-from syncphony.models.manager import Manager
+from syncphony.types.enums import Platform
+from syncphony.types.manager import Manager
 from syncphony.ui.helpers.getters import (
     get_database,
     create_state_if_missing,
