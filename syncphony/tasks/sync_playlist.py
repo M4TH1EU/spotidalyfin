@@ -41,8 +41,8 @@ def task_sync(db: Session, task: Tasks) -> bool:
         return False
 
     try:
-        for id in details.get("ids", []):
-            playlist = from_manager.get_playlist(id)
+        for playlist_id in details.get("ids", []):
+            playlist = from_manager.get_playlist(playlist_id)
             if not playlist:
                 continue
 

@@ -13,28 +13,7 @@ from syncphony.utils.managers import get_manager_for_platform
 router = APIRouter()
 
 
-@router.get("/sync/status")
-async def get_sync_status(db: Session = Depends(get_session)):
-    """
-    Get the current sync status.
-    """
-    req = select(Tasks).where(Tasks.task_type == "sync").order_by(col(Tasks.created_at).desc())
-    tasks = db.exec(req).all()
-
-    return {
-        "tasks": [
-            {
-                "id": task.id,
-                "status": task.status,
-                "details": task.details,
-                "created_at": task.created_at,
-                "updated_at": task.updated_at,
-            } for task in tasks
-        ]
-    }
-
-
-@router.post("/sync/start")
+@router.post("/start")
 async def start_sync(
         ids: Annotated[list[str], Query(title="List of IDs to sync",
                                         description="IDs of the items to sync from the source platform")],

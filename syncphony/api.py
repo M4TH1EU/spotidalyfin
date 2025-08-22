@@ -1,20 +1,28 @@
 from fastapi import FastAPI
 
 from syncphony.db.db import init_db
-from syncphony.routers import accounts, sync
-from syncphony.tasks.runner import start_task_runner
+from syncphony.routers import accounts, sync, tasks
+from syncphony.tasks.runner import TaskRunner
 
 app = FastAPI(title="Syncphony API")
+
+runner = TaskRunner()
 
 
 @app.on_event("startup")
 def on_startup():
     init_db()
-    start_task_runner()  # start background daemon
+    runner.start()
+
+
+@app.on_event("shutdown")
+def on_shutdown():
+    runner.stop()
 
 
 app.include_router(accounts.router, prefix="/accounts", tags=["Accounts"])
 app.include_router(sync.router, prefix="/sync", tags=["Sync"])
+app.include_router(tasks.router, prefix="/tasks", tags=["Tasks"])
 
 
 @app.get("/")
