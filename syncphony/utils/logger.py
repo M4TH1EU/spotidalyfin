@@ -9,4 +9,7 @@ def setup_logger(level: str = "INFO"):
     logging.getLogger('tidalapi.settings').disabled = True
     logging.getLogger('tidalapi.session').disabled = True
 
+    # Prevent sqlalchemy from logging
+    # logging.getLogger('sqlalchemy.engine.Engine').disabled = True
+
     log.setLevel(level)

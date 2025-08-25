@@ -104,7 +104,7 @@ def _generate_token(password: str, salt: str) -> str:
     return hashlib.md5((password + salt).encode("utf-8")).hexdigest()
 
 
-def login_subsonic(server_url: str, username: str, password: str, db: Database) -> (bool, str, dict):
+def login_subsonic(server_url: str, username: str, password: str, db: Database) -> tuple[bool, str, dict]:
     try:
         subsonic_manager = SubsonicManager(url=server_url, username=username, db=db, password=password)
         resp = subsonic_manager._request("ping")
@@ -229,11 +229,19 @@ class SubsonicManager(Manager):
             log.error(f"Error fetching tracks for artist {artist_id}: {e}")
             return []
 
-    def get_playlist(self, playlist_id: str, fetch_tracks: bool = True, fetch_albums: bool = False) -> Optional[
+    def get_playlist(self, playlist_id: str, fetch_tracks: bool = True, fetch_albums: bool = False,
+                     fetch_albums_tracks: bool = False) -> Optional[
         SubsonicPlaylist]:
         try:
             resp = self._request("getPlaylist", {"id": playlist_id})
             playlist = resp.get("playlist")
+
+            if fetch_albums:
+                # TODO
+                pass
+            if fetch_albums_tracks:
+                # TODO
+                pass
 
             # cover = self._get_cover_art(playlist.get("coverArt"))
             return _parse_playlist(playlist, fetch_tracks, cover=None) if playlist else None
@@ -381,4 +389,3 @@ class SubsonicManager(Manager):
 
     def supports_downloading(self) -> bool:
         return False
-

@@ -43,11 +43,11 @@ class TaskRunner:
             db.commit()
 
     def _run_task(self, task: Tasks):
-        handler = TASK_REGISTRY.get(task.task_type)
+        handler = TASK_REGISTRY.get(task.type)
         with Session(engine) as db:
             if not handler:
                 task.status = TaskStatus.FAILED
-                task.errors += f"No handler registered for task type {task.task_type}\n"
+                task.errors += f"No handler registered for task type {task.type}\n"
                 db.add(task)
                 db.commit()
                 return

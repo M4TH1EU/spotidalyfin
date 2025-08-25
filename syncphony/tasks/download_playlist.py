@@ -1,9 +1,9 @@
+from pathlib import Path
+
 from sqlmodel import Session
 
 from syncphony.db.models import Tasks
-from syncphony.types import Track
 from syncphony.types.enums import TaskStatus
-from syncphony.types.utils import get_track_on_another_platform
 from syncphony.utils.managers import get_manager_for_platform
 
 
@@ -21,25 +21,40 @@ def task_download(db: Session, task: Tasks) -> bool:
     from_account = details.get("from_account")
     from_user = details.get("from_user")
 
+    download_entire_album = details.get("download_entire_album", False)
+    quality = details.get("quality")
+    destination = details.get("destination")
 
-    if not from_platform or not from_account:
+    if not from_platform or not from_account or not quality:
         task.status = TaskStatus.FAILED
         db.add(task)
         db.commit()
-        raise ValueError("Invalid task details: missing platform or account information.")
+        raise ValueError("Invalid task details: missing platform, account or quality information.")
 
-    from_manager = get_manager_for_platform(db, from_platform, from_account)
+    dl_manager = get_manager_for_platform(db, from_platform, from_account)
 
-    if not from_manager:
+    if not dl_manager or not destination:
         task.status = TaskStatus.FAILED
-        task.errors += f"Invalid task details: missing platform or account information.\n"
+        task.errors += f"Invalid task details: missing destination, platform or account information.\n"
         db.add(task)
         db.commit()
         return False
 
+    destination = Path(destination)
+    if not destination.exists():
+        try:
+            destination.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            task.status = TaskStatus.FAILED
+            task.errors += f"Failed to create destination directory: {str(e)}\n"
+            db.add(task)
+            db.commit()
+            return False
+
+
     try:
         for playlist_id in details.get("ids", []):
-            playlist = from_manager.get_playlist(playlist_id)
+            playlist = dl_manager.get_playlist(playlist_id, fetch_albums=download_entire_album, fetch_albums_tracks=download_entire_album)
             if not playlist:
                 continue
 
@@ -47,34 +62,36 @@ def task_download(db: Session, task: Tasks) -> bool:
             if total_tracks == 0:
                 continue
 
-            # to_tracks: list[Track] = []
-            # for track in playlist.tracks:
-            #     to_track = get_track_on_another_platform(track, to_manager)
-            #     if to_track:
-            #         task.logs += f"Found track {track.name} on {to_platform}.\n"
-            #         to_tracks.append(to_track)
-            #     else:
-            #         task.warnings += f"Track {track.name} not found on {to_platform}, skipping.\n"
-            #
-            # if not to_tracks:
-            #     continue
-            #
-            # to_playlist = to_manager.create_playlist(playlist.name, to_tracks, playlist.description, to_user)
-            #
-            # if not to_playlist:
-            #     task.status = TaskStatus.FAILED
-            #     task.errors += f"Failed to create playlist {playlist.name} on {to_platform}.\n"
-            #     db.add(task)
-            #     db.commit()
-            # else:
-            #     task.logs += f"Successfully created playlist {to_playlist.name} on {to_platform} with {len(to_tracks)} tracks.\n"
-            #     task.status = TaskStatus.COMPLETED
-            #     db.add(task)
-            #     db.commit()
-            #     return True
+            if download_entire_album:
+                all_albums = []
+                for track in playlist.tracks:
+                    if track.album and track.album not in all_albums:
+                        all_albums.append(track.album)
+
+                for album in all_albums:
+                    download = dl_manager.download_album(album, destination, from_user, quality)
+                    if download:
+                        task.logs += f"Downloaded album {album.name} by {album.artist}.\n"
+                    else:
+                        task.logs += f"Failed to download album {album.name} by {album.artist}.\n"
+            else:
+                for track in playlist.tracks:
+                    download = dl_manager.download_track(track, from_user, quality)
+                    if download:
+                        task.logs += f"Downloaded track {track.name} by {track.artist}.\n"
+                    else:
+                        task.logs += f"Failed to download track {track.name} by {track.artist}.\n"
+
+            task.status = TaskStatus.COMPLETED
+            db.add(task)
+            db.commit()
+            return True
+
     except Exception as e:
         task.status = TaskStatus.FAILED
         task.errors += str(e)
         db.add(task)
         db.commit()
         return False
+
+    return False

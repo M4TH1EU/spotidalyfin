@@ -9,3 +9,7 @@ musicbrainzngs~=0.7.1
 streamlit~=1.48.1
 Unidecode~=1.4.0
 rapidfuzz~=3.13.0
+standard-aifc
+standard-sunau
+requests
+fastapi

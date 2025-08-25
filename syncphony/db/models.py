@@ -5,7 +5,7 @@ from sqlalchemy import DateTime, func, JSON
 from sqlalchemy import PrimaryKeyConstraint
 from sqlmodel import SQLModel, Column, Field, Enum
 
-from syncphony.types.enums import TaskType, TaskStatus
+from syncphony.types.enums import TaskType, TaskStatus, MatchType
 
 
 class SpotifyAccount(SQLModel, table=True):
@@ -39,6 +39,7 @@ class SubsonicAccount(SQLModel, table=True):
 
 class Match(SQLModel, table=True):
     id: int = Field(default=None, primary_key=True)  # surrogate PK
+    type: MatchType = Field(sa_column=Column(Enum(MatchType)))
     spotify_id: Optional[str] = Field(default=None, unique=True, index=True)
     tidal_id: Optional[str] = Field(default=None, unique=True, index=True)
     jellyfin_id: Optional[str] = Field(default=None, unique=True, index=True)
@@ -47,7 +48,7 @@ class Match(SQLModel, table=True):
 
 class Tasks(SQLModel, table=True):
     id: str = Field(default=None, primary_key=True)
-    task_type: TaskType = Field(sa_column=Column(Enum(TaskType)))
+    type: TaskType = Field(sa_column=Column(Enum(TaskType)))
     status: TaskStatus = Field(sa_column=Column(Enum(TaskStatus)))
     created_at: datetime.datetime = Field(
         default_factory=datetime.datetime.utcnow,

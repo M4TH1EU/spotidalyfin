@@ -113,7 +113,7 @@ def _parse_playlist(jellyfin_playlist: dict) -> JellyfinPlaylist:
     )
 
 
-def login_jellyfin(server_url: str, api_key: str, db: Database) -> (bool, str, dict):
+def login_jellyfin(server_url: str, api_key: str, db: Database) -> tuple[bool, str, dict]:
     """
     Try to authenticate with Jellyfin server using the provided URL and API key.
     Returns a tuple of (success: bool, message: str).
@@ -294,7 +294,8 @@ class JellyfinManager(Manager):
             log.error(f"Failed to retrieve tracks for artist {artist_id} from Jellyfin: {e}")
             return []
 
-    def get_playlist(self, playlist_id: str, fetch_tracks: bool = True, fetch_albums: bool = False) -> Optional[
+    def get_playlist(self, playlist_id: str, fetch_tracks: bool = True, fetch_albums: bool = False,
+                     fetch_albums_tracks: bool = False) -> Optional[
         JellyfinPlaylist]:
         try:
             path = f"Items"
@@ -321,6 +322,9 @@ class JellyfinManager(Manager):
 
             if fetch_albums:
                 # album data should already be included with the fetch_tracks call
+                pass
+            if fetch_albums_tracks:
+                # TODO
                 pass
 
             return _parse_playlist(jellyfin_playlist)

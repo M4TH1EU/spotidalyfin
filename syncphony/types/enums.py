@@ -23,9 +23,11 @@ class ArtistRole(str, Enum):
     CONTRIBUTOR = "CONTRIBUTOR"
     ARTIST = "ARTIST"
 
+
 class TaskType(str, Enum):
     SYNC = "sync"
     DOWNLOAD = "download"
+
 
 class TaskStatus(str, Enum):
     PENDING = "pending"
@@ -33,3 +35,9 @@ class TaskStatus(str, Enum):
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
+
+
+class MatchType(str, Enum):
+    TRACK = "track"
+    ALBUM = "album"
+    ARTIST = "artist"

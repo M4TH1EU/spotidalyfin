@@ -174,6 +174,8 @@ class SpotifyManager(Manager):
     def get_album(self, album_id: str) -> Optional[SpotifyAlbum]:
         try:
             spotipy_album = self.client.album(album_id)
+            spotipy_album['tracks'] = self.client.album_tracks(spotipy_album['id']) # TODO: check if pagination is needed
+
             return _parse_album(spotipy_album)
 
         except SpotifyException as e:
@@ -198,7 +200,7 @@ class SpotifyManager(Manager):
             log.exception(f"Failed to fetch top tracks for artist with ID {artist_id}")
             return []
 
-    def get_playlist(self, playlist_id: str, fetch_tracks: bool = True, fetch_albums: bool = False) -> Optional[
+    def get_playlist(self, playlist_id: str, fetch_tracks: bool = True, fetch_albums: bool = False, fetch_albums_tracks: bool = False) -> Optional[
         SpotifyPlaylist]:
         if playlist_id == "favorite_tracks":
             return self.get_favorite_tracks()
@@ -249,6 +251,9 @@ class SpotifyManager(Manager):
                 track = item['track']
                 album_id = track['album']['id']
                 track['album'] = self.client.album(album_id)
+
+                if fetch_albums_tracks:
+                    track['album']['tracks'] = self.client.album_tracks(album_id)  # TODO: check if pagination is needed
 
         return _parse_playlist(playlist)
 

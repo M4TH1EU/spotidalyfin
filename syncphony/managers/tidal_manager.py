@@ -7,7 +7,7 @@ import tidalapi
 from sqlmodel import Session, select
 from tidalapi import media
 from tidalapi.exceptions import ObjectNotFound, TooManyRequests
-from tidalapi.media import Lyrics, Stream, AudioExtensions
+from tidalapi.media import Lyrics, Stream, AudioExtensions, StreamManifest
 from tidalapi.session import SearchResults
 
 from syncphony.db.models import TidalAccount
@@ -19,9 +19,25 @@ from syncphony.types.manager import Manager
 from syncphony.types.playlist import Playlist, TidalFavoriteTracksPlaylist, \
     TidalPlaylist
 from syncphony.types.track import TidalTrack
+from syncphony.utils.decorators import rate_limit
+from syncphony.utils.download import download_all_ordered
 from syncphony.utils.ffmpeg import convert_m4a_bytes_to_flac
+from syncphony.utils.files import generate_path
 from syncphony.utils.logger import log
 from syncphony.utils.metadata import process_metadata
+
+
+def _get_tidal_quality(quality: TrackQuality) -> str:
+    if quality == TrackQuality.DOLBY_ATMOS:
+        return "DOLBY_ATMOS"
+    elif quality == TrackQuality.EXTREME:
+        return "HI_RES_LOSSLESS"
+    elif quality == TrackQuality.HIGH:
+        return "LOSSLESS"
+    elif quality == TrackQuality.MEDIUM:
+        return "HIGH"
+    else:
+        return "LOW"
 
 
 def _parse_real_track_quality(track: tidalapi.Track) -> TrackQuality:
@@ -38,12 +54,12 @@ def _parse_real_track_quality(track: tidalapi.Track) -> TrackQuality:
         return TrackQuality.LOW
 
 
-def _parse_track(tidal_track: tidalapi.Track, album: tidalapi.Album = None) -> TidalTrack:
+def _parse_track(tidal_track: tidalapi.Track, fetch_album_tracks: bool = False) -> TidalTrack:
     return TidalTrack(
         name=tidal_track.name,
         id=str(tidal_track.id),
         artist=_parse_artist(tidal_track.artist) if tidal_track.artist else None,
-        album=_parse_album(album or tidal_track.album) if album or tidal_track.album else None,
+        album=_parse_album(tidal_track.album, fetch_album_tracks) if tidal_track.album else None,
         duration=tidal_track.duration,
         quality=_parse_real_track_quality(tidal_track),
         isrc=tidal_track.isrc.upper(),
@@ -62,7 +78,7 @@ def _parse_artist(tidal_artist: tidalapi.Artist) -> TidalArtist:
     )
 
 
-def _parse_album(tidal_album: tidalapi.Album, fetch_tracks: bool = False) -> TidalAlbum:
+def _parse_album(tidal_album: tidalapi.Album, fetch_album_tracks: bool = False) -> TidalAlbum:
     return TidalAlbum(
         name=tidal_album.name,
         id=str(tidal_album.id),
@@ -70,7 +86,7 @@ def _parse_album(tidal_album: tidalapi.Album, fetch_tracks: bool = False) -> Tid
         barcode=tidal_album.upc,
         release_date=tidal_album.release_date,
         # cover=get_as_base64(f"https://resources.tidal.com/images/{tidal_album.cover.replace('-', '/')}/1280x1280.jpg"),
-        tracks=tidal_album.tracks() if fetch_tracks else None,
+        tracks=[_parse_track(track) for track in tidal_album.tracks()] if fetch_album_tracks else None,
         num_volumes=tidal_album.num_volumes,
         num_tracks=tidal_album.num_tracks,
         duration=tidal_album.duration,
@@ -79,12 +95,12 @@ def _parse_album(tidal_album: tidalapi.Album, fetch_tracks: bool = False) -> Tid
 
 
 def _parse_playlist(tidal_playlist: tidalapi.Playlist, fetch_tracks: bool = False,
-                    fetch_albums: bool = False) -> TidalPlaylist:
+                    fetch_albums: bool = False, fetch_albums_tracks: bool = False) -> TidalPlaylist:
     return TidalPlaylist(
         name=tidal_playlist.name,
         id=tidal_playlist.id,
         # image=get_as_base64(tidal_playlist.image(640)),
-        tracks=_fetch_playlist_tracks(tidal_playlist, fetch_albums) if fetch_tracks else None,
+        tracks=_fetch_playlist_tracks(tidal_playlist, fetch_albums, fetch_albums_tracks) if fetch_tracks else None,
     )
 
 
@@ -96,13 +112,18 @@ def _parse_favorites_tracks(tidal_playlist: tidalapi.Playlist) -> TidalFavoriteT
     )
 
 
-def _fetch_playlist_tracks(tidal_playlist: tidalapi.Playlist, fetch_albums: bool = False) -> List[Track]:
+@rate_limit(returns=[])
+def _fetch_playlist_tracks(tidal_playlist: tidalapi.Playlist, fetch_albums: bool = False,
+                           fetch_albums_tracks: bool = False) -> List[Track]:
     """Fetch tracks from a TIDAL playlist."""
     total = tidal_playlist.num_tracks
     tracks = []
     for offset in range(0, total, 100):
-        tracks.extend(_parse_track(track, track.session.album(track.album.id) if fetch_albums else None) for track in
-                      tidal_playlist.tracks(offset=offset, limit=100))
+        for track in tidal_playlist.tracks(offset=offset, limit=100):
+            album = track.session.album(track.album.id) if fetch_albums else None
+            if album:
+                track.album = album
+            tracks.append(_parse_track(track, fetch_album_tracks=fetch_albums_tracks))
 
     return tracks
 
@@ -110,30 +131,6 @@ def _fetch_playlist_tracks(tidal_playlist: tidalapi.Playlist, fetch_albums: bool
 def create_temp_session_tidal(config: tidalapi.Config = tidalapi.Config()) -> tidalapi.Session:
     """Get the URL for logging in with TIDAL using PKCE flow."""
     return tidalapi.Session(config=config)
-
-
-#
-# def login_tidal(session: tidalapi.Session(), response_url: str, db: Database = None) -> (bool, str, dict):
-#     """Try to authenticate with TIDAL using the given redirect URL. Optionally save the account into the database."""
-#     try:
-#         response: dict = session.pkce_get_auth_token(response_url)
-#         if db and "user" in response:
-#             if response.get("user").get("username") in get_authenticated_tidal_profiles(db):
-#                 return False, "This account is already authenticated, please remove it and try again.", {}
-#
-#             save_tidal_info_to_db(db, response)
-#
-#         return True, "", {}
-#     except Exception as e:
-#         log.exception("Failed to authenticate with TIDAL")
-#
-#         try:
-#             error = json.loads(e.response.content.decode()).get("error_description")
-#             if error:
-#                 return False, f"Failed to authenticate with TIDAL: {error}", {}
-#         except JSONDecodeError | TypeError:
-#             log.exception("Failed to parse TIDAL authentication error response")
-#             return False, f"Failed to authenticate with TIDAL. Please try again.", {}
 
 
 class TidalManager(Manager):
@@ -157,11 +154,12 @@ class TidalManager(Manager):
             token_type="Bearer",
             is_pkce=True
         )
-        self.client.audio_quality = "HI_RES_LOSSLESS"
+        self.client.audio_quality = _get_tidal_quality(TrackQuality.HIGH)
 
     def is_multi_user(self) -> bool:
         return False
 
+    @rate_limit
     def get_track(self, track_id: str) -> Optional[TidalTrack]:
         try:
             tidal_track = self.client.track(track_id)
@@ -172,24 +170,30 @@ class TidalManager(Manager):
         except ObjectNotFound as e:
             log.exception(f"Failed to fetch TIDAL track with ID {track_id}: {e}")
             return None
+        except TooManyRequests as e:
+            raise e
         except Exception as e:
             log.exception(f"An error occurred while fetching TIDAL track with ID {track_id}: {e}")
             return None
 
+    @rate_limit
     def get_album(self, album_id: str) -> Optional[TidalAlbum]:
         try:
             tidal_album = self.client.album(album_id)
             if tidal_album:
-                return _parse_album(tidal_album, fetch_tracks=True)
+                return _parse_album(tidal_album, fetch_album_tracks=True)
 
             return None
         except ObjectNotFound as e:
             log.exception(f"Failed to fetch TIDAL album with ID {album_id}: {e}")
             return None
+        except TooManyRequests as e:
+            raise e
         except Exception as e:
             log.exception(f"An error occurred while fetching TIDAL album with ID {album_id}: {e}")
             return None
 
+    @rate_limit
     def get_artist(self, artist_id: str) -> Optional[TidalArtist]:
         try:
             tidal_artist = self.client.artist(artist_id)
@@ -200,14 +204,19 @@ class TidalManager(Manager):
         except ObjectNotFound as e:
             log.exception(f"Failed to fetch TIDAL artist with ID {artist_id}: {e}")
             return None
+        except TooManyRequests as e:
+            raise e
         except Exception as e:
             log.exception(f"An error occurred while fetching TIDAL artist with ID {artist_id}: {e}")
             return None
 
+    @rate_limit(returns=[])
     def get_artist_tracks(self, artist_id: str) -> list[TidalTrack]:
         return []  # TODO: implement fetching artist tracks
 
-    def get_playlist(self, playlist_id: str, fetch_tracks: bool = True, fetch_albums: bool = False) -> Optional[
+    @rate_limit
+    def get_playlist(self, playlist_id: str, fetch_tracks: bool = True, fetch_albums: bool = False,
+                     fetch_albums_tracks: bool = False) -> Optional[
         TidalPlaylist]:
         if playlist_id == "favorite_tracks":
             return self.get_favorite_tracks()
@@ -218,15 +227,19 @@ class TidalManager(Manager):
         try:
             tidal_playlist = self.client.playlist(playlist_id)
             if tidal_playlist:
-                return _parse_playlist(tidal_playlist, fetch_tracks=fetch_tracks, fetch_albums=fetch_albums)
+                return _parse_playlist(tidal_playlist, fetch_tracks=fetch_tracks, fetch_albums=fetch_albums,
+                                       fetch_albums_tracks=fetch_albums_tracks)
             return None
         except ObjectNotFound as e:
             log.exception(f"Failed to fetch TIDAL playlist with ID {playlist_id}: {e}")
             return None
+        except TooManyRequests as e:
+            raise e
         except Exception as e:
             log.exception(f"An error occurred while fetching TIDAL playlist with ID {playlist_id}: {e}")
             return None
 
+    @rate_limit(returns=[])
     def get_user_playlists(self, user_id: str = None) -> list[TidalPlaylist]:
         """Retrieve all playlists for a user."""
         try:
@@ -236,10 +249,13 @@ class TidalManager(Manager):
                 playlists = self.client.get_user(int(user_id)).playlists()
 
             return [_parse_playlist(playlist, False) for playlist in playlists]
+        except TooManyRequests as e:
+            raise e
         except Exception as e:
             log.exception(f"Failed to fetch TIDAL playlists for user {user_id}: {e}")
             return []
 
+    @rate_limit
     def get_favorite_tracks(self, user_id: str = None) -> Optional[TidalFavoriteTracksPlaylist]:
         try:
             liked_songs = self.client.user.favorites(limit=100, offset=0)
@@ -257,10 +273,13 @@ class TidalManager(Manager):
                 name="Liked Songs",
                 tracks=[_parse_track(track) for track in tracks]
             )
+        except TooManyRequests as e:
+            raise e
         except Exception as e:
             log.exception("Failed to fetch favorite tracks from TIDAL")
             return None
 
+    @rate_limit
     def _search(self,
                 query: str,
                 models: Optional[List[tidalapi.Album or tidalapi.Track or tidalapi.Artist]] = None,
@@ -279,10 +298,13 @@ class TidalManager(Manager):
             sanitized_query = query[:99]  # Ensure query length does not exceed TIDAL limits
             models = models or [media.Track]
             return self.client.search(sanitized_query, limit=limit, models=models)
+        except TooManyRequests as e:
+            raise e
         except Exception as e:
             log.exception(f"Failed to search TIDAL with query '{query}': {e}")
             return None
 
+    @rate_limit(returns=[])
     def search_tracks_by_query(self, query: str) -> list[TidalTrack]:
         try:
             search_results = self._search(query, models=[media.Track])
@@ -290,19 +312,24 @@ class TidalManager(Manager):
                 return []
 
             return [_parse_track(track) for track in search_results.get('tracks', [])]
+        except TooManyRequests as e:
+            raise e
         except Exception as e:
             log.exception(f"Failed to search TIDAL tracks with query '{query}': {e}")
             return []
 
+    @rate_limit(returns=[])
     def search_tracks_by_isrc(self, isrc: str) -> list[TidalTrack]:
         try:
             tracks = self.client.get_tracks_by_isrc(isrc)
             return [_parse_track(track) for track in tracks] if tracks else []
-
+        except TooManyRequests as e:
+            raise e
         except Exception as e:
             log.exception(f"Failed to search TIDAL tracks with ISRC '{isrc}': {e}")
             return []
 
+    @rate_limit(returns=[])
     def search_albums_by_query(self, query: str) -> list[TidalAlbum]:
         try:
             search_results = self._search(query, models=[media.Album])
@@ -310,19 +337,24 @@ class TidalManager(Manager):
                 return []
 
             return [_parse_album(album) for album in search_results.get('albums', [])]
+        except TooManyRequests as e:
+            raise e
         except Exception as e:
             log.exception(f"Failed to search TIDAL albums with query '{query}': {e}")
             return []
 
+    @rate_limit(returns=[])
     def search_albums_by_upc(self, upc: str) -> list[TidalAlbum]:
         try:
             albums = self.client.get_albums_by_barcode(upc)
             return [_parse_album(album) for album in albums] if albums else []
-
+        except TooManyRequests as e:
+            raise e
         except Exception as e:
             log.exception(f"Failed to search TIDAL albums with UPC '{upc}': {e}")
             return []
 
+    @rate_limit(returns=[])
     def search_artists_by_query(self, query: str) -> list[TidalArtist]:
         try:
             search_results = self._search(query, models=[tidalapi.Artist])
@@ -330,6 +362,8 @@ class TidalManager(Manager):
                 return []
 
             return [_parse_artist(artist) for artist in search_results.get('artists', [])]
+        except TooManyRequests as e:
+            raise e
         except Exception as e:
             log.exception(f"Failed to search TIDAL artists with query '{query}': {e}")
             return []
@@ -337,6 +371,7 @@ class TidalManager(Manager):
     def supports_lyrics(self) -> bool:
         return True
 
+    @rate_limit
     def get_lyrics(self, track: TidalTrack) -> Optional[str]:
         try:
             request = self.client.request.request("GET", "tracks/%s/lyrics" % track.id)
@@ -346,20 +381,26 @@ class TidalManager(Manager):
 
             lyrics = cast("Lyrics", lyrics)
             return lyrics.subtitles or lyrics.text
+        except TooManyRequests as e:
+            raise e
         except ObjectNotFound | Exception:
             log.exception(f"Lyrics not found for track {track.name} by {track.artist.name}")
             return None
 
+    @rate_limit
     def create_empty_playlist(self, name: str, description: str = "", cover: bytes = None, user_id: str = None) -> \
             Optional[TidalPlaylist]:
         try:
             new_playlist = self.client.user.create_playlist(title=name, description=description)
             # TODO: Handle cover
             return _parse_playlist(new_playlist, fetch_tracks=False)
+        except TooManyRequests as e:
+            raise e
         except Exception as e:
             log.exception(f"Failed to create TIDAL playlist '{name}': {e}")
             return None
 
+    @rate_limit(returns=False)
     def add_tracks_to_playlist(self, playlist: Playlist, tracks: List[TidalTrack], user_id: str = None) -> bool:
         try:
             tidal_playlist = self.client.playlist(playlist.id)
@@ -368,11 +409,13 @@ class TidalManager(Manager):
                 tidal_playlist.add([track.id for track in tracks[i:i + 100]])
 
             return True
-
+        except TooManyRequests as e:
+            raise e
         except Exception as e:
             log.exception(f"Failed to add tracks to TIDAL playlist '{playlist.id}': {e}")
             return False
 
+    @rate_limit(returns=False)
     def remove_playlist_by_id(self, playlist_id: str) -> bool:
         try:
             tidal_playlist = self.client.playlist(playlist_id)
@@ -381,6 +424,8 @@ class TidalManager(Manager):
         except ObjectNotFound as e:
             log.exception(f"Playlist with ID {playlist_id} not found: {e}")
             return False
+        except TooManyRequests as e:
+            raise e
         except Exception as e:
             log.exception(f"Failed to remove TIDAL playlist with ID {playlist_id}: {e}")
             return False
@@ -388,19 +433,97 @@ class TidalManager(Manager):
     def supports_downloading(self) -> bool:
         return True
 
-    def download_track(self, track: TidalTrack, user_id: str = None, quality: TrackQuality = TrackQuality.HIGH,
-                       retry: int = 0) -> Optional[str]:
-        def _get_tidal_quality(quality: TrackQuality) -> str:
-            if quality == TrackQuality.DOLBY_ATMOS:
-                return "DOLBY_ATMOS"
-            elif quality == TrackQuality.EXTREME:
-                return "HI_RES_LOSSLESS"
-            elif quality == TrackQuality.HIGH:
-                return "LOSSLESS"
-            elif quality == TrackQuality.MEDIUM:
-                return "HIGH"
-            else:
-                return "LOW"
+    @rate_limit
+    def _get_stream(self, track: TidalTrack, quality: TrackQuality) -> StreamManifest | None:
+        try:
+            params = {
+                "playbackmode": "STREAM",
+                "assetpresentation": "FULL",
+                "audioquality": _get_tidal_quality(quality),
+            }
+
+            request = self.client.request.request("GET", "tracks/%s/playbackinfopostpaywall" % track.id, params)
+        except ObjectNotFound:
+            log.exception(f"No stream available for track {track.name} by {track.artist.name}")
+            return None
+        except TooManyRequests as e:
+            raise e
+        except Exception as e:
+            log.exception(f"Failed to get stream for track {track.name} by {track.artist.name}: {e}")
+            return None
+        else:
+            json_obj = request.json()
+            stream = self.client.request.map_json(json_obj, parse=Stream().parse)
+            assert not isinstance(stream, list)
+            stream = cast("Stream", stream)
+
+        if not stream:
+            log.error(f"No stream manifest available for track {track.name} by {track.artist.name}")
+            return None
+
+        # Get stream manifest
+        stream_manifest = stream.get_stream_manifest()
+        if not stream_manifest:
+            log.error(f"No stream manifest available for track {track.name} by {track.artist.name}")
+            return None
+
+        return stream_manifest
+
+    @rate_limit
+    def download_album(self, album: TidalAlbum, destination: Path, user_id: str = None,
+                       quality: TrackQuality = TrackQuality.HIGH) -> \
+            Optional[str]:
+        # Set quality for the download
+        self.client.audio_quality = _get_tidal_quality(quality)
+
+        if not album.tracks:
+            album = self.get_album(album.id)
+            if not album or not album.tracks:
+                log.error(f"No tracks found for album {album.name} by {album.artist.name}")
+                return None
+
+        fail = False
+        try:
+            for track in album.tracks:
+                track_stream = self._get_stream(track, quality)
+                if not track_stream:
+                    log.error(f"Skipping track {track.name} by {track.artist.name} due to missing stream.")
+                    continue
+
+                print("Downloading track:", track.name)
+                audio_bytes = download_all_ordered(track_stream.urls)
+
+                # Check audio format and convert if necessary
+                if track_stream.file_extension not in [AudioExtensions.M4A, AudioExtensions.FLAC]:
+                    log.error(
+                        f"Unsupported file extension {track_stream.file_extension} for track {track.name} by {track.artist.name}")
+                    return None
+
+                if track_stream.file_extension == AudioExtensions.M4A:
+                    audio_bytes = convert_m4a_bytes_to_flac(audio_bytes, timeout=15, re_encode_flac=False)
+
+                # Save to file
+                bytes_response = bytes(audio_bytes)
+                file_path = generate_path(track, base_path=destination, extension="flac")
+                file_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(file_path, "wb") as f:
+                    f.write(bytes_response)
+
+                # TODO: handle metadata
+
+                print("Downloaded bytes:", len(audio_bytes))
+        except TooManyRequests as e:
+            raise e
+        except Exception as e:
+            log.exception(f"Failed to download album {album.name} by {album.artist.name}: {e}")
+            fail = True
+
+        return str(destination)
+
+    @rate_limit
+    def download_track(self, track: TidalTrack, user_id: str = None, quality: TrackQuality = TrackQuality.HIGH) -> \
+            Optional[str]:
+        # NOT WORKING WELL: focus on download_album first
 
         # Get stream info
         stream = None
@@ -415,15 +538,8 @@ class TidalManager(Manager):
         except ObjectNotFound:
             log.exception(f"No stream available for track {track.name} by {track.artist.name}")
             return None
-        except TooManyRequests:
-            log.exception(
-                f"Rate limited by TIDAL when trying to get stream for track {track.name} by {track.artist.name}")
-            if retry < 3:
-                import time
-                time.sleep(2 ** retry)
-                return self.download_track(track, user_id, quality, retry + 1)
-
-            return None
+        except TooManyRequests as e:
+            raise e
         except Exception as e:
             log.exception(f"Failed to get stream for track {track.name} by {track.artist.name}: {e}")
             return None

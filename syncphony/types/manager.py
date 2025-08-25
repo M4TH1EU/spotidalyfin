@@ -1,6 +1,7 @@
 import logging
 from abc import abstractmethod, ABC
 from dataclasses import dataclass
+from pathlib import Path
 from typing import List, Optional, Tuple
 
 from sqlmodel import Session, select
@@ -8,7 +9,7 @@ from sqlmodel import Session, select
 from syncphony.db.models import Match
 from syncphony.types import Track, Album, Artist
 from syncphony.types.compare import normalize_track_name, compare_strings_set_ratio, normalize_artist_name
-from syncphony.types.enums import Platform
+from syncphony.types.enums import Platform, MatchType, TrackQuality
 from syncphony.types.playlist import Playlist, FavoriteTracksPlaylist
 
 
@@ -49,7 +50,8 @@ class Manager(ABC):
         raise NotImplementedError("This method should be implemented by subclasses.")
 
     @abstractmethod
-    def get_playlist(self, playlist_id: str, fetch_tracks: bool = True, fetch_albums: bool = False) -> Optional[
+    def get_playlist(self, playlist_id: str, fetch_tracks: bool = True, fetch_albums: bool = False,
+                     fetch_albums_tracks: bool = False) -> Optional[
         Playlist]:
         """Retrieve a playlist by its ID."""
         raise NotImplementedError("This method should be implemented by subclasses.")
@@ -69,7 +71,7 @@ class Manager(ABC):
         if not track:
             return []
 
-        db_match = self.search_db_for_match(track.id, track.platform)
+        db_match = self.search_db_for_match(track.id, MatchType.TRACK, track.platform)
         if db_match:
             return [self.get_track(db_match)]
 
@@ -226,50 +228,67 @@ class Manager(ABC):
         """Remove a playlist by its ID."""
         raise NotImplementedError("This method should be implemented by subclasses.")
 
-    def search_db_for_match(self, item_id: str, src_platform: Platform) -> Optional[str]:
+    def search_db_for_match(self, item_id: str, type: MatchType, src_platform: Platform) -> Optional[str]:
         """Search the database for a match of the given ID on the destination platform."""
         # Dynamically get column names based on enum value
         src_col = f"{src_platform.value.lower()}_id"
         dest_col = f"{self.PLATFORM.value.lower()}_id"
 
         # Build query dynamically
-        stmt = select(getattr(Match, dest_col)).where(getattr(Match, src_col) == item_id)
+        stmt = select(getattr(Match, dest_col)).where(getattr(Match, "type") == type.value).where(
+            getattr(Match, src_col) == item_id)
         result = self.db_session.exec(stmt).first()
 
         return result if result else None
 
-    def save_match_to_db(self, src_id: str, src_platform: Platform, dest_id: str) -> None:
+    def save_match_to_db(self, src_id: str, type: MatchType, src_platform: Platform, dest_id: str) -> None:
         """Save a match between two platforms in the database."""
 
         src_col = f"{src_platform.value.lower()}_id"
         dest_col = f"{self.PLATFORM.value.lower()}_id"
 
         # Check if a row already exists for this src_id
-        stmt = select(Match).where(getattr(Match, src_col) == src_id)
+        stmt = select(Match).where(getattr(Match, "type") == type.value).where(getattr(Match, src_col) == src_id)
         match = self.db_session.exec(stmt).first()
 
         if match:
             # Update existing row
             setattr(match, dest_col, dest_id)
+            setattr(match, "type", type.value)
         else:
             # Create a new row with all platform IDs set to None initially
             data = {f"{p.value.lower()}_id": None for p in Platform}
             data[src_col] = src_id
             data[dest_col] = dest_id
+            data["type"] = type.value
             match = Match(**data)
             self.db_session.add(match)
 
         self.db_session.commit()
 
+    @abstractmethod
+    def supports_downloading(self) -> bool:
+        """Check if the manager supports downloading tracks."""
+        raise NotImplementedError("This method should be implemented by subclasses.")
 
-@abstractmethod
+    def download_track(self, track: Track, user_id: str = None, quality: TrackQuality = TrackQuality.HIGH) -> Optional[
+        str]:
+        """Download a track and return the file path."""
+        raise NotImplementedError("This method should be implemented by subclasses.")
 
-
-def supports_downloading(self) -> bool:
-    """Check if the manager supports downloading tracks."""
-    raise NotImplementedError("This method should be implemented by subclasses.")
-
-
-def download_track(self, track: Track, user_id: str = None) -> Optional[str]:
-    """Download a track and return the file path."""
-    raise NotImplementedError("This method should be implemented by subclasses.")
+    def download_album(self, album: Album, destination: Path, user_id: str = None,
+                       quality: TrackQuality = TrackQuality.HIGH) -> Optional[
+        str]:
+        """Download an album and return the directory path."""
+        raise NotImplementedError("This method should be implemented by subclasses.")
+        # if not album.tracks:
+        #     logging.warning(f"Album {album.name} has no tracks to download.")
+        #     return None
+        #
+        # for track in album.tracks:
+        #     download = self.download_track(track, user_id, quality)
+        #     if not download:
+        #         logging.error(f"Failed to download track {track.name} from album {album.name}.")
+        #         return None
+        #
+        # return f"Downloaded album {album.name} with {len(album.tracks)} tracks."

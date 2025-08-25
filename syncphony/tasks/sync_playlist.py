@@ -81,3 +81,5 @@ def task_sync(db: Session, task: Tasks) -> bool:
         db.add(task)
         db.commit()
         return False
+
+    return False

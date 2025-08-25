@@ -5,7 +5,7 @@ DB_PATH = Path("~/.config/syncphony").expanduser() / "syncphony.db"
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 sqlite_url = f"sqlite:///{DB_PATH}"
-engine = create_engine(sqlite_url, echo=True)  # echo=True for SQL logs
+engine = create_engine(sqlite_url, echo=False)  # echo=True for SQL logs
 
 # Create all tables
 def init_db():

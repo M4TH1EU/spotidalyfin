@@ -16,13 +16,13 @@ router = APIRouter()
 @router.post("/start")
 async def start_sync(
         ids: Annotated[list[str], Query(title="List of IDs to sync",
-                                        description="IDs of the items to sync from the source platform")],
+                                        description="IDs of the playlists to sync from the source platform")],
         from_platform: Platform,
         to_platform: Platform,
         from_account: str,
         to_account: str,
-        from_user: str = None,
-        to_user: str = None,
+        from_user: str | None = None,
+        to_user: str | None = None,
         db: Session = Depends(get_session)
 ) -> str:
     """
@@ -48,7 +48,7 @@ async def start_sync(
     # Start the sync task
     task = Tasks(
         id=str(uuid4()),
-        task_type=TaskType.SYNC,
+        type=TaskType.SYNC,
         status=TaskStatus.PENDING,
         details={
             "from_platform": from_platform.value,
