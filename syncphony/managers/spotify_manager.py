@@ -11,8 +11,8 @@ from sqlmodel import Session, select
 from syncphony.constants import SPOTIFY_SCOPES, SPOTIFY_REDIRECT_URI
 from syncphony.db.models import SpotifyAccount
 from syncphony.types import Track, TrackQuality
-from syncphony.types.album import SpotifyAlbum
-from syncphony.types.artist import SpotifyArtist
+from syncphony.types.album import SpotifyAlbum, Album
+from syncphony.types.artist import SpotifyArtist, Artist
 from syncphony.types.enums import Platform
 from syncphony.types.manager import Manager
 from syncphony.types.playlist import SpotifyPlaylist, \
@@ -84,6 +84,7 @@ def _parse_artist(spotipy_artist: dict) -> SpotifyArtist:
         name=spotipy_artist["name"],
         id=spotipy_artist["id"],
         genres=spotipy_artist.get("genres", []),
+        # TODO: add role
         # image=_get_image(spotipy_artist)
     )
 
@@ -174,7 +175,8 @@ class SpotifyManager(Manager):
     def get_album(self, album_id: str) -> Optional[SpotifyAlbum]:
         try:
             spotipy_album = self.client.album(album_id)
-            spotipy_album['tracks'] = self.client.album_tracks(spotipy_album['id']) # TODO: check if pagination is needed
+            spotipy_album['tracks'] = self.client.album_tracks(
+                spotipy_album['id'])  # TODO: check if pagination is needed
 
             return _parse_album(spotipy_album)
 
@@ -200,7 +202,8 @@ class SpotifyManager(Manager):
             log.exception(f"Failed to fetch top tracks for artist with ID {artist_id}")
             return []
 
-    def get_playlist(self, playlist_id: str, fetch_tracks: bool = True, fetch_albums: bool = False, fetch_albums_tracks: bool = False) -> Optional[
+    def get_playlist(self, playlist_id: str, fetch_tracks: bool = True, fetch_albums: bool = False,
+                     fetch_albums_tracks: bool = False) -> Optional[
         SpotifyPlaylist]:
         if playlist_id == "favorite_tracks":
             return self.get_favorite_tracks()
@@ -347,6 +350,9 @@ class SpotifyManager(Manager):
         except SpotifyException as e:
             log.exception(f"Failed to search artists with query '{query}'")
             return []
+
+    def get_cover(self, item: Album | Artist | Track) -> Optional[bytes]:
+        return None  # TODO: implement cover fetching
 
     def supports_lyrics(self) -> bool:
         return False

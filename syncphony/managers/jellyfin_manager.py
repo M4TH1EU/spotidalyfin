@@ -2,12 +2,12 @@ from datetime import datetime, timedelta
 from typing import Optional, List, Tuple
 
 import requests
+from sqlmodel import Session, select
 
-from syncphony.db.database import Database
-from syncphony.db.helpers import save_jellyfin_info_to_db, get_jellyfin_api_key
-from syncphony.types import Track, TrackQuality
-from syncphony.types.album import JellyfinAlbum
-from syncphony.types.artist import JellyfinArtist
+from syncphony.db.models import JellyfinAccount
+from syncphony.types import Track, TrackQuality, ArtistRole
+from syncphony.types.album import JellyfinAlbum, Album
+from syncphony.types.artist import JellyfinArtist, Artist
 from syncphony.types.enums import Platform
 from syncphony.types.manager import Manager
 from syncphony.types.playlist import JellyfinPlaylist, \
@@ -16,50 +16,50 @@ from syncphony.types.track import JellyfinTrack
 from syncphony.utils.logger import log
 
 
-def _parse_cover(jellyfin_item: dict) -> Optional[bytes]:
-    cover_tag = jellyfin_item.get("ImageTags", {}).get("Primary") or jellyfin_item.get(
-        "PrimaryImageTag") or jellyfin_item.get("AlbumPrimaryImageTag")
-    if not cover_tag:
-        cover_tag = jellyfin_item.get("PrimaryImageTag")
-    if not cover_tag:
-        return None
-
-    item_id = jellyfin_item.get("Id") or jellyfin_item.get("AlbumId")
-    if cover_tag and item_id:
-        return f"{jellyfin_item.get('base_url', '')}/Items/{item_id}/Images/Primary?tag={cover_tag}"  # TODO : fix
-    return None
+#
+# def _parse_cover(jellyfin_item: dict) -> Optional[bytes]:
+#     cover_tag = jellyfin_item.get("ImageTags", {}).get("Primary") or jellyfin_item.get(
+#         "PrimaryImageTag") or jellyfin_item.get("AlbumPrimaryImageTag")
+#     if not cover_tag:
+#         cover_tag = jellyfin_item.get("PrimaryImageTag")
+#     if not cover_tag:
+#         return None
+#
+#     item_id = jellyfin_item.get("Id") or jellyfin_item.get("AlbumId")
+#     if cover_tag and item_id:
+#         return f"{jellyfin_item.get('base_url', '')}/Items/{item_id}/Images/Primary?tag={cover_tag}"  # TODO : fix
+#     return None
 
 
 def _parse_artist(jellyfin_artist: dict) -> JellyfinArtist:
     return JellyfinArtist(
         name=jellyfin_artist.get("Name"),
         id=jellyfin_artist.get("Id"),
-        # image=_parse_cover(jellyfin_artist),
+        role=ArtistRole.ARTIST,
+        roles=[ArtistRole.ARTIST]
     )
 
 
 def _parse_album(jellyfin_album: dict) -> JellyfinAlbum:
-    artist = _parse_artist(jellyfin_album["AlbumArtists"][0])
-    album_name = jellyfin_album.get("Album") or jellyfin_album.get("Name")  # from track | from album
-    album_id = jellyfin_album.get("AlbumId") or jellyfin_album.get("Id")  # from track | from album
-
     release_date_str = jellyfin_album.get("PremiereDate")
     release_date = datetime.fromisoformat(release_date_str.replace("Z", "+00:00")) if release_date_str else None
 
+    artists = [_parse_artist(artist) for artist in jellyfin_album.get("AlbumArtists", [])]
+
     return JellyfinAlbum(
-        name=album_name,
-        id=album_id,
-        artist=artist,
-        barcode="",
+        name=jellyfin_album.get("Album") or jellyfin_album.get("Name"),  # from track | from album,
+        id=jellyfin_album.get("AlbumId") or jellyfin_album.get("Id"),  # from track | from album,
+        artist=artists[0],
+        artists=artists,
         release_date=release_date,
         # cover=_parse_cover(jellyfin_album),
         num_volumes=None,
-        tracks=None
+        tracks=None,
     )
 
 
 def _parse_track(jellyfin_track: dict) -> JellyfinTrack:
-    artist = _parse_artist(jellyfin_track["ArtistItems"][0])
+    artists = [_parse_artist(artist) for artist in jellyfin_track.get("ArtistItems", [])]
     album = _parse_album(jellyfin_track)
 
     # Extract duration from RunTimeTicks (100-nanosecond units)
@@ -68,11 +68,15 @@ def _parse_track(jellyfin_track: dict) -> JellyfinTrack:
     return JellyfinTrack(
         name=jellyfin_track["Name"],
         id=jellyfin_track["Id"],
-        artist=artist,
+        artist=artists[0],
+        artists=artists,
         album=album,
         isrc=None,
         duration=int(duration_ticks / 10_000_000) if duration_ticks else None,
         quality=_parse_quality(jellyfin_track),
+        track_number=jellyfin_track.get("IndexNumber"),
+        vol_number=jellyfin_track.get("ParentIndexNumber"),
+        replay_gain=jellyfin_track.get('NormalizationGain')
     )
 
 
@@ -113,31 +117,40 @@ def _parse_playlist(jellyfin_playlist: dict) -> JellyfinPlaylist:
     )
 
 
-def login_jellyfin(server_url: str, api_key: str, db: Database) -> tuple[bool, str, dict]:
-    """
-    Try to authenticate with Jellyfin server using the provided URL and API key.
-    Returns a tuple of (success: bool, message: str).
-    """
-    try:
-        jellyfin_manager = JellyfinManager(url=server_url, db=db, api_key=api_key)
-        users = jellyfin_manager.get_users()
-        if not users:
-            return False, "No users found on the Jellyfin server. Please check your API key and server URL.", {}
-
-        save_jellyfin_info_to_db(db, server_url, jellyfin_manager.api_key)
-
-        return True, "Successfully authenticated with Jellyfin.", {}
-    except requests.exceptions.RequestException as e:
-        return False, f"Failed to connect to Jellyfin server: {e}", {}
+#
+# def login_jellyfin(server_url: str, api_key: str, db: Database) -> tuple[bool, str, dict]:
+#     """
+#     Try to authenticate with Jellyfin server using the provided URL and API key.
+#     Returns a tuple of (success: bool, message: str).
+#     """
+#     try:
+#         jellyfin_manager = JellyfinManager(url=server_url, db=db, api_key=api_key)
+#         users = jellyfin_manager.get_users()
+#         if not users:
+#             return False, "No users found on the Jellyfin server. Please check your API key and server URL.", {}
+#
+#         save_jellyfin_info_to_db(db, server_url, jellyfin_manager.api_key)
+#
+#         return True, "Successfully authenticated with Jellyfin.", {}
+#     except requests.exceptions.RequestException as e:
+#         return False, f"Failed to connect to Jellyfin server: {e}", {}
 
 
 class JellyfinManager(Manager):
     PLATFORM = Platform.JELLYFIN
 
-    def __init__(self, url, db: Database, api_key: str = None):
+    def __init__(self, url: str, db_session: Session):
         self.url = url.rstrip("/")
-        self.api_key = get_jellyfin_api_key(db, url) if api_key is None else api_key
-        self.db = db
+        self.db_session = db_session
+
+        # Initialize connection
+        account = db_session.exec(
+            select(JellyfinAccount).where(JellyfinAccount.url == self.url)
+        ).first()
+        if not account:
+            raise ValueError("No Jellyfin account found in the database for the provided URL.")
+
+        self.api_key = account.api
 
         self.default_admin_user_id = self._get_default_admin_user_id()
 
@@ -429,6 +442,9 @@ class JellyfinManager(Manager):
         except Exception as e:
             log.error(f"Failed to search artists by query '{query}' in Jellyfin: {e}")
             return []
+
+    def get_cover(self, item: Album | Artist | Track) -> Optional[bytes]:
+        return None  # TODO: implement cover fetching
 
     def supports_lyrics(self) -> bool:
         return True

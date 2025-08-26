@@ -26,8 +26,6 @@ def add_jellyfin_account(
 
     # Test Jellyfin API on /Users
     try:
-        # Assuming you have a function to test the Jellyfin API
-        # This should raise an exception if the connection fails
         resp = requests.get(f"{server_url}/Users", headers={"X-Emby-Token": api_key}, timeout=5)
         if resp.status_code != 200:
             raise HTTPException(status_code=400, detail="Failed to connect to Jellyfin server, check URL and API key")

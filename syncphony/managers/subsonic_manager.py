@@ -5,30 +5,36 @@ import string
 from typing import List, Optional
 
 import requests
+from sqlmodel import select, Session
 
-from syncphony.db.database import Database
-from syncphony.db.helpers import get_subsonic_login_password, save_subsonic_info_to_db
-from syncphony.types.album import SubsonicAlbum
-from syncphony.types.artist import SubsonicArtist
+from syncphony.db.models import SubsonicAccount
+from syncphony.types import ArtistRole
+from syncphony.types.album import SubsonicAlbum, Album
+from syncphony.types.artist import SubsonicArtist, Artist
 from syncphony.types.enums import Platform, TrackQuality
 from syncphony.types.manager import Manager
 from syncphony.types.playlist import Playlist, SubsonicPlaylist, \
     SubsonicFavoriteTracksPlaylist
-from syncphony.types.track import SubsonicTrack
+from syncphony.types.track import SubsonicTrack, Track
 from syncphony.utils.logger import log
 
 
 def _parse_artist(subsonic_artist: dict) -> SubsonicArtist:
     return SubsonicArtist(
         id=subsonic_artist.get("artistId") or subsonic_artist.get("id"),
-        name=subsonic_artist.get("artist") or subsonic_artist.get("name", "Unknown Artist")
+        name=subsonic_artist.get("artist") or subsonic_artist.get("name", "Unknown Artist"),
+        role=ArtistRole.ARTIST,
+        roles=[ArtistRole.ARTIST],
     )
 
 
 def _parse_album(subsonic_album: dict, artist: Optional[SubsonicArtist] = None) -> SubsonicAlbum:
+    artists = [_parse_artist(artist) for artist in subsonic_album.get("albumArtists", [])]
+
     return SubsonicAlbum(
         id=subsonic_album.get("albumId") or subsonic_album.get("id"),
         name=subsonic_album.get("album") or subsonic_album.get("name", "Unknown Album"),
+        artists=artists,
         artist=artist if artist else _parse_artist(subsonic_album),
         cover=subsonic_album.get("coverArt"),
         barcode="",
@@ -45,15 +51,17 @@ def _parse_album(subsonic_album: dict, artist: Optional[SubsonicArtist] = None) 
 
 def _parse_track(subsonic_song: dict, artist: Optional[SubsonicArtist] = None,
                  album: Optional[SubsonicAlbum] = None) -> SubsonicTrack:
+    artists = [_parse_artist(artist) for artist in subsonic_song.get("artists", [])]
     return SubsonicTrack(
         id=subsonic_song.get("id"),
         name=subsonic_song.get("title"),
-        artist=artist if artist else _parse_artist(subsonic_song),
+        artist=artists[0],
+        artists=artists,
         album=album if album else _parse_album(subsonic_song, artist),
         isrc=subsonic_song.get("isrc", [""])[0] if isinstance(subsonic_song.get("isrc"), list) and len(
             subsonic_song.get("isrc")) > 0 else None,
         duration=int(subsonic_song.get("duration", 0)),
-        quality=_parse_quality(subsonic_song)
+        quality=_parse_quality(subsonic_song),
     )
 
 
@@ -104,30 +112,26 @@ def _generate_token(password: str, salt: str) -> str:
     return hashlib.md5((password + salt).encode("utf-8")).hexdigest()
 
 
-def login_subsonic(server_url: str, username: str, password: str, db: Database) -> tuple[bool, str, dict]:
-    try:
-        subsonic_manager = SubsonicManager(url=server_url, username=username, db=db, password=password)
-        resp = subsonic_manager._request("ping")
-        if resp.get("status") != "ok":
-            return False, f"Failed to authenticate with Subsonic server: {resp.get('error', 'Unknown error')}", {}
-
-        save_subsonic_info_to_db(db, server_url, username, password)
-
-        return True, "Successfully authenticated with Subsonic.", {}
-    except Exception as e:
-        return False, f"Failed to connect to Subsonic server: {e}", {}
-
-
 class SubsonicManager(Manager):
     PLATFORM = Platform.SUBSONIC
 
-    def __init__(self, url: str, username: str, db: Database, password: str = None):
+    def __init__(self, url: str, username: str, db_session: Session):
+        self.db_session = db_session
         self.base_url = url.rstrip("/")
         self.username = username
-        self.password = password or get_subsonic_login_password(db, self.base_url, username)
+
+        # Initialize connection
+        account = db_session.exec(
+            select(SubsonicAccount).where(SubsonicAccount.url == self.base_url,
+                                          SubsonicAccount.username == self.username)
+        ).first()
+        if not account:
+            raise ValueError(f"No Subsonic account found for {username} at {self.base_url}")
+
+        self.password = account.password
+
         self.api_version = "1.16.1"
         self.client_name = "syncphony"
-        self.db = db
 
     def _request(self, endpoint: str, params: dict = None, count: int = 0) -> dict | bytes:
         salt = _generate_salt()
@@ -310,6 +314,9 @@ class SubsonicManager(Manager):
         except Exception as e:
             log.error(f"Error searching artists by query '{query}': {e}")
             return []
+
+    def get_cover(self, item: Album | Artist | Track) -> Optional[bytes]:
+        return None  # TODO: implement cover fetching
 
     def supports_lyrics(self) -> bool:
         return True

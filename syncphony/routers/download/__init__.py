@@ -3,7 +3,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.params import Query
-from sqlmodel import Session, select, col
+from sqlmodel import Session
 
 from syncphony.db.db import get_session
 from syncphony.db.models import Tasks
@@ -33,7 +33,7 @@ async def start_download(
         raise HTTPException(status_code=400, detail="Invalid platform")
 
     # Validate accounts
-    dl_manager = get_manager_for_platform(db, from_platform, from_account)
+    dl_manager = get_manager_for_platform(db, from_platform, from_account, from_user)
     if not dl_manager:
         raise HTTPException(status_code=404, detail="Account not found or not supported")
 

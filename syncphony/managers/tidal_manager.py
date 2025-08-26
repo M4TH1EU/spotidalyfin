@@ -1,8 +1,6 @@
-import tempfile
 from pathlib import Path
 from typing import Optional, List, cast
 
-import requests
 import tidalapi
 from sqlmodel import Session, select
 from tidalapi import media

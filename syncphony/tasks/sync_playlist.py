@@ -30,8 +30,8 @@ def task_sync(db: Session, task: Tasks) -> bool:
         db.commit()
         raise ValueError("Invalid task details: missing platform or account information.")
 
-    from_manager = get_manager_for_platform(db, from_platform, from_account)
-    to_manager = get_manager_for_platform(db, to_platform, to_account)
+    from_manager = get_manager_for_platform(db, from_platform, from_account, from_user)
+    to_manager = get_manager_for_platform(db, to_platform, to_account, to_user)
 
     if not from_manager or not to_manager:
         task.status = TaskStatus.FAILED

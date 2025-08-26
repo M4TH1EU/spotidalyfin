@@ -37,11 +37,11 @@ async def start_sync(
         raise HTTPException(status_code=400, detail="Source and destination platforms cannot be the same")
 
     # Validate accounts
-    from_manager = get_manager_for_platform(db, from_platform, from_account)
+    from_manager = get_manager_for_platform(db, from_platform, from_account, from_user)
     if not from_manager:
         raise HTTPException(status_code=404, detail="Source account not found or not supported")
 
-    to_manager = get_manager_for_platform(db, to_platform, to_account)
+    to_manager = get_manager_for_platform(db, to_platform, to_account, to_user)
     if not to_manager:
         raise HTTPException(status_code=404, detail="Destination account not found or not supported")
 
