@@ -183,90 +183,91 @@ def compare_albums(album1: Album, album2: Album) -> float:
     return round(score / weight_total, 2)
 
 
-def compare_acoustid_track(recording: dict, track: Track):
-    score = 0.0
-    weight_total = 0.0
+#
+# def compare_acoustid_track(recording: dict, track: Track):
+#     score = 0.0
+#     weight_total = 0.0
+#
+#     # 1. Name
+#     name_score = compare_strings(track.name, recording.get('title', ''))
+#     score += name_score * 0.3
+#     weight_total += 0.3
+#
+#     # 2. Artist name
+#     artist_score = compare_strings(track.artist.name,
+#                                    recording.get('artists', [{}])[0].get('name', ''))
+#     score += artist_score * 0.25
+#     weight_total += 0.25
+#
+#     # 3. Duration (in seconds, allow small delta)
+#     if track.duration:
+#         duration_diff = abs(track.duration - recording.get('duration', 0))
+#         if duration_diff <= 2:
+#             score += 100 * 0.2
+#         elif duration_diff <= 5:
+#             score += 75 * 0.2
+#         elif duration_diff <= 10:
+#             score += 50 * 0.2
+#         weight_total += 0.2
+#
+#     # Normalize score
+#     if weight_total == 0:
+#         return 0.0
+#
+#     return round(score / weight_total, 2)
 
-    # 1. Name
-    name_score = compare_strings(track.name, recording.get('title', ''))
-    score += name_score * 0.3
-    weight_total += 0.3
-
-    # 2. Artist name
-    artist_score = compare_strings(track.artist.name,
-                                   recording.get('artists', [{}])[0].get('name', ''))
-    score += artist_score * 0.25
-    weight_total += 0.25
-
-    # 3. Duration (in seconds, allow small delta)
-    if track.duration:
-        duration_diff = abs(track.duration - recording.get('duration', 0))
-        if duration_diff <= 2:
-            score += 100 * 0.2
-        elif duration_diff <= 5:
-            score += 75 * 0.2
-        elif duration_diff <= 10:
-            score += 50 * 0.2
-        weight_total += 0.2
-
-    # Normalize score
-    if weight_total == 0:
-        return 0.0
-
-    return round(score / weight_total, 2)
-
-
-def compare_musicbrainz_release_track(release: dict, track: Track):
-    score = 0.0
-    weight_total = 0.0
-
-    # 1. Album Name
-    name_score = compare_strings(track.album.name, release.get('title', ''))
-    score += name_score * 0.3
-    weight_total += 0.3
-
-    # 2. Artist name
-    artist_score = compare_strings(track.artist.name,
-                                   release.get('artist-credit', [{}])[0].get('artist', {}).get('name', ''))
-    score += artist_score * 0.25
-    weight_total += 0.25
-
-    # 3. Release date (if available)
-    if track.album.release_date and 'date' in release:
-        release_date = release.get('date', '')
-        if release_date:
-            # Compare only the year for simplicity
-            if track.album.release_date.year == release_date[:4]:
-                score += 100 * 0.25
-            weight_total += 0.25
-
-    # 4. Barcode (if available)
-    if track.album.barcode and 'barcode' in release:
-        # Compare barcode if available
-        if track.album.barcode == release.get('barcode', ''):
-            score += 100 * 0.25
-        weight_total += 0.25
-
-    # 5. Track number (if available)
-    if track.album.num_tracks and release.get('medium-count') > 0:
-        track_number = release.get('medium-list')[0].get('track-list', [])[0].get('position', 0)
-        if track.track_number == track_number:
-            score += 100 * 0.25
-
-        weight_total += 0.25
-
-    # 6. Track count (if available)
-    if track.album.num_tracks and release.get('medium-count') > 0:
-        track_num = release.get('medium-list')[0].get('track-count', 0)
-        if track.album.num_tracks == track_num:
-            score += 100 * 0.25
-        weight_total += 0.25
-
-    # Normalize score
-    if weight_total == 0:
-        return 0.0
-
-    return round(score / weight_total, 2)
+#
+# def compare_musicbrainz_release_track(release: dict, track: Track):
+#     score = 0.0
+#     weight_total = 0.0
+#
+#     # 1. Album Name
+#     name_score = compare_strings(track.album.name, release.get('title', ''))
+#     score += name_score * 0.3
+#     weight_total += 0.3
+#
+#     # 2. Artist name
+#     artist_score = compare_strings(track.artist.name,
+#                                    release.get('artist-credit', [{}])[0].get('artist', {}).get('name', ''))
+#     score += artist_score * 0.25
+#     weight_total += 0.25
+#
+#     # 3. Release date (if available)
+#     if track.album.release_date and 'date' in release:
+#         release_date = release.get('date', '')
+#         if release_date:
+#             # Compare only the year for simplicity
+#             if track.album.release_date.year == release_date[:4]:
+#                 score += 100 * 0.25
+#             weight_total += 0.25
+#
+#     # 4. Barcode (if available)
+#     if track.album.barcode and 'barcode' in release:
+#         # Compare barcode if available
+#         if track.album.barcode == release.get('barcode', ''):
+#             score += 100 * 0.25
+#         weight_total += 0.25
+#
+#     # 5. Track number (if available)
+#     if track.album.num_tracks and release.get('medium-count') > 0:
+#         track_number = release.get('medium-list')[0].get('track-list', [])[0].get('position', 0)
+#         if track.track_number == track_number:
+#             score += 100 * 0.25
+#
+#         weight_total += 0.25
+#
+#     # 6. Track count (if available)
+#     if track.album.num_tracks and release.get('medium-count') > 0:
+#         track_num = release.get('medium-list')[0].get('track-count', 0)
+#         if track.album.num_tracks == track_num:
+#             score += 100 * 0.25
+#         weight_total += 0.25
+#
+#     # Normalize score
+#     if weight_total == 0:
+#         return 0.0
+#
+#     return round(score / weight_total, 2)
 
 
 def compare_musicbrainz_release_album(release: dict, album: Album):
@@ -284,13 +285,29 @@ def compare_musicbrainz_release_album(release: dict, album: Album):
     score += artist_score * 0.25
     weight_total += 0.25
 
+    # 3 Artists
+    if album.artists and 'artist-credit' in release:
+        for artist in album.artists:
+            if any(compare_strings(artist.name, ac.get('artist', {}).get('name', '')) > 80 for ac in
+                   release['artist-credit']):
+                score += 100 * 0.2
+                break
+            weight_total += 0.2
+
     # 3. Release date (if available)
     if album.release_date and 'date' in release:
         release_date = release.get('date', '')
         if release_date:
-            # Compare only the year for simplicity
             if album.release_date.year == release_date[:4]:
                 score += 100 * 0.15
+            if album.release_date.month and len(release_date) >= 7 and album.release_date.month == int(
+                    release_date[5:7]):
+                score += 75 * 0.15
+                weight_total += 0.15
+            if album.release_date.day and len(release_date) == 10 and album.release_date.day == int(release_date[8:10]):
+                score += 50 * 0.15
+                weight_total += 0.15
+
             weight_total += 0.15
 
     # 4. Barcode (if available)
@@ -298,6 +315,10 @@ def compare_musicbrainz_release_album(release: dict, album: Album):
         # Compare barcode if available
         if album.barcode == release.get('barcode', ''):
             score += 100 * 0.3
+        elif album.barcode.lstrip("00") == release.get('barcode', '').lstrip(
+                "00"):  # sometimes barcodes have 00 in front
+            score += 100 * 0.3
+
         weight_total += 0.3
 
     # 5. Track count (if available)

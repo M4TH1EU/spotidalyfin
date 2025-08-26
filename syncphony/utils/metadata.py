@@ -1,98 +1,124 @@
-from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
-import acoustid
-import musicbrainzngs
+from mutagen.flac import FLAC, Picture
+from unidecode import unidecode
 
-from syncphony.types import Track
-from syncphony.types.compare import compare_acoustid_track, compare_strings, compare_musicbrainz_release_track
+from syncphony.types import Track, ArtistRole, Album
+from syncphony.types.manager import Manager
 from syncphony.utils.logger import log
 
 
-@dataclass
-class TrackWithMetadata:
-    track: Track
-    acoustid: str = ""
-    musicbrainz: dict = field(default_factory=dict)
+def name_builder_artist(media: Track | Album) -> str:
+    return " & ".join(artist.name for artist in media.artists)
 
 
-def _parse_musicbrainz_data(recording: dict, release: dict, acoustid_id: str = None) -> dict:
-    return {
-        "genre": [tag['name'] for tag in recording.get('tag-list', [])],
-        "musicbrainz_artistid": recording.get("artist-credit", [{}])[0].get(
-            "artist", {}).get("id"),
-        "musicbrainz_trackid": recording.get("id"),
-        "musicbrainz_albumartistid": release.get("artist-credit", [{}])[
-            0].get("artist", {}).get("id"),
-        "musicbrainz_albumid": release.get(
-            "id"),
-        "date": release.get("date"),
-        "originaldate": release.get("date"),
-        "originalyear": release.get("date")[:4],
-        "barcode": release.get("barcode"),
-        "releasecountry": release.get("country"),
-        "acoustid_id": acoustid_id
-    }
+def name_builder_album_artist(media: Track | Album, first_only: bool = False) -> str:
+    artists_tmp: list[str] = []
+    artists: list['Artist'] = media.album.artists if isinstance(media, Track) else media.artists
+
+    for artist in artists:
+        if ArtistRole.MAIN in artist.roles:
+            artists_tmp.append(artist.name)
+
+            if first_only:
+                break
+
+    return " & ".join(artists_tmp)
 
 
-def process_metadata(track: Track, tempfile_path: Path) -> Optional[TrackWithMetadata]:
-    # Retrieve AcoustID fingerprint and lookup basic metadata
-    duration, fingerprint = acoustid.fingerprint_file(tempfile_path)
-    acoustid_res: dict = acoustid.lookup("YjwCJxwC0r", fingerprint,
-                                         duration)  # public key for testing, please don't abuse
-    musicbrainz_data = {}
-    musicbrainzngs.set_useragent("syncphony", "0.1")
+def generate_album_path(album: Album, base_path: Path) -> Path:
+    """Generate a sanitized directory path based on album metadata."""
+    sanitized_albumartist = unidecode(album.artist.name or "Unknown Artist")
+    sanitized_album = unidecode(album.name or "Unknown Album")
 
-    if acoustid_res.get('results'):
-        if len(acoustid_res.get('results')) >= 1:
-            scored_results: list[tuple[dict, float, str]] = []
-
-            for result in acoustid_res.get('results'):
-                if result.get('recordings') and len(result.get('recordings')) > 0:
-                    scored_results = [(r, compare_acoustid_track(r, track), result.get('id')) for r in
-                                      result.get('recordings')]
-
-            best_match, best_score, acoustid_id = max(scored_results, key=lambda x: x[1], default=(None, 0))
-            if best_match and best_score >= 75.0:
-                # Found a good match, proceed with MusicBrainz query
-                try:
-                    musicbrainz_res: dict = musicbrainzngs.get_recording_by_id(
-                        best_match.get('id'),
-                        includes=["artists", "releases", "isrcs", "tags", "discids"],
-                        release_status=['official'],
-                        release_type=['album', 'single']
-                    )
-                    recording = musicbrainz_res.get("recording", {})
-                    scored_releases_list = [(r, compare_musicbrainz_release_track(r, track)) for r in
-                                            recording.get("release-list", [])]
-                    best_release, best_release_score = max(scored_releases_list, key=lambda x: x[1], default=(None, 0))
-
-                    musicbrainz_data = _parse_musicbrainz_data(recording, best_release, acoustid_id)
-
-                except Exception as e:
-                    log.warning(f"No results found for AcoustID {best_match.get('id')} on MusicBrainz: {e}")
-
-    if not musicbrainz_data and track.isrc:
-        log.debug(f"No results found for AcoustID for {track.name} by {track.artist.name}")
-
-        # If no AcoustID results, try MusicBrainz by ISRC
-        try:
-            musicbrainz_res: dict = musicbrainzngs.get_recordings_by_isrc(track.isrc, includes=["artists", "releases"])
-            for recording in musicbrainz_res.get("isrc", {}).get("recording-list", []):
-                title = recording.get('title', '')
-                artist_name = recording.get('artist-credit', [{}])[0].get('artist', {}).get('name', '')
-
-                # Make sure that the ISRC result is a good match
-                if (compare_strings(title, track.name) >= 75.0 and
-                        compare_strings(artist_name, track.artist.name >= 75.0)):
-                    recording = musicbrainz_res.get("recording", {})
-                    musicbrainz_data = _parse_musicbrainz_data(recording, recording.get("release-list", [{}])[0],
-                                                               track.isrc)
-                    break
+    return base_path / sanitized_albumartist / sanitized_album
 
 
-        except Exception as e:
-            log.warning(f"No results found for ISRC {track.isrc} on MusicBrainz: {e}")
+def generate_path(track: Track, base_path: Path, extension: str = "flac") -> Path:
+    """Generate a sanitized file path based on metadata."""
+    # Format track number with leading zeros
+    track_number_str = f"{int(track.track_number):02}" if track.track_number else "00"
 
-    log.info(musicbrainz_data)
+    sanitized_albumartist = unidecode(track.album.artist.name or "Unknown Artist")
+    sanitized_album = unidecode(track.album.name or "Unknown Album")
+    sanitized_title = unidecode(track.name or "Untitled")
+
+    return base_path / sanitized_albumartist / sanitized_album / f"{track_number_str} - {sanitized_title}.{extension.lstrip('.')}"
+
+
+def write_metadata(file: Path, track: Track, manager: Manager, fetch_lyrics: bool = False):
+    if not file.exists():
+        log.error(f"File {file} does not exist, cannot write metadata.")
+        return
+
+    if file.suffix.lower() == ".flac":
+        audio = FLAC(file)
+        audio.clear()  # Clear existing tags
+
+        audio["title"] = track.name or "Untitled"
+        audio["tracknumber"] = str(track.track_number or 1)
+        audio["discnumber"] = str(track.vol_number or 1)
+        audio["totaltracks"] = str(track.album.num_tracks or 1)
+        audio["totaldiscs"] = str(track.album.num_volumes or 1)
+
+        audio["artist"] = name_builder_artist(track)
+        audio["artists"] = [a.name for a in track.artists]
+
+        audio["album"] = track.album.name or "Unknown Album"
+        audio["albumartist"] = name_builder_album_artist(track.album)
+
+        if track.album.barcode:
+            audio["barcode"] = track.album.barcode
+        if track.album.copyright:
+            audio["copyright"] = track.album.copyright
+
+        if track.album.release_date:
+            audio["date"] = track.album.release_date.strftime("%Y-%m-%d")
+            audio["originaldate"] = track.album.release_date.strftime("%Y-%m-%d")
+            audio["originalyear"] = track.album.release_date.strftime("%Y")
+
+        if track.isrc:
+            audio["isrc"] = track.isrc
+
+        if track.album.replay_gain:
+            audio["replaygain_album_gain"] = str(track.album.replay_gain)
+        if track.album.peak_amplitude:
+            audio["replaygain_album_peak"] = str(track.album.peak_amplitude)
+        if track.replay_gain:
+            audio["replaygain_track_gain"] = str(track.replay_gain)
+        if track.peak_amplitude:
+            audio["replaygain_track_peak"] = str(track.peak_amplitude)
+
+        if track.musicbrainz_recording_id:
+            audio["musicbrainz_recordingid"] = track.musicbrainz_recording_id.lower()
+        if track.musicbrainz_track_id:
+            audio["musicbrainz_trackid"] = track.musicbrainz_track_id.lower()
+        if track.musicbrainz_release_artist_id:
+            audio["musicbrainz_albumartistid"] = "; ".join(track.musicbrainz_release_artist_id).lower()
+        if track.musicbrainz_release_group_id:
+            audio["musicbrainz_releasegroupid"] = track.musicbrainz_release_group_id.lower()
+        if track.musicbrainz_artist_id:
+            audio["musicbrainz_artistid"] = "; ".join(track.musicbrainz_artist_id).lower()
+        if track.musicbrainz_release_id:
+            audio["musicbrainz_albumid"] = track.musicbrainz_release_id.lower()
+
+        if track.album.country:
+            audio["releasecountry"] = track.album.country
+        if track.album.release_status:
+            audio["releasestatus"] = track.album.release_status
+
+        if fetch_lyrics and manager.supports_lyrics():
+            lyrics = manager.get_lyrics(track)
+            if lyrics:
+                audio["lyrics"] = lyrics
+
+        cover_bytes, cover_mime = manager.get_cover(track)
+        if cover_bytes and cover_mime:
+            picture = Picture()
+            picture.type = 3  # Front cover
+            picture.mime = cover_mime
+            picture.desc = "front cover"
+            picture.data = cover_bytes
+            audio.add_picture(picture)
+
+        audio.save()

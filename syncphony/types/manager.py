@@ -166,6 +166,11 @@ class Manager(ABC):
         raise NotImplementedError("This method should be implemented by subclasses.")
 
     @abstractmethod
+    def get_cover(self, item: Album | Artist | Track) -> Optional[tuple[bytes, str]]:
+        """Retrieve the cover art for a given item (Album, Artist, or Track)."""
+        raise NotImplementedError("This method should be implemented by subclasses.")
+
+    @abstractmethod
     def supports_lyrics(self) -> bool:
         """Check if the manager supports lyrics retrieval."""
         return False

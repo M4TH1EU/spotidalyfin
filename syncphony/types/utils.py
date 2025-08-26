@@ -1,4 +1,5 @@
 import base64
+import tempfile
 from typing import Optional
 
 import requests
@@ -58,6 +59,23 @@ def get_album_on_another_platform(album: Album, manager: Manager) -> Optional[Al
 def get_albums_on_another_platform(albums: list[Album], manager: Manager) -> list[Album]:
     """Get albums on another platform."""
     return [get_album_on_another_platform(album, manager) for album in albums if album.platform != manager.PLATFORM]
+
+
+def open_image_url(url: str) -> Optional[bytes]:
+    # TODO: is this needed or can get_as_base64 be used? possible to stay in-memory?
+    """Open an image URL and return the image data."""
+    try:
+        response = requests.get(url, stream=True)
+        response.raise_for_status()
+
+        with tempfile.NamedTemporaryFile() as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                f.write(chunk)
+            f.seek(0)
+            return f.read()
+    except requests.RequestException:
+        log.warning(f"Failed to open image URL {url}")
+        return None
 
 
 def get_as_base64(url: str) -> bytes:

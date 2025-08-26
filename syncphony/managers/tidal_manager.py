@@ -11,7 +11,7 @@ from tidalapi.media import Lyrics, Stream, AudioExtensions, StreamManifest
 from tidalapi.session import SearchResults
 
 from syncphony.db.models import TidalAccount
-from syncphony.types import Track, TrackQuality
+from syncphony.types import Track, TrackQuality, ArtistRole, Album, Artist
 from syncphony.types.album import TidalAlbum
 from syncphony.types.artist import TidalArtist
 from syncphony.types.enums import Platform
@@ -19,12 +19,14 @@ from syncphony.types.manager import Manager
 from syncphony.types.playlist import Playlist, TidalFavoriteTracksPlaylist, \
     TidalPlaylist
 from syncphony.types.track import TidalTrack
+from syncphony.types.utils import open_image_url
 from syncphony.utils.decorators import rate_limit
 from syncphony.utils.download import download_all_ordered
 from syncphony.utils.ffmpeg import convert_m4a_bytes_to_flac
-from syncphony.utils.files import generate_path
 from syncphony.utils.logger import log
-from syncphony.utils.metadata import process_metadata
+from syncphony.utils.metadata import generate_path, write_metadata, generate_album_path
+from syncphony.utils.musicbrainz import match_album_to_musicbrainz, get_tracks_from_release_id, \
+    find_track_in_release_tracklist, get_track_from_recording_id
 
 
 def _get_tidal_quality(quality: TrackQuality) -> str:
@@ -59,12 +61,13 @@ def _parse_track(tidal_track: tidalapi.Track, fetch_album_tracks: bool = False) 
         name=tidal_track.name,
         id=str(tidal_track.id),
         artist=_parse_artist(tidal_track.artist) if tidal_track.artist else None,
+        artists=[_parse_artist(artist) for artist in tidal_track.artists] if tidal_track.artists else [],
         album=_parse_album(tidal_track.album, fetch_album_tracks) if tidal_track.album else None,
         duration=tidal_track.duration,
         quality=_parse_real_track_quality(tidal_track),
         isrc=tidal_track.isrc.upper(),
         replay_gain=tidal_track.replay_gain,
-        replay_peak=tidal_track.peak,
+        peak_amplitude=tidal_track.peak,
         track_number=tidal_track.track_num,
         vol_number=tidal_track.volume_num
     )
@@ -74,7 +77,9 @@ def _parse_artist(tidal_artist: tidalapi.Artist) -> TidalArtist:
     return TidalArtist(
         name=tidal_artist.name,
         id=str(tidal_artist.id),
-        image=tidal_artist.picture
+        image=tidal_artist.picture,
+        role=ArtistRole(tidal_artist.role.value),
+        roles=[ArtistRole(role.value) for role in tidal_artist.roles]
     )
 
 
@@ -83,8 +88,9 @@ def _parse_album(tidal_album: tidalapi.Album, fetch_album_tracks: bool = False) 
         name=tidal_album.name,
         id=str(tidal_album.id),
         artist=_parse_artist(tidal_album.artist) if tidal_album.artist else None,
+        artists=[_parse_artist(artist) for artist in tidal_album.artists],
         barcode=tidal_album.upc,
-        release_date=tidal_album.release_date,
+        release_date=tidal_album.available_release_date if tidal_album.available_release_date else tidal_album.release_date if tidal_album.release_date else None,
         # cover=get_as_base64(f"https://resources.tidal.com/images/{tidal_album.cover.replace('-', '/')}/1280x1280.jpg"),
         tracks=[_parse_track(track) for track in tidal_album.tracks()] if fetch_album_tracks else None,
         num_volumes=tidal_album.num_volumes,
@@ -368,6 +374,18 @@ class TidalManager(Manager):
             log.exception(f"Failed to search TIDAL artists with query '{query}': {e}")
             return []
 
+    @rate_limit
+    def get_cover(self, item: Album | Artist | Track) -> Optional[tuple[bytes, str]]:
+        if isinstance(item, Track):
+            url = self.client.album(item.album.id).image(dimensions=1280)
+            return open_image_url(url), "image/jpeg"
+        elif isinstance(item, Album):
+            url = self.client.album(item.id).image(dimensions=1280)
+            return open_image_url(url), "image/jpeg"
+        elif isinstance(item, Artist):
+            url = self.client.artist(item.id).image(dimensions=1280)
+            return open_image_url(url), "image/jpeg"
+
     def supports_lyrics(self) -> bool:
         return True
 
@@ -383,7 +401,7 @@ class TidalManager(Manager):
             return lyrics.subtitles or lyrics.text
         except TooManyRequests as e:
             raise e
-        except ObjectNotFound | Exception:
+        except (ObjectNotFound, Exception):
             log.exception(f"Lyrics not found for track {track.name} by {track.artist.name}")
             return None
 
@@ -434,7 +452,7 @@ class TidalManager(Manager):
         return True
 
     @rate_limit
-    def _get_stream(self, track: TidalTrack, quality: TrackQuality) -> StreamManifest | None:
+    def _get_stream(self, track: TidalTrack, quality: TrackQuality) -> tuple[Stream, StreamManifest] | None:
         try:
             params = {
                 "playbackmode": "STREAM",
@@ -467,7 +485,7 @@ class TidalManager(Manager):
             log.error(f"No stream manifest available for track {track.name} by {track.artist.name}")
             return None
 
-        return stream_manifest
+        return stream, stream_manifest
 
     @rate_limit
     def download_album(self, album: TidalAlbum, destination: Path, user_id: str = None,
@@ -484,32 +502,88 @@ class TidalManager(Manager):
 
         fail = False
         try:
+            # Download album cover
+            album_cover_path = generate_album_path(album, base_path=destination) / "cover.jpg"
+            album_cover_path.parent.mkdir(parents=True, exist_ok=True)
+
+            album_cover_bytes, _ = self.get_cover(album)
+            if album_cover_bytes and album_cover_path:
+                with open(album_cover_path, "wb") as f:
+                    f.write(album_cover_bytes)
+            else:
+                log.warning(f"No cover found for album {album.name} by {album.artist.name}")
+
+            # MusicBrainz album matching
+            mbz_release = match_album_to_musicbrainz(album)
+            mbz_release_id = mbz_release.get("id") if mbz_release else None
+            if mbz_release:
+                album.country = mbz_release.get("country") or None
+                album.release_status = mbz_release.get("status") or None
+
+            # Get MusicBrainz tracks for the release
+            mbz_release_tracks = get_tracks_from_release_id(mbz_release_id) if mbz_release else None
+
+            # Download each track
             for track in album.tracks:
-                track_stream = self._get_stream(track, quality)
+                track.album = album  # Ensure track has the right album reference
+
+                track.musicbrainz_release_id = mbz_release_id
+                track.musicbrainz_release_artist_id = [artist.get('artist', {}).get('id') for artist in
+                                                       mbz_release.get("artist-credit", []) if isinstance(artist, dict)]
+                track.musicbrainz_release_group_id = mbz_release.get("release-group", {}).get(
+                    "id") if mbz_release else None
+
+                mbz_track = find_track_in_release_tracklist(track, mbz_release_tracks) if mbz_release_tracks else None
+                if mbz_track:
+                    track.musicbrainz_track_id = mbz_track.get("id")
+                    track.musicbrainz_recording_id = mbz_track.get("recording", {}).get("id")
+
+                mbz_track_detail = get_track_from_recording_id(
+                    mbz_track.get('recording', {}).get('id')) if mbz_track else None
+                if mbz_track_detail:
+                    track.musicbrainz_artist_id = [artist.get('artist', {}).get('id') for artist in
+                                                   mbz_track_detail.get('artist-credit', []) if
+                                                   isinstance(artist, dict)]
+
+                track_stream, track_stream_manifest = self._get_stream(track, quality)
                 if not track_stream:
                     log.error(f"Skipping track {track.name} by {track.artist.name} due to missing stream.")
                     continue
 
+                # Update track and album replay gain and peak amplitude
+                track.album.replay_gain = track_stream.album_replay_gain
+                track.album.peak_amplitude = track_stream.album_peak_amplitude
+
+                track.replay_gain = track_stream.track_replay_gain
+                track.peak_amplitude = track_stream.track_peak_amplitude
+
                 print("Downloading track:", track.name)
-                audio_bytes = download_all_ordered(track_stream.urls)
+                audio_bytes = download_all_ordered(track_stream_manifest.urls)
 
                 # Check audio format and convert if necessary
-                if track_stream.file_extension not in [AudioExtensions.M4A, AudioExtensions.FLAC]:
+                if track_stream_manifest.file_extension not in [AudioExtensions.M4A, AudioExtensions.FLAC]:
                     log.error(
-                        f"Unsupported file extension {track_stream.file_extension} for track {track.name} by {track.artist.name}")
+                        f"Unsupported file extension {track_stream_manifest.file_extension} for track {track.name} by {track.artist.name}")
                     return None
 
-                if track_stream.file_extension == AudioExtensions.M4A:
+                if track_stream_manifest.file_extension == AudioExtensions.M4A:
                     audio_bytes = convert_m4a_bytes_to_flac(audio_bytes, timeout=15, re_encode_flac=False)
+                    track_stream_manifest.file_extension = AudioExtensions.FLAC
 
                 # Save to file
                 bytes_response = bytes(audio_bytes)
-                file_path = generate_path(track, base_path=destination, extension="flac")
+                file_path = generate_path(track, base_path=destination,
+                                          extension=track_stream_manifest.file_extension.value)
                 file_path.parent.mkdir(parents=True, exist_ok=True)
                 with open(file_path, "wb") as f:
                     f.write(bytes_response)
 
-                # TODO: handle metadata
+                write_metadata(
+                    file=file_path,
+                    track=track,
+                    manager=self,
+                    fetch_lyrics=True
+                )
 
                 print("Downloaded bytes:", len(audio_bytes))
         except TooManyRequests as e:
@@ -520,223 +594,85 @@ class TidalManager(Manager):
 
         return str(destination)
 
-    @rate_limit
-    def download_track(self, track: TidalTrack, user_id: str = None, quality: TrackQuality = TrackQuality.HIGH) -> \
-            Optional[str]:
-        # NOT WORKING WELL: focus on download_album first
-
-        # Get stream info
-        stream = None
-        try:
-            params = {
-                "playbackmode": "STREAM",
-                "audioquality": _get_tidal_quality(quality),
-                "assetpresentation": "FULL",
-            }
-
-            request = self.client.request.request("GET", "tracks/%s/playbackinfopostpaywall" % track.id, params)
-        except ObjectNotFound:
-            log.exception(f"No stream available for track {track.name} by {track.artist.name}")
-            return None
-        except TooManyRequests as e:
-            raise e
-        except Exception as e:
-            log.exception(f"Failed to get stream for track {track.name} by {track.artist.name}: {e}")
-            return None
-        else:
-            json_obj = request.json()
-            stream = self.client.request.map_json(json_obj, parse=Stream().parse)
-            assert not isinstance(stream, list)
-            stream = cast("Stream", stream)
-
-        if not stream:
-            log.error(f"No stream manifest available for track {track.name} by {track.artist.name}")
-            return None
-
-        # Get stream manifest
-        stream_manifest = stream.get_stream_manifest()
-        if not stream_manifest:
-            log.error(f"No stream manifest available for track {track.name} by {track.artist.name}")
-            return None
-
-        # Determine file extension
-        match stream_manifest.file_extension:
-            case AudioExtensions.M4A:
-                file_extension = "m4a"
-            case AudioExtensions.FLAC:
-                file_extension = "flac"
-            case AudioExtensions.MP4:
-                log.error(f"TIDAL MP4 streams are not supported for track {track.name} by {track.artist.name}")
-                return None
-            case _:
-                log.error(f"Unknown TIDAL stream format for track {track.name} by {track.artist.name}")
-                return None
-
-        # Get download URLs
-        download_urls = stream_manifest.urls
-
-        # Download the track data
-        audio_bytes = bytearray()
-        for url in download_urls:
-            response = requests.get(url, stream=True, timeout=30)
-            response.raise_for_status()
-            audio_bytes.extend(response.content)
-
-        # Convert M4A to FLAC if necessary
-        if file_extension == "m4a":
-            audio_bytes = convert_m4a_bytes_to_flac(audio_bytes, timeout=15, re_encode_flac=False)
-
-        # Save to temporary file
-        bytes_response = bytes(audio_bytes)
-        with tempfile.NamedTemporaryFile(delete=False, suffix=f".{file_extension}") as temp_file:
-            temp_file.write(bytes_response)
-            temp_file_path = temp_file.name
-
-            track_metadata = process_metadata(track, Path(temp_file_path))
-
-            # acoustid = get_acoustid_fingerprint(Path(temp_file_path))
-            # log.debug(f"AcoustID fingerprint for track {track.name} by {track.artist.name}: {acoustid}")
-            #
-            # musicbrainzid = query_musicbrainz_by_acoustid(acoustid)
-
-        # return bytes(bytes_response), file_extension
-
-        return None
-
-# OLD CODE TO MIGRATE
-
-# def download_track(self,
-#                    track: Track,
-#                    quality: TrackQuality = TrackQuality.HI_RES_LOSSLESS,
-#                    output_type: str = "flac",
-#                    destination: str = "~/Music/Syncphony",
-#                    lyrics: bool = True
-#                    ):
-#     """
-#     Downloads a track to the given destination.
-#
-#     :param track: The track to download.
-#     :param quality: The quality of the downloaded track.
-#     :param output_type: The output file type.
-#     :param destination: The destination folder.
-#     :param lyrics: Whether to download the lyrics. Slows down the process a bit.
-#
-#     :raises DownloadTrackException: If the track cannot be downloaded.
-#     """
-#
-#     try:
-#         if quality:
-#             self.client.audio_quality = quality.name
-#
-#         if destination:
-#             destination = Path(destination).expanduser()
-#
-#         raw_data, filetype = track.raw_data()
-#
-#         if filetype == "m4a" and output_type == "flac":
-#             raw_data = convert_m4a_bytes_to_flac(raw_data)
-#             filetype = "flac"
-#
-#         if lyrics:
-#             track.lyrics = self.get_lyrics(track)
-#
-#         metadata = track.metadata()
-#         out_file = metadata.generate_path(base_path=destination, extension=filetype)
-#         out_file.parent.mkdir(parents=True, exist_ok=True)
-#
-#         with open(out_file, "wb") as f:
-#             f.write(raw_data)
-#
-#         metadata.write_to_file(out_file)
-#     except Exception as e:
-#         raise DownloadTrackException(f"Failed to download track {track.name} - {track.artist.name}: {e}") from e
-#
-# def download_playlist(self,
-#                       playlist: Playlist,
-#                       quality: TrackQuality = TrackQuality.HI_RES_LOSSLESS,
-#                       output_type: str = "flac",
-#                       destination: str = "~/Music/Syncphony",
-#                       status_container: StatusContainer = None,
-#                       progress_bar: ProgressMixin = None
-#                       ) -> List[tuple[bool, Track]]:
-#     """
-#     Downloads a playlist to the given destination.
-#
-#     :param playlist: The playlist to download.
-#     :param quality: The quality of the downloaded tracks.
-#     :param output_type: The output file type.
-#     :param destination: The destination folder.
-#     :param status_container: The status container to update, if any.
-#     :param progress_bar: A Streamlit progress bar widget.
-#
-#     :raises DownloadPlaylistException:
-#
-#     :return: A list of tuples containing the download status and the track.
-#     """
-#
-#     if quality:
-#         self.client.audio_quality = quality.name
-#
-#     if destination:
-#         destination = Path(destination).expanduser()
-#
-#     # Total number of tracks to download
-#     total_tracks = len(playlist.tracks)
-#
-#     # Initialize the progress bar
-#     if progress_bar is not None:
-#         progress_bar.progress(0, "Downloading tracks...")
-#
-#     # Track progress in the main thread using a shared variable
-#     def _execute_download(_track, _progress_tracker, attempts=0):
-#         if not "streamlit_script_run_ctx" in threading.current_thread().__dict__:
-#             if attempts < 10:
-#                 time.sleep(0.1)
-#                 attempts += 1
-#                 return _execute_download(_track, _progress_tracker, attempts)
-#             else:
-#                 raise DownloadPlaylistException("Failed to download track due to missing script run context.")
-#
-#         # Create an st.empty() container to write status messages (no spamming logs)
-#         track_empty = status_container.empty() if status_container else None
-#
-#         try:
-#             if track_empty:
-#                 track_empty.write(f"*-> Downloading track: {_track.name}*")
-#
-#             self.download_track(_track, quality, output_type, destination)
-#
-#             # Update progress in the main thread safely
-#             if progress_bar is not None:
-#                 _progress_tracker[0] += 1
-#                 progress_bar.progress(_progress_tracker[0] / total_tracks,
-#                                       f"{_progress_tracker[0]}/{total_tracks} tracks downloaded")
-#
-#             if track_empty:
-#                 track_empty.write(f"*:green[-> Downloaded track: {_track.name}]*")
-#
-#             return True, _track
-#
-#         except Exception as e:
-#             log.exception(f"Failed to download track {_track.name} in playlist {playlist.name}")
-#             if track_empty:
-#                 track_empty.write(f"**:red[-> {e}]**")
-#
-#             return False, _track
-#
-#     # Shared progress tracker (using list to ensure it's mutable)
-#     progress_tracker = [0]
-#
-#     summary_downloads = []
-#
-#     # Use ThreadPoolExecutor to download tracks in parallel
-#     with ThreadPoolExecutor(max_workers=4) as executor:
-#         results = executor.map(lambda track: _execute_download(track, progress_tracker), playlist.tracks)
-#
-#         for t in executor._threads:
-#             add_script_run_ctx(t)
-#
-#         for result in results:
-#             summary_downloads.append(result)
-#
-#     return summary_downloads
+    # @rate_limit
+    # def download_track(self, track: TidalTrack, user_id: str = None, quality: TrackQuality = TrackQuality.HIGH) -> \
+    #         Optional[str]:
+    #     # NOT WORKING WELL: focus on download_album first
+    #
+    #     # Get stream info
+    #     stream = None
+    #     try:
+    #         params = {
+    #             "playbackmode": "STREAM",
+    #             "audioquality": _get_tidal_quality(quality),
+    #             "assetpresentation": "FULL",
+    #         }
+    #
+    #         request = self.client.request.request("GET", "tracks/%s/playbackinfopostpaywall" % track.id, params)
+    #     except ObjectNotFound:
+    #         log.exception(f"No stream available for track {track.name} by {track.artist.name}")
+    #         return None
+    #     except TooManyRequests as e:
+    #         raise e
+    #     except Exception as e:
+    #         log.exception(f"Failed to get stream for track {track.name} by {track.artist.name}: {e}")
+    #         return None
+    #     else:
+    #         json_obj = request.json()
+    #         stream = self.client.request.map_json(json_obj, parse=Stream().parse)
+    #         assert not isinstance(stream, list)
+    #         stream = cast("Stream", stream)
+    #
+    #     if not stream:
+    #         log.error(f"No stream manifest available for track {track.name} by {track.artist.name}")
+    #         return None
+    #
+    #     # Get stream manifest
+    #     stream_manifest = stream.get_stream_manifest()
+    #     if not stream_manifest:
+    #         log.error(f"No stream manifest available for track {track.name} by {track.artist.name}")
+    #         return None
+    #
+    #     # Determine file extension
+    #     match stream_manifest.file_extension:
+    #         case AudioExtensions.M4A:
+    #             file_extension = "m4a"
+    #         case AudioExtensions.FLAC:
+    #             file_extension = "flac"
+    #         case AudioExtensions.MP4:
+    #             log.error(f"TIDAL MP4 streams are not supported for track {track.name} by {track.artist.name}")
+    #             return None
+    #         case _:
+    #             log.error(f"Unknown TIDAL stream format for track {track.name} by {track.artist.name}")
+    #             return None
+    #
+    #     # Get download URLs
+    #     download_urls = stream_manifest.urls
+    #
+    #     # Download the track data
+    #     audio_bytes = bytearray()
+    #     for url in download_urls:
+    #         response = requests.get(url, stream=True, timeout=30)
+    #         response.raise_for_status()
+    #         audio_bytes.extend(response.content)
+    #
+    #     # Convert M4A to FLAC if necessary
+    #     if file_extension == "m4a":
+    #         audio_bytes = convert_m4a_bytes_to_flac(audio_bytes, timeout=15, re_encode_flac=False)
+    #
+    #     # Save to temporary file
+    #     bytes_response = bytes(audio_bytes)
+    #     with tempfile.NamedTemporaryFile(delete=False, suffix=f".{file_extension}") as temp_file:
+    #         temp_file.write(bytes_response)
+    #         temp_file_path = temp_file.name
+    #
+    #         track_metadata = process_metadata(track, Path(temp_file_path))
+    #
+    #         # acoustid = get_acoustid_fingerprint(Path(temp_file_path))
+    #         # log.debug(f"AcoustID fingerprint for track {track.name} by {track.artist.name}: {acoustid}")
+    #         #
+    #         # musicbrainzid = query_musicbrainz_by_acoustid(acoustid)
+    #
+    #     # return bytes(bytes_response), file_extension
+    #
+    #     return None

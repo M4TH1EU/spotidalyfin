@@ -17,8 +17,9 @@ class Artist:
     platform: Platform
     name: str
     id: str
-    genres: List[str] = field(default_factory=list)
-    role: ArtistRole = ArtistRole.ARTIST
+    role: ArtistRole
+    roles: List[ArtistRole]
+    genres: Optional[List[str]] = None
     image: Optional[str] = None
 
 
@@ -35,6 +36,7 @@ class TidalArtist(PlatformBound, Artist):
 @dataclass
 class JellyfinArtist(PlatformBound, Artist):
     PLATFORM = Platform.JELLYFIN
+
 
 @dataclass
 class SubsonicArtist(PlatformBound, Artist):

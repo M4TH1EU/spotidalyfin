@@ -1,3 +1,4 @@
+import musicbrainzngs
 from fastapi import FastAPI
 
 from syncphony.db.db import init_db
@@ -11,6 +12,7 @@ runner = TaskRunner()
 
 @app.on_event("startup")
 def on_startup():
+    musicbrainzngs.set_useragent("syncphony", "0.1")
     init_db()
     runner.start()
 

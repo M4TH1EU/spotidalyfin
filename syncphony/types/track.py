@@ -18,14 +18,21 @@ class Track:
     name: str
     id: str
     artist: 'Artist'
+    artists: list['Artist']
     album: 'Album'
     isrc: Optional[str] = None
     track_number: Optional[int] = None
     vol_number: Optional[int] = None
-    replay_gain: Optional[int] = None
-    replay_peak: Optional[int] = None
+    replay_gain: Optional[float] = None
+    peak_amplitude: Optional[float] = None
     duration: Optional[int] = None
     quality: Optional[TrackQuality] = None
+    musicbrainz_recording_id: Optional[str] = None
+    musicbrainz_track_id: Optional[str] = None
+    musicbrainz_release_artist_id: Optional[list[str]] = None
+    musicbrainz_release_group_id: Optional[str] = None
+    musicbrainz_artist_id: Optional[list[str]] = None
+    musicbrainz_release_id: Optional[str] = None
 
 
 @dataclass

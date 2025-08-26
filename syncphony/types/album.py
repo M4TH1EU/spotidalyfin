@@ -19,6 +19,7 @@ class Album:
     name: str
     id: str
     artist: 'Artist'
+    artists: List['Artist']
     barcode: Optional[str] = None
     release_date: Optional[datetime.datetime] = None
     cover: Optional[bytes] = None
@@ -27,6 +28,11 @@ class Album:
     num_tracks: Optional[int] = None
     num_volumes: Optional[int] = None
     copyright: Optional[str] = None
+    replay_gain: Optional[float] = None
+    peak_amplitude: Optional[float] = None
+    country: Optional[str] = None
+    release_status: Optional[str] = None
+    genres: Optional[List[str]] = None
 
 
 @dataclass
