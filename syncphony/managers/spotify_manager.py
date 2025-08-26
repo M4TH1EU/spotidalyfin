@@ -10,7 +10,7 @@ from sqlmodel import Session, select
 
 from syncphony.constants import SPOTIFY_SCOPES, SPOTIFY_REDIRECT_URI
 from syncphony.db.models import SpotifyAccount
-from syncphony.types import Track, TrackQuality
+from syncphony.types import Track, TrackQuality, ArtistRole
 from syncphony.types.album import SpotifyAlbum, Album
 from syncphony.types.artist import SpotifyArtist, Artist
 from syncphony.types.enums import Platform
@@ -68,10 +68,12 @@ def _get_image(spotipy_object: dict) -> Optional[bytes]:
 
 
 def _parse_track(spotipy_track: dict) -> SpotifyTrack:
+    artists = [_parse_artist(artist) for artist in spotipy_track.get("artists", [])]
     return SpotifyTrack(
         name=spotipy_track['name'],
         id=spotipy_track['id'],
-        artist=_parse_artist(spotipy_track["artists"][0]) if spotipy_track.get("artists") else None,
+        artist=artists[0] if len(artists) > 0 else None,
+        artists=artists,
         album=_parse_album(spotipy_track["album"]) if spotipy_track.get("album") else None,
         duration=int(spotipy_track.get("duration_ms", 0) / 1000),
         quality=TrackQuality.LOW,
@@ -80,12 +82,15 @@ def _parse_track(spotipy_track: dict) -> SpotifyTrack:
 
 
 def _parse_artist(spotipy_artist: dict) -> SpotifyArtist:
+    role = ArtistRole(spotipy_artist["role"]) if spotipy_artist.get(
+        "role") in ArtistRole.__members__ else ArtistRole.ARTIST
+
     return SpotifyArtist(
         name=spotipy_artist["name"],
         id=spotipy_artist["id"],
         genres=spotipy_artist.get("genres", []),
-        # TODO: add role
-        # image=_get_image(spotipy_artist)
+        role=role,
+        roles=[role]
     )
 
 
@@ -93,15 +98,15 @@ def _parse_album(spotipy_album: dict) -> SpotifyAlbum:
     if not len(spotipy_album.get('artists')) > 0:  # TODO: investigate why this happens
         log.error(f"Album {spotipy_album.get('name', 'Unknown')} has no artists, skipping.")
 
+    artists = [_parse_artist(artist) for artist in spotipy_album.get("artists", [])]
+
     return SpotifyAlbum(
         name=spotipy_album["name"],
         id=spotipy_album["id"],
-        artist=_parse_artist(spotipy_album["artists"][0]) if spotipy_album.get("artists") else None,
+        artist=artists[0] if len(artists) > 0 else None,
+        artists=artists,
         barcode=spotipy_album.get('external_ids', {}).get('upc', ''),
         release_date=spotipy_album.get("release_date", None),
-        # cover=_get_image(spotipy_album),
-        num_volumes=None,
-        tracks=None
     )
 
 
@@ -110,16 +115,14 @@ def _parse_playlist(spotipy_playlist: dict) -> SpotifyPlaylist:
         id=spotipy_playlist['id'],
         name=spotipy_playlist['name'],
         description=spotipy_playlist.get('description', ''),
-        tracks=[_parse_track(item["track"]) for item in spotipy_playlist.get("tracks", {}).get("items", [])],
-        # image=_get_image(spotipy_playlist)
+        tracks=[_parse_track(item["track"]) for item in spotipy_playlist.get("tracks", {}).get("items", [])]
     )
 
 
 def _parse_favorite_tracks(spotipy_playlist: dict) -> SpotifyFavoriteTracksPlaylist:
     return SpotifyFavoriteTracksPlaylist(
         name="Liked Songs",
-        tracks=[_parse_track(item["track"]) for item in spotipy_playlist.get("items", [])],
-        # image=_get_image(spotipy_playlist)
+        tracks=[_parse_track(item["track"]) for item in spotipy_playlist.get("items", [])]
     )
 
 
