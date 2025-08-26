@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from syncphony.db.db import init_db
 from syncphony.routers import accounts, sync, tasks, download
 from syncphony.tasks.runner import TaskRunner
+from syncphony.utils.logger import setup_logger
 
 app = FastAPI(title="Syncphony API")
 
@@ -12,6 +13,7 @@ runner = TaskRunner()
 
 @app.on_event("startup")
 def on_startup():
+    setup_logger()
     musicbrainzngs.set_useragent("syncphony", "0.1")
     init_db()
     runner.start()

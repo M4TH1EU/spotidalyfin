@@ -10,7 +10,7 @@ def convert_m4a_bytes_to_flac(input_bytes: bytes, timeout=10, re_encode_flac: bo
     Args:
         input_bytes (bytes): Input M4A data as a byte array.
         timeout (int): Timeout for the conversion process.
-        reencode_flac (bool): Whether to re-encode the FLAC audio stream instead of copying it (ffmpeg option)
+        re_encode_flac (bool): Whether to re-encode the FLAC audio stream instead of copying it (ffmpeg option)
 
     Returns:
         bytes: Output FLAC data as a byte array.

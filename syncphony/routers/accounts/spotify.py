@@ -1,4 +1,3 @@
-import re
 from typing import Annotated
 from urllib.parse import parse_qs, urlparse
 
@@ -8,6 +7,7 @@ from spotipy import MemoryCacheHandler
 from spotipy.oauth2 import SpotifyOAuth
 from sqlmodel import Session
 
+from syncphony.constants import SPOTIFY_REDIRECT_URI, SPOTIFY_SCOPES
 from syncphony.db.db import get_session
 from syncphony.db.models import SpotifyAccount
 from syncphony.storage.oauth_spotify import store_temp_oauth, get_temp_oauth, remove_temp_oauth
