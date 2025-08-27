@@ -1,5 +1,6 @@
 import datetime
 import hashlib
+import logging
 import random
 import string
 from typing import List, Optional
@@ -16,7 +17,6 @@ from syncphony.types.manager import Manager
 from syncphony.types.playlist import Playlist, SubsonicPlaylist, \
     SubsonicFavoriteTracksPlaylist
 from syncphony.types.track import SubsonicTrack, Track
-from syncphony.utils.logger import log
 
 
 def _parse_artist(subsonic_artist: dict) -> SubsonicArtist:
@@ -115,10 +115,12 @@ def _generate_token(password: str, salt: str) -> str:
 class SubsonicManager(Manager):
     PLATFORM = Platform.SUBSONIC
 
-    def __init__(self, url: str, username: str, db_session: Session):
+    def __init__(self, url: str, username: str, db_session: Session, logger: logging.Logger = None):
         self.db_session = db_session
         self.base_url = url.rstrip("/")
         self.username = username
+        if logger:
+            self.logger = logger
 
         # Initialize connection
         account = db_session.exec(
@@ -151,14 +153,14 @@ class SubsonicManager(Manager):
         try:
             response.raise_for_status()
         except requests.Timeout:
-            log.error(f"Request to {self.base_url}/rest/{endpoint}.view timed out.")
+            self.logger.error(f"Request to {self.base_url}/rest/{endpoint}.view timed out.")
             return self._request(endpoint, params, count + 1) if count < 3 else {}
 
         if response.headers.get("Content-Type") == "application/json":
             resp_json = response.json()
 
             if resp_json.get("subsonic-response", {}).get("status") == "failed":
-                log.error(f"Subsonic API error: {resp_json['subsonic-response'].get('error')}")
+                self.logger.error(f"Subsonic API error: {resp_json['subsonic-response'].get('error')}")
                 return {}
 
             return resp_json["subsonic-response"]
@@ -166,7 +168,7 @@ class SubsonicManager(Manager):
                 "Content-Type") == "image/jpeg":
             return response.content
         else:
-            log.error(f"Unexpected response type: {response.headers.get('Content-Type')}")
+            self.logger.error(f"Unexpected response type: {response.headers.get('Content-Type')}")
             return {}
 
     def _get_cover_art(self, cover_art: str) -> Optional[bytes]:
@@ -175,10 +177,10 @@ class SubsonicManager(Manager):
             if isinstance(resp, bytes):
                 return resp
             else:
-                log.error(f"Failed to fetch cover art for ID {cover_art}")
+                self.logger.error(f"Failed to fetch cover art for ID {cover_art}")
                 return None
         except Exception as e:
-            log.error(f"Unexpected error fetching cover art for ID {cover_art}: {e}")
+            self.logger.error(f"Unexpected error fetching cover art for ID {cover_art}: {e}")
             return None
 
     def is_multi_user(self) -> bool:
@@ -192,7 +194,7 @@ class SubsonicManager(Manager):
                 return None
             return _parse_track(song)
         except Exception as e:
-            log.error(f"Error fetching track {track_id}: {e}")
+            self.logger.error(f"Error fetching track {track_id}: {e}")
             return None
 
     def get_album(self, album_id: str) -> Optional[SubsonicAlbum]:
@@ -203,7 +205,7 @@ class SubsonicManager(Manager):
                 return None
             return _parse_album(album_data)
         except Exception as e:
-            log.error(f"Error fetching album {album_id}: {e}")
+            self.logger.error(f"Error fetching album {album_id}: {e}")
             return None
 
     def get_artist(self, artist_id: str) -> Optional[SubsonicArtist]:
@@ -214,7 +216,7 @@ class SubsonicManager(Manager):
                 return None
             return _parse_artist(artist_data)
         except Exception as e:
-            log.error(f"Error fetching artist {artist_id}: {e}")
+            self.logger.error(f"Error fetching artist {artist_id}: {e}")
             return None
 
     def get_artist_tracks(self, artist_id: str) -> List[SubsonicTrack]:
@@ -230,7 +232,7 @@ class SubsonicManager(Manager):
                     tracks.append(_parse_track(song, artist, album_obj))
             return tracks
         except Exception as e:
-            log.error(f"Error fetching tracks for artist {artist_id}: {e}")
+            self.logger.error(f"Error fetching tracks for artist {artist_id}: {e}")
             return []
 
     def get_playlist(self, playlist_id: str, fetch_tracks: bool = True, fetch_albums: bool = False,
@@ -250,7 +252,7 @@ class SubsonicManager(Manager):
             # cover = self._get_cover_art(playlist.get("coverArt"))
             return _parse_playlist(playlist, fetch_tracks, cover=None) if playlist else None
         except Exception as e:
-            log.error(f"Error fetching playlist {playlist_id}: {e}")
+            self.logger.error(f"Error fetching playlist {playlist_id}: {e}")
             return None
 
     def get_user_playlists(self, user_id: str = None) -> List[SubsonicPlaylist]:
@@ -263,7 +265,7 @@ class SubsonicManager(Manager):
                  resp.get("playlists", {}).get("playlist", [])])
             return playlists
         except Exception as e:
-            log.error(f"Error fetching user playlists: {e}")
+            self.logger.error(f"Error fetching user playlists: {e}")
             return []
 
     def get_favorite_tracks(self, user_id: str = None) -> Optional[SubsonicFavoriteTracksPlaylist]:
@@ -275,7 +277,7 @@ class SubsonicManager(Manager):
                 tracks.append(_parse_track(s))
             return SubsonicFavoriteTracksPlaylist(name="Starred Tracks", tracks=tracks)
         except Exception as e:
-            log.error(f"Error fetching favorite tracks: {e}")
+            self.logger.error(f"Error fetching favorite tracks: {e}")
             return None
 
     def search_tracks_by_query(self, query: str) -> List[SubsonicTrack]:
@@ -287,7 +289,7 @@ class SubsonicManager(Manager):
                 results.append(_parse_track(s))
             return results
         except Exception as e:
-            log.error(f"Error searching tracks by query '{query}': {e}")
+            self.logger.error(f"Error searching tracks by query '{query}': {e}")
             return []
 
     def search_tracks_by_isrc(self, isrc: str) -> List[SubsonicTrack]:
@@ -301,7 +303,7 @@ class SubsonicManager(Manager):
                 albums.append(_parse_album(a))
             return albums
         except Exception as e:
-            log.error(f"Error searching albums by query '{query}': {e}")
+            self.logger.error(f"Error searching albums by query '{query}': {e}")
             return []
 
     def search_albums_by_upc(self, upc: str) -> List[SubsonicAlbum]:
@@ -312,7 +314,7 @@ class SubsonicManager(Manager):
             resp = self._request("search3", {"query": query})
             return [_parse_artist(a) for a in resp.get("searchResult3", {}).get("artist", [])]
         except Exception as e:
-            log.error(f"Error searching artists by query '{query}': {e}")
+            self.logger.error(f"Error searching artists by query '{query}': {e}")
             return []
 
     def get_cover(self, item: Album | Artist | Track) -> Optional[bytes]:
@@ -344,7 +346,7 @@ class SubsonicManager(Manager):
                 resp = self._request("getLyrics", {"artist": track.artist.name, "title": track.name})
                 return resp.get("lyrics", {}).get('value', "")
         except Exception as e:
-            log.error(f"Error fetching lyrics for track {track.id}: {e}")
+            self.logger.error(f"Error fetching lyrics for track {track.id}: {e}")
             return None
 
     def create_empty_playlist(self, name: str, description: str = "", cover: bytes = None, user_id: str = None) -> \
@@ -357,7 +359,7 @@ class SubsonicManager(Manager):
 
             return None
         except Exception as e:
-            log.error(f"Error creating empty playlist '{name}': {e}")
+            self.logger.error(f"Error creating empty playlist '{name}': {e}")
             return None
 
     def add_tracks_to_playlist(self, playlist: Playlist, tracks: List[SubsonicTrack], user_id: str = None) -> bool:
@@ -377,13 +379,13 @@ class SubsonicManager(Manager):
                     "songIdToAdd": batch
                 })
                 if resp.get("status") != "ok":
-                    log.error(f"Failed to add tracks {batch} to playlist {playlist.name}: {resp.get('error')}")
+                    self.logger.error(f"Failed to add tracks {batch} to playlist {playlist.name}: {resp.get('error')}")
                     return False
 
             return True
 
         except Exception as e:
-            log.error(f"Error adding tracks to playlist '{playlist.name}': {e}")
+            self.logger.error(f"Error adding tracks to playlist '{playlist.name}': {e}")
             return False
 
     def remove_playlist_by_id(self, playlist_id: str) -> bool:
@@ -391,7 +393,7 @@ class SubsonicManager(Manager):
             resp = self._request("deletePlaylist", {"id": playlist_id})
             return resp.get("status") == "ok"
         except Exception as e:
-            log.error(f"Error removing playlist with ID '{playlist_id}': {e}")
+            self.logger.error(f"Error removing playlist with ID '{playlist_id}': {e}")
             return False
 
     def supports_downloading(self) -> bool:

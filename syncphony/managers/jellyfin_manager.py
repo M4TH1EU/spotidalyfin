@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timedelta
 from typing import Optional, List, Tuple
 
@@ -13,7 +14,6 @@ from syncphony.types.manager import Manager
 from syncphony.types.playlist import JellyfinPlaylist, \
     JellyfinFavoriteTracksPlaylist, Playlist
 from syncphony.types.track import JellyfinTrack
-from syncphony.utils.logger import log
 
 
 #
@@ -117,31 +117,14 @@ def _parse_playlist(jellyfin_playlist: dict) -> JellyfinPlaylist:
     )
 
 
-#
-# def login_jellyfin(server_url: str, api_key: str, db: Database) -> tuple[bool, str, dict]:
-#     """
-#     Try to authenticate with Jellyfin server using the provided URL and API key.
-#     Returns a tuple of (success: bool, message: str).
-#     """
-#     try:
-#         jellyfin_manager = JellyfinManager(url=server_url, db=db, api_key=api_key)
-#         users = jellyfin_manager.get_users()
-#         if not users:
-#             return False, "No users found on the Jellyfin server. Please check your API key and server URL.", {}
-#
-#         save_jellyfin_info_to_db(db, server_url, jellyfin_manager.api_key)
-#
-#         return True, "Successfully authenticated with Jellyfin.", {}
-#     except requests.exceptions.RequestException as e:
-#         return False, f"Failed to connect to Jellyfin server: {e}", {}
-
-
 class JellyfinManager(Manager):
     PLATFORM = Platform.JELLYFIN
 
-    def __init__(self, url: str, db_session: Session):
+    def __init__(self, url: str, db_session: Session, logger: logging.Logger = None):
         self.url = url.rstrip("/")
         self.db_session = db_session
+        if logger:
+            self.logger = logger
 
         # Initialize connection
         account = db_session.exec(
@@ -179,7 +162,7 @@ class JellyfinManager(Manager):
         try:
             response.raise_for_status()
         except requests.Timeout:
-            log.error(f"Request to Jellyfin API timed out after {count} attempts. Retrying...")
+            self.logger.error(f"Request to Jellyfin API timed out after {count} attempts. Retrying...")
             return self._request(path, params, method, headers, data, count + 1) if count < 3 else []
 
         if response.status_code == 204:  # No Content
@@ -198,12 +181,12 @@ class JellyfinManager(Manager):
             elif 'Id' in resp_json:
                 return resp_json
             else:
-                log.warning(f"Unexpected response format: {resp_json}")
+                self.logger.warning(f"Unexpected response format: {resp_json}")
                 return []
         except ValueError:
-            log.exception("Failed to parse JSON response from Jellyfin API.")
+            self.logger.exception("Failed to parse JSON response from Jellyfin API.")
         except requests.exceptions.RequestException as e:
-            log.exception(f"Request to Jellyfin API failed: {e}")
+            self.logger.exception(f"Request to Jellyfin API failed: {e}")
 
         return []
 
@@ -213,7 +196,7 @@ class JellyfinManager(Manager):
                           data=data)
             return True
         except Exception as e:
-            log.error(f"Failed to modify image for item {item_id}: {e}")
+            self.logger.error(f"Failed to modify image for item {item_id}: {e}")
             return False
 
     def is_multi_user(self) -> bool:
@@ -224,7 +207,7 @@ class JellyfinManager(Manager):
             users = self._request("Users")
             return [(str(user.get("Id")), str(user.get("Name"))) for user in users]
         except Exception as e:
-            log.error(f"Failed to retrieve users from Jellyfin: {e}")
+            self.logger.error(f"Failed to retrieve users from Jellyfin: {e}")
             return []
 
     def _get_default_admin_user_id(self) -> Optional[str]:
@@ -235,10 +218,10 @@ class JellyfinManager(Manager):
                 if user.get("Policy", {}).get("IsAdministrator", False):
                     return user.get("Id")
 
-            log.warning("No admin user found in Jellyfin. Some features may not work.")
+            self.logger.warning("No admin user found in Jellyfin. Some features may not work.")
             return None
         except Exception as e:
-            log.error(f"Failed to retrieve admin user from Jellyfin: {e}")
+            self.logger.error(f"Failed to retrieve admin user from Jellyfin: {e}")
             return None
 
     def get_track(self, track_id: str) -> Optional[JellyfinTrack]:
@@ -256,7 +239,7 @@ class JellyfinManager(Manager):
             jellyfin_track = result[0]
             return _parse_track(jellyfin_track)
         except Exception as e:
-            log.error(f"Failed to retrieve track {track_id} from Jellyfin: {e}")
+            self.logger.error(f"Failed to retrieve track {track_id} from Jellyfin: {e}")
             return None
 
     def get_album(self, album_id: str) -> Optional[JellyfinAlbum]:
@@ -272,7 +255,7 @@ class JellyfinManager(Manager):
             jellyfin_album = result[0]
             return _parse_album(jellyfin_album)
         except Exception as e:
-            log.error(f"Failed to retrieve album {album_id} from Jellyfin: {e}")
+            self.logger.error(f"Failed to retrieve album {album_id} from Jellyfin: {e}")
             return None
 
     def get_artist(self, artist_id: str) -> Optional[JellyfinArtist]:
@@ -288,7 +271,7 @@ class JellyfinManager(Manager):
             jellyfin_artist = result[0]
             return _parse_artist(jellyfin_artist)
         except Exception as e:
-            log.error(f"Failed to retrieve artist {artist_id} from Jellyfin: {e}")
+            self.logger.error(f"Failed to retrieve artist {artist_id} from Jellyfin: {e}")
             return None
 
     def get_artist_tracks(self, artist_id: str) -> list[JellyfinTrack]:
@@ -304,7 +287,7 @@ class JellyfinManager(Manager):
             results = self._request(path, params)
             return [_parse_track(item) for item in results]
         except Exception as e:
-            log.error(f"Failed to retrieve tracks for artist {artist_id} from Jellyfin: {e}")
+            self.logger.error(f"Failed to retrieve tracks for artist {artist_id} from Jellyfin: {e}")
             return []
 
     def get_playlist(self, playlist_id: str, fetch_tracks: bool = True, fetch_albums: bool = False,
@@ -342,13 +325,13 @@ class JellyfinManager(Manager):
 
             return _parse_playlist(jellyfin_playlist)
         except Exception as e:
-            log.error(f"Failed to retrieve playlist {playlist_id} from Jellyfin: {e}")
+            self.logger.error(f"Failed to retrieve playlist {playlist_id} from Jellyfin: {e}")
             return None
 
     def get_user_playlists(self, user_id: str = None) -> list[JellyfinPlaylist]:
         try:
             if user_id is None:
-                log.warning("No user ID provided, returning empty playlist list.")
+                self.logger.warning("No user ID provided, returning empty playlist list.")
                 return []
 
             path = f"Users/{user_id}/Items"
@@ -362,13 +345,13 @@ class JellyfinManager(Manager):
 
             return [_parse_playlist(item) for item in result]
         except Exception as e:
-            log.error(f"Failed to retrieve playlists for user {user_id} from Jellyfin: {e}")
+            self.logger.error(f"Failed to retrieve playlists for user {user_id} from Jellyfin: {e}")
             return []
 
     def get_favorite_tracks(self, user_id: str = None) -> Optional[JellyfinFavoriteTracksPlaylist]:
         try:
             if user_id is None:
-                log.warning("No user ID provided, returning no favorites list.")
+                self.logger.warning("No user ID provided, returning no favorites list.")
                 return None
 
             path = f"Users/{user_id}/Items"
@@ -386,7 +369,7 @@ class JellyfinManager(Manager):
                 tracks=[_parse_track(item) for item in jellyfin_favorites],
             )
         except Exception as e:
-            log.error(f"Failed to retrieve favorite tracks for user {user_id} from Jellyfin: {e}")
+            self.logger.error(f"Failed to retrieve favorite tracks for user {user_id} from Jellyfin: {e}")
             return None
 
     def search_tracks_by_query(self, query: str) -> list[JellyfinTrack]:
@@ -402,11 +385,11 @@ class JellyfinManager(Manager):
             results = self._request(path, params)
             return [_parse_track(item) for item in results]
         except Exception as e:
-            log.error(f"Failed to search tracks by query '{query}' in Jellyfin: {e}")
+            self.logger.error(f"Failed to search tracks by query '{query}' in Jellyfin: {e}")
             return []
 
     def search_tracks_by_isrc(self, isrc: str) -> list[JellyfinTrack]:
-        log.warning("Jellyfin does not support searching by ISRC. Returning empty list.")
+        self.logger.warning("Jellyfin does not support searching by ISRC. Returning empty list.")
         return []
 
     def search_albums_by_query(self, query: str) -> list[JellyfinAlbum]:
@@ -421,11 +404,11 @@ class JellyfinManager(Manager):
             results = self._request(path, params)
             return [_parse_album(item) for item in results]
         except Exception as e:
-            log.error(f"Failed to search albums by query '{query}' in Jellyfin: {e}")
+            self.logger.error(f"Failed to search albums by query '{query}' in Jellyfin: {e}")
             return []
 
     def search_albums_by_upc(self, upc: str) -> list[JellyfinAlbum]:
-        log.warning("Jellyfin does not support searching by UPC. Returning empty list.")
+        self.logger.warning("Jellyfin does not support searching by UPC. Returning empty list.")
         return []
 
     def search_artists_by_query(self, query: str) -> list[JellyfinArtist]:
@@ -440,7 +423,7 @@ class JellyfinManager(Manager):
             results = self._request(path, params)
             return [_parse_artist(item) for item in results]
         except Exception as e:
-            log.error(f"Failed to search artists by query '{query}' in Jellyfin: {e}")
+            self.logger.error(f"Failed to search artists by query '{query}' in Jellyfin: {e}")
             return []
 
     def get_cover(self, item: Album | Artist | Track) -> Optional[bytes]:
@@ -472,7 +455,8 @@ class JellyfinManager(Manager):
 
             return output.strip()
         except Exception as e:
-            log.error(f"Failed to retrieve lyrics for track {track.name} by {track.artist.name} from Jellyfin: {e}")
+            self.logger.error(
+                f"Failed to retrieve lyrics for track {track.name} by {track.artist.name} from Jellyfin: {e}")
             return None
 
     def create_empty_playlist(self, name: str, description: str = "", cover: bytes = None, user_id: str = None) -> \
@@ -480,7 +464,7 @@ class JellyfinManager(Manager):
                 JellyfinPlaylist]:
         try:
             if not user_id:
-                log.error("No user ID provided, cannot create playlist.")
+                self.logger.error("No user ID provided, cannot create playlist.")
 
             path = f"Playlists"
             params = {
@@ -491,7 +475,7 @@ class JellyfinManager(Manager):
 
             result = self._request(path, params, method="POST")
             if not result or "Id" not in result:
-                log.error("Failed to create playlist.")
+                self.logger.error("Failed to create playlist.")
                 return None
 
             if cover:
@@ -499,7 +483,7 @@ class JellyfinManager(Manager):
 
             return self.get_playlist(result.get("Id"), fetch_tracks=False, fetch_albums=False)
         except Exception as e:
-            log.error(f"Failed to create empty playlist '{name}': {e}")
+            self.logger.error(f"Failed to create empty playlist '{name}': {e}")
             return None
 
     def add_tracks_to_playlist(self, playlist: Playlist, tracks: List[JellyfinTrack], user_id: str = None) -> bool:
@@ -516,7 +500,7 @@ class JellyfinManager(Manager):
                 }
                 result = self._request(path, params, method="POST")
                 if not result:
-                    log.error(f"Failed to add tracks to playlist {playlist.name}.")
+                    self.logger.error(f"Failed to add tracks to playlist {playlist.name}.")
                     return False
 
             # params = {
@@ -530,7 +514,7 @@ class JellyfinManager(Manager):
 
             return True
         except Exception as e:
-            log.error(f"Failed to add tracks to playlist {playlist.name}: {e}")
+            self.logger.error(f"Failed to add tracks to playlist {playlist.name}: {e}")
             return False
 
         # https://jellyfin.broillet.ch/Playlists/0a992713243ba5a49d5b974feb099eb0/Items?ids=d86fcae36930181015551268fdd19c4d&userId=5180b2a096734d748dec001c3a0d2bb6
@@ -544,7 +528,7 @@ class JellyfinManager(Manager):
 
             return True
         except Exception as e:
-            log.error(f"Failed to remove playlist {playlist_id}: {e}")
+            self.logger.error(f"Failed to remove playlist {playlist_id}: {e}")
             return False
 
     def supports_downloading(self) -> bool:

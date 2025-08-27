@@ -31,6 +31,24 @@ def normalize_track_name(name: str, remove_words_with_apostrophes: bool = False)
 
     return name
 
+def normalize_album_name(name: str, remove_words_with_apostrophes: bool = False) -> str:
+    """
+    Normalizes album name by:
+    - Lowercasing
+    - Keep only alphanumeric characters and spaces
+    - Removing extra whitespace and punctuation
+    - Optional: removing words with apostrophes (e.g., "Don't", "It's"), mostly for Jellyfin compatibility
+    """
+    name = name.lower()
+
+    if remove_words_with_apostrophes:
+        name = re.sub(r"\b\w*'\w*\b", '', name)
+
+    name = re.sub(r'[^\w\s]', '', name)
+    name = re.sub(r'\s+', ' ', name).strip()
+    return name
+
+
 
 def normalize_artist_name(name: str, remove_words_with_double_quote: bool = False) -> str:
     """
@@ -288,11 +306,10 @@ def compare_musicbrainz_release_album(release: dict, album: Album):
     # 3 Artists
     if album.artists and 'artist-credit' in release:
         for artist in album.artists:
-            if any(compare_strings(artist.name, ac.get('artist', {}).get('name', '')) > 80 for ac in
-                   release['artist-credit']):
-                score += 100 * 0.2
+            if any(compare_strings(artist.name, ac.get('artist', {}).get('name', '')) > 80 for ac in release['artist-credit'] if isinstance(ac, dict)):
+                score += 100 * 0.25
+                weight_total += 0.25
                 break
-            weight_total += 0.2
 
     # 3. Release date (if available)
     if album.release_date and 'date' in release:

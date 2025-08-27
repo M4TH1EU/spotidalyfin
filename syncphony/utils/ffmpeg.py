@@ -1,9 +1,10 @@
 import subprocess
 
-from syncphony.utils.logger import log
+from syncphony.utils.logger import syncphony_logger
 
 
-def convert_m4a_bytes_to_flac(input_bytes: bytes, timeout=10, re_encode_flac: bool = False) -> bytes:
+def convert_m4a_bytes_to_flac(input_bytes: bytes, timeout=10, re_encode_flac: bool = False,
+                              logger=syncphony_logger) -> bytes:
     """
     Convert an M4A byte stream with a FLAC audio stream to a FLAC byte stream.
 
@@ -41,7 +42,7 @@ def convert_m4a_bytes_to_flac(input_bytes: bytes, timeout=10, re_encode_flac: bo
         raise RuntimeError("FFmpeg process timed out")
     except subprocess.SubprocessError as e:
         if not re_encode_flac:
-            log.debug("Failed to convert M4A to FLAC. Trying to re-encode in FLAC instead of copy...")
-            return convert_m4a_bytes_to_flac(input_bytes, timeout, re_encode_flac=True)
+            logger.debug("Failed to convert M4A to FLAC. Trying to re-encode in FLAC instead of copy...")
+            return convert_m4a_bytes_to_flac(input_bytes, timeout, re_encode_flac=True, logger=logger)
         else:
             raise RuntimeError(f"Error during FFmpeg conversion: {e}")

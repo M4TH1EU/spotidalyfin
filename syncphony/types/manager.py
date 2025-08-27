@@ -8,15 +8,17 @@ from sqlmodel import Session, select
 
 from syncphony.db.models import Match
 from syncphony.types import Track, Album, Artist
-from syncphony.types.compare import normalize_track_name, compare_strings_set_ratio, normalize_artist_name
+from syncphony.utils.compare import normalize_track_name, compare_strings_set_ratio, normalize_artist_name
 from syncphony.types.enums import Platform, MatchType, TrackQuality
 from syncphony.types.playlist import Playlist, FavoriteTracksPlaylist
+from syncphony.utils.logger import syncphony_logger
 
 
 @dataclass
 class Manager(ABC):
     PLATFORM: Platform
     db_session: Session
+    logger: logging.Logger = syncphony_logger  # Default logger if none provided
 
     @abstractmethod
     def is_multi_user(self) -> bool:

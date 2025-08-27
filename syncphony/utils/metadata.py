@@ -1,11 +1,13 @@
+import re
 from pathlib import Path
 
 from mutagen.flac import FLAC, Picture
 from unidecode import unidecode
 
+from syncphony.constants import MAX_FILENAME_LENGTH
 from syncphony.types import Track, ArtistRole, Album
 from syncphony.types.manager import Manager
-from syncphony.utils.logger import log
+from syncphony.utils.logger import syncphony_logger
 
 
 def name_builder_artist(media: Track | Album) -> str:
@@ -34,21 +36,67 @@ def generate_album_path(album: Album, base_path: Path) -> Path:
     return base_path / sanitized_albumartist / sanitized_album
 
 
-def generate_path(track: Track, base_path: Path, extension: str = "flac") -> Path:
-    """Generate a sanitized file path based on metadata."""
-    # Format track number with leading zeros
-    track_number_str = f"{int(track.track_number):02}" if track.track_number else "00"
+def sanitize_filename(name: str) -> str:
+    """Sanitize a string to be safe for filenames."""
+    if not name:
+        return "Untitled"
+    name = unidecode(name)  # remove accents
+    # Replace illegal filesystem characters with hyphen
+    name = re.sub(r'[\\/:"*?<>|]', '-', name)
+    # Collapse multiple spaces or hyphens
+    name = re.sub(r'[\s\-]+', ' ', name).strip()
+    # Truncate if too long
+    if len(name) > MAX_FILENAME_LENGTH:
+        name = name[:MAX_FILENAME_LENGTH].rstrip()
+    return name
 
-    sanitized_albumartist = unidecode(track.album.artist.name or "Unknown Artist")
-    sanitized_album = unidecode(track.album.name or "Unknown Album")
-    sanitized_title = unidecode(track.name or "Untitled")
 
-    return base_path / sanitized_albumartist / sanitized_album / f"{track_number_str} - {sanitized_title}.{extension.lstrip('.')}"
+def generate_track_path(track: Track, base_path: Path) -> Path:
+    """Generate a MusicBrainzPicard-style file path based on track metadata."""
+
+    # Choose album artist, fallback to track artist
+    album_artist_name = track.album.artist.name if track.album and track.album.artist else track.artist.name
+    sanitized_albumartist = sanitize_filename(album_artist_name or "Unknown Artist")
+
+    # Album folder if album artist exists
+    sanitized_album = ""
+    if track.album and track.album.artist:
+        sanitized_album = sanitize_filename(track.album.name or "Unknown Album")
+
+    # Disc number formatting
+    disc_number_str = ""
+    if getattr(track, "vol_number", None) and getattr(track.album, "num_volumes", None) and track.album.num_volumes > 1:
+        if track.album.num_volumes > 9:
+            disc_number_str = f"{track.vol_number:02}-"
+        else:
+            disc_number_str = f"{track.vol_number}-"
+
+    # Track number formatting (2 digits if album artist exists)
+    track_number_str = ""
+    if track.track_number and track.album and track.album.artist:
+        track_number_str = f"{track.track_number:02} "
+
+    # Multi-artist prefix
+    multi_artist_prefix = ""
+    if hasattr(track, "artists") and len(track.artists) > 1:
+        multi_artist_prefix = f"{sanitize_filename(track.artist.name)} - "
+
+    # Track title
+    sanitized_title = sanitize_filename(track.name or "Untitled")
+
+    # Build final filename
+    filename = f"{disc_number_str}{track_number_str}{multi_artist_prefix}{sanitized_title}".strip()
+
+    # Build full path
+    path_parts = [base_path, sanitized_albumartist]
+    if sanitized_album:
+        path_parts.append(sanitized_album)
+    return Path(*path_parts) / filename
 
 
-def write_metadata(file: Path, track: Track, manager: Manager, fetch_lyrics: bool = False):
+def write_metadata(file: Path, track: Track, manager: Manager, fetch_lyrics: bool = False, logger=syncphony_logger):
     if not file.exists():
-        log.error(f"File {file} does not exist, cannot write metadata.")
+        logger.error(f"File {file} does not exist, cannot write metadata.")
         return
 
     if file.suffix.lower() == ".flac":

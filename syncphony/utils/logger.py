@@ -1,6 +1,6 @@
 import logging
 
-log = logging.getLogger("syncphony")
+syncphony_logger = logging.getLogger("syncphony")
 
 
 def setup_logger(level: str = "INFO"):
@@ -8,4 +8,4 @@ def setup_logger(level: str = "INFO"):
     logging.getLogger('tidalapi.settings').disabled = True
     logging.getLogger('tidalapi.session').disabled = True
 
-    log.setLevel(level)
+    syncphony_logger.setLevel(level)

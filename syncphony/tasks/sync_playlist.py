@@ -1,6 +1,7 @@
 from sqlmodel import Session
 
 from syncphony.db.models import Tasks
+from syncphony.tasks.logging import get_task_logger
 from syncphony.types import Track
 from syncphony.types.enums import TaskStatus
 from syncphony.types.utils import get_track_on_another_platform
@@ -12,6 +13,8 @@ def task_sync(db: Session, task: Tasks) -> bool:
     Task to perform synchronization between platforms.
     This function is called by the task runner.
     """
+    logger = get_task_logger(task)
+
     task.status = TaskStatus.IN_PROGRESS
     db.add(task)
     db.commit()
@@ -28,16 +31,17 @@ def task_sync(db: Session, task: Tasks) -> bool:
         task.status = TaskStatus.FAILED
         db.add(task)
         db.commit()
-        raise ValueError("Invalid task details: missing platform or account information.")
+        logger.error("Invalid task details: missing platform or account information.")
+        return False
 
-    from_manager = get_manager_for_platform(db, from_platform, from_account, from_user)
-    to_manager = get_manager_for_platform(db, to_platform, to_account, to_user)
+    from_manager = get_manager_for_platform(db, from_platform, from_account, user=from_user, logger=logger)
+    to_manager = get_manager_for_platform(db, to_platform, to_account, user=to_user, logger=logger)
 
     if not from_manager or not to_manager:
         task.status = TaskStatus.FAILED
-        task.errors += f"Invalid task details: missing platform or account information.\n"
         db.add(task)
         db.commit()
+        logger.error("Invalid task details: missing manager for platform or account.")
         return False
 
     try:
@@ -54,10 +58,10 @@ def task_sync(db: Session, task: Tasks) -> bool:
             for track in playlist.tracks:
                 to_track = get_track_on_another_platform(track, to_manager)
                 if to_track:
-                    task.logs += f"Found track {track.name} on {to_platform}.\n"
+                    logger.info("Found track %s on %s", track.name, to_platform)
                     to_tracks.append(to_track)
                 else:
-                    task.warnings += f"Track {track.name} not found on {to_platform}, skipping.\n"
+                    logger.warning("Track %s not found on %s, skipping", track.name, to_platform)
 
             if not to_tracks:
                 continue
@@ -66,20 +70,24 @@ def task_sync(db: Session, task: Tasks) -> bool:
 
             if not to_playlist:
                 task.status = TaskStatus.FAILED
-                task.errors += f"Failed to create playlist {playlist.name} on {to_platform}.\n"
                 db.add(task)
                 db.commit()
+                logger.error("Failed to create playlist %s on %s", playlist.name, to_platform)
+                return False
             else:
-                task.logs += f"Successfully created playlist {to_playlist.name} on {to_platform} with {len(to_tracks)} tracks.\n"
                 task.status = TaskStatus.COMPLETED
                 db.add(task)
                 db.commit()
+                logger.info(
+                    "Successfully created playlist %s on %s with %d tracks",
+                    to_playlist.name, to_platform, len(to_tracks)
+                )
                 return True
     except Exception as e:
         task.status = TaskStatus.FAILED
-        task.errors += str(e)
         db.add(task)
         db.commit()
+        logger.exception("Task failed with exception: %s", e)
         return False
 
     return False

@@ -32,10 +32,10 @@ async def start_download(
     if from_platform not in Platform:
         raise HTTPException(status_code=400, detail="Invalid platform")
 
-    # Validate accounts
-    dl_manager = get_manager_for_platform(db, from_platform, from_account, from_user)
-    if not dl_manager:
-        raise HTTPException(status_code=404, detail="Account not found or not supported")
+    # # Validate accounts
+    # dl_manager = get_manager_for_platform(db, from_platform, from_account, from_user)
+    # if not dl_manager:
+    #     raise HTTPException(status_code=404, detail="Account not found or not supported")
 
     # Start the sync task
     task = Tasks(

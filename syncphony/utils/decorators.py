@@ -6,7 +6,7 @@ from requests import ReadTimeout
 from spotipy import SpotifyException
 from tidalapi.exceptions import TooManyRequests
 
-from syncphony.utils.logger import log
+from syncphony.utils.logger import syncphony_logger
 
 
 def rate_limit(func: Callable = None, *, returns=None, raise_on_failure=False):
@@ -19,17 +19,21 @@ def rate_limit(func: Callable = None, *, returns=None, raise_on_failure=False):
 
     def decorator(inner_func):
         def wrapper(*args, **kwargs):
+            logger = syncphony_logger
+            if args and hasattr(args[0], "__class__") and hasattr(args[0], "logger"):
+                logger = getattr(args[0], "logger")
+
             retry_count = 0
             while True:
                 try:
                     return inner_func(*args, **kwargs)
                 except (TooManyRequests, ReadTimeout, SpotifyException) as e:
-                    log.warning("Rate limit exceeded, retrying in a few seconds")
+                    logger.warning("Rate limit exceeded, retrying in a few seconds")
                     if retry_count < 7:
                         retry_count += 1
                         time.sleep(2 ** retry_count + random.uniform(0.2, 0.6))
                     else:
-                        log.warning("Rate limit exceeded, max retries reached")
+                        logger.warning("Rate limit exceeded, max retries reached")
                         if raise_on_failure:
                             raise e
                         return returns

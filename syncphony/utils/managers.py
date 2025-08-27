@@ -1,3 +1,4 @@
+import logging
 from typing import Optional
 
 from sqlmodel import Session
@@ -10,8 +11,8 @@ from syncphony.types.enums import Platform
 from syncphony.types.manager import Manager
 
 
-def get_manager_for_platform(db_session: Session, platform: Platform, account: str, user: str = None) -> Optional[
-    Manager]:
+def get_manager_for_platform(db_session: Session, platform: Platform, account: str, user: str = None,
+                             logger: logging.Logger = None) -> Optional[Manager]:
     """
     Get the appropriate manager for the given platform and account.
     """
@@ -26,20 +27,24 @@ def get_manager_for_platform(db_session: Session, platform: Platform, account: s
         return SpotifyManager(
             username=account,
             db_session=db_session,
+            logger=logger,
         )
     elif platform == Platform.TIDAL:
         return TidalManager(
             username=account,
             db_session=db_session,
+            logger=logger,
         )
     elif platform == Platform.JELLYFIN:
         return JellyfinManager(
             url=account,
             db_session=db_session,
+            logger=logger,
         )
     elif platform == Platform.SUBSONIC:
         return SubsonicManager(
             url=account,
             username=user,
             db_session=db_session,
+            logger=logger,
         )

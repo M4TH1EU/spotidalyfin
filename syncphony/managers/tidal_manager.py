@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 from typing import Optional, List, cast
 
@@ -21,10 +22,8 @@ from syncphony.types.utils import open_image_url
 from syncphony.utils.decorators import rate_limit
 from syncphony.utils.download import download_all_ordered
 from syncphony.utils.ffmpeg import convert_m4a_bytes_to_flac
-from syncphony.utils.logger import log
-from syncphony.utils.metadata import generate_path, write_metadata, generate_album_path
-from syncphony.utils.musicbrainz import match_album_to_musicbrainz, get_tracks_from_release_id, \
-    find_track_in_release_tracklist, get_track_from_recording_id
+from syncphony.utils.metadata import write_metadata, generate_album_path, generate_track_path
+from syncphony.utils.musicbrainz import enrich_album_with_musicbrainz
 
 
 def _get_tidal_quality(quality: TrackQuality) -> str:
@@ -140,9 +139,11 @@ def create_temp_session_tidal(config: tidalapi.Config = tidalapi.Config()) -> ti
 class TidalManager(Manager):
     PLATFORM = Platform.TIDAL
 
-    def __init__(self, username: str, db_session: Session):
+    def __init__(self, username: str, db_session: Session, logger: logging.Logger = None):
         self.username = username
         self.db_session = db_session
+        if logger:
+            self.logger = logger
 
         # Initialize TIDAL session
         self.client = tidalapi.Session()
@@ -172,12 +173,12 @@ class TidalManager(Manager):
 
             return None
         except ObjectNotFound as e:
-            log.exception(f"Failed to fetch TIDAL track with ID {track_id}: {e}")
+            self.logger.error(f"Failed to fetch TIDAL track with ID {track_id}: {e}")
             return None
         except TooManyRequests as e:
             raise e
         except Exception as e:
-            log.exception(f"An error occurred while fetching TIDAL track with ID {track_id}: {e}")
+            self.logger.error(f"An error occurred while fetching TIDAL track with ID {track_id}: {e}")
             return None
 
     @rate_limit
@@ -189,12 +190,12 @@ class TidalManager(Manager):
 
             return None
         except ObjectNotFound as e:
-            log.exception(f"Failed to fetch TIDAL album with ID {album_id}: {e}")
+            self.logger.error(f"Failed to fetch TIDAL album with ID {album_id}: {e}")
             return None
         except TooManyRequests as e:
             raise e
         except Exception as e:
-            log.exception(f"An error occurred while fetching TIDAL album with ID {album_id}: {e}")
+            self.logger.error(f"An error occurred while fetching TIDAL album with ID {album_id}: {e}")
             return None
 
     @rate_limit
@@ -206,12 +207,12 @@ class TidalManager(Manager):
 
             return None
         except ObjectNotFound as e:
-            log.exception(f"Failed to fetch TIDAL artist with ID {artist_id}: {e}")
+            self.logger.error(f"Failed to fetch TIDAL artist with ID {artist_id}: {e}")
             return None
         except TooManyRequests as e:
             raise e
         except Exception as e:
-            log.exception(f"An error occurred while fetching TIDAL artist with ID {artist_id}: {e}")
+            self.logger.error(f"An error occurred while fetching TIDAL artist with ID {artist_id}: {e}")
             return None
 
     @rate_limit(returns=[])
@@ -235,12 +236,12 @@ class TidalManager(Manager):
                                        fetch_albums_tracks=fetch_albums_tracks)
             return None
         except ObjectNotFound as e:
-            log.exception(f"Failed to fetch TIDAL playlist with ID {playlist_id}: {e}")
+            self.logger.error(f"Failed to fetch TIDAL playlist with ID {playlist_id}: {e}")
             return None
         except TooManyRequests as e:
             raise e
         except Exception as e:
-            log.exception(f"An error occurred while fetching TIDAL playlist with ID {playlist_id}: {e}")
+            self.logger.error(f"An error occurred while fetching TIDAL playlist with ID {playlist_id}: {e}")
             return None
 
     @rate_limit(returns=[])
@@ -256,7 +257,7 @@ class TidalManager(Manager):
         except TooManyRequests as e:
             raise e
         except Exception as e:
-            log.exception(f"Failed to fetch TIDAL playlists for user {user_id}: {e}")
+            self.logger.error(f"Failed to fetch TIDAL playlists for user {user_id}: {e}")
             return []
 
     @rate_limit
@@ -280,7 +281,7 @@ class TidalManager(Manager):
         except TooManyRequests as e:
             raise e
         except Exception as e:
-            log.exception("Failed to fetch favorite tracks from TIDAL")
+            self.logger.error("Failed to fetch favorite tracks from TIDAL")
             return None
 
     @rate_limit
@@ -305,7 +306,7 @@ class TidalManager(Manager):
         except TooManyRequests as e:
             raise e
         except Exception as e:
-            log.exception(f"Failed to search TIDAL with query '{query}': {e}")
+            self.logger.error(f"Failed to search TIDAL with query '{query}': {e}")
             return None
 
     @rate_limit(returns=[])
@@ -319,7 +320,7 @@ class TidalManager(Manager):
         except TooManyRequests as e:
             raise e
         except Exception as e:
-            log.exception(f"Failed to search TIDAL tracks with query '{query}': {e}")
+            self.logger.error(f"Failed to search TIDAL tracks with query '{query}': {e}")
             return []
 
     @rate_limit(returns=[])
@@ -330,7 +331,7 @@ class TidalManager(Manager):
         except TooManyRequests as e:
             raise e
         except Exception as e:
-            log.exception(f"Failed to search TIDAL tracks with ISRC '{isrc}': {e}")
+            self.logger.error(f"Failed to search TIDAL tracks with ISRC '{isrc}': {e}")
             return []
 
     @rate_limit(returns=[])
@@ -344,7 +345,7 @@ class TidalManager(Manager):
         except TooManyRequests as e:
             raise e
         except Exception as e:
-            log.exception(f"Failed to search TIDAL albums with query '{query}': {e}")
+            self.logger.error(f"Failed to search TIDAL albums with query '{query}': {e}")
             return []
 
     @rate_limit(returns=[])
@@ -355,7 +356,7 @@ class TidalManager(Manager):
         except TooManyRequests as e:
             raise e
         except Exception as e:
-            log.exception(f"Failed to search TIDAL albums with UPC '{upc}': {e}")
+            self.logger.error(f"Failed to search TIDAL albums with UPC '{upc}': {e}")
             return []
 
     @rate_limit(returns=[])
@@ -369,20 +370,20 @@ class TidalManager(Manager):
         except TooManyRequests as e:
             raise e
         except Exception as e:
-            log.exception(f"Failed to search TIDAL artists with query '{query}': {e}")
+            self.logger.error(f"Failed to search TIDAL artists with query '{query}': {e}")
             return []
 
     @rate_limit
     def get_cover(self, item: Album | Artist | Track) -> Optional[tuple[bytes, str]]:
         if isinstance(item, Track):
             url = self.client.album(item.album.id).image(dimensions=1280)
-            return open_image_url(url), "image/jpeg"
+            return open_image_url(url, self.logger), "image/jpeg"
         elif isinstance(item, Album):
             url = self.client.album(item.id).image(dimensions=1280)
-            return open_image_url(url), "image/jpeg"
+            return open_image_url(url, self.logger), "image/jpeg"
         elif isinstance(item, Artist):
             url = self.client.artist(item.id).image(dimensions=1280)
-            return open_image_url(url), "image/jpeg"
+            return open_image_url(url, self.logger), "image/jpeg"
 
     def supports_lyrics(self) -> bool:
         return True
@@ -400,7 +401,7 @@ class TidalManager(Manager):
         except TooManyRequests as e:
             raise e
         except (ObjectNotFound, Exception):
-            log.exception(f"Lyrics not found for track {track.name} by {track.artist.name}")
+            self.logger.error(f"Lyrics not found for track {track.name} by {track.artist.name}")
             return None
 
     @rate_limit
@@ -413,7 +414,7 @@ class TidalManager(Manager):
         except TooManyRequests as e:
             raise e
         except Exception as e:
-            log.exception(f"Failed to create TIDAL playlist '{name}': {e}")
+            self.logger.error(f"Failed to create TIDAL playlist '{name}': {e}")
             return None
 
     @rate_limit(returns=False)
@@ -428,7 +429,7 @@ class TidalManager(Manager):
         except TooManyRequests as e:
             raise e
         except Exception as e:
-            log.exception(f"Failed to add tracks to TIDAL playlist '{playlist.id}': {e}")
+            self.logger.error(f"Failed to add tracks to TIDAL playlist '{playlist.id}': {e}")
             return False
 
     @rate_limit(returns=False)
@@ -438,12 +439,12 @@ class TidalManager(Manager):
             tidal_playlist.delete()
             return True
         except ObjectNotFound as e:
-            log.exception(f"Playlist with ID {playlist_id} not found: {e}")
+            self.logger.error(f"Playlist with ID {playlist_id} not found: {e}")
             return False
         except TooManyRequests as e:
             raise e
         except Exception as e:
-            log.exception(f"Failed to remove TIDAL playlist with ID {playlist_id}: {e}")
+            self.logger.error(f"Failed to remove TIDAL playlist with ID {playlist_id}: {e}")
             return False
 
     def supports_downloading(self) -> bool:
@@ -460,12 +461,12 @@ class TidalManager(Manager):
 
             request = self.client.request.request("GET", "tracks/%s/playbackinfopostpaywall" % track.id, params)
         except ObjectNotFound:
-            log.exception(f"No stream available for track {track.name} by {track.artist.name}")
+            self.logger.error(f"No stream available for track {track.name} by {track.artist.name}")
             return None
         except TooManyRequests as e:
             raise e
         except Exception as e:
-            log.exception(f"Failed to get stream for track {track.name} by {track.artist.name}: {e}")
+            self.logger.error(f"Failed to get stream for track {track.name} by {track.artist.name}: {e}")
             return None
         else:
             json_obj = request.json()
@@ -474,13 +475,13 @@ class TidalManager(Manager):
             stream = cast("Stream", stream)
 
         if not stream:
-            log.error(f"No stream manifest available for track {track.name} by {track.artist.name}")
+            self.logger.error(f"No stream manifest available for track {track.name} by {track.artist.name}")
             return None
 
         # Get stream manifest
         stream_manifest = stream.get_stream_manifest()
         if not stream_manifest:
-            log.error(f"No stream manifest available for track {track.name} by {track.artist.name}")
+            self.logger.error(f"No stream manifest available for track {track.name} by {track.artist.name}")
             return None
 
         return stream, stream_manifest
@@ -495,7 +496,7 @@ class TidalManager(Manager):
         if not album.tracks:
             album = self.get_album(album.id)
             if not album or not album.tracks:
-                log.error(f"No tracks found for album {album.name} by {album.artist.name}")
+                self.logger.error(f"No tracks found for album {album.name} by {album.artist.name}")
                 return None
 
         fail = False
@@ -504,48 +505,34 @@ class TidalManager(Manager):
             album_cover_path = generate_album_path(album, base_path=destination) / "cover.jpg"
             album_cover_path.parent.mkdir(parents=True, exist_ok=True)
 
-            album_cover_bytes, _ = self.get_cover(album)
-            if album_cover_bytes and album_cover_path:
-                with open(album_cover_path, "wb") as f:
-                    f.write(album_cover_bytes)
+            if album_cover_path.exists():
+                self.logger.debug(f"Album cover already exists at {album_cover_path}, skipping download.")
             else:
-                log.warning(f"No cover found for album {album.name} by {album.artist.name}")
+                logging.info(f"Downloading album cover for {album.name} by {album.artist.name} to {album_cover_path}")
+                album_cover_bytes, _ = self.get_cover(album)
+                if album_cover_bytes and album_cover_path:
+                    with open(album_cover_path, "wb") as f:
+                        f.write(album_cover_bytes)
+                else:
+                    self.logger.warning(f"No cover found for album {album.name} by {album.artist.name}")
 
-            # MusicBrainz album matching
-            mbz_release = match_album_to_musicbrainz(album)
-            mbz_release_id = mbz_release.get("id") if mbz_release else None
-            if mbz_release:
-                album.country = mbz_release.get("country") or None
-                album.release_status = mbz_release.get("status") or None
-
-            # Get MusicBrainz tracks for the release
-            mbz_release_tracks = get_tracks_from_release_id(mbz_release_id) if mbz_release else None
+            # Enrich album with MusicBrainz data if possible
+            self.logger.info("Enriching album metadata with MusicBrainz data if available.")
+            enrich_album_with_musicbrainz(album, logger=self.logger)
 
             # Download each track
             for track in album.tracks:
                 track.album = album  # Ensure track has the right album reference
+                file_path = generate_track_path(track, base_path=destination)
 
-                track.musicbrainz_release_id = mbz_release_id
-                track.musicbrainz_release_artist_id = [artist.get('artist', {}).get('id') for artist in
-                                                       mbz_release.get("artist-credit", []) if isinstance(artist, dict)]
-                track.musicbrainz_release_group_id = mbz_release.get("release-group", {}).get(
-                    "id") if mbz_release else None
-
-                mbz_track = find_track_in_release_tracklist(track, mbz_release_tracks) if mbz_release_tracks else None
-                if mbz_track:
-                    track.musicbrainz_track_id = mbz_track.get("id")
-                    track.musicbrainz_recording_id = mbz_track.get("recording", {}).get("id")
-
-                mbz_track_detail = get_track_from_recording_id(
-                    mbz_track.get('recording', {}).get('id')) if mbz_track else None
-                if mbz_track_detail:
-                    track.musicbrainz_artist_id = [artist.get('artist', {}).get('id') for artist in
-                                                   mbz_track_detail.get('artist-credit', []) if
-                                                   isinstance(artist, dict)]
+                if any(file_path.with_suffix(suffix).exists() for suffix in [".flac", ".m4a", ".mp3"]):
+                    self.logger.info(
+                        f"Track {track.track_number}. {track.name} by {track.artist.name} already exists, skipping download.")
+                    continue
 
                 track_stream, track_stream_manifest = self._get_stream(track, quality)
                 if not track_stream:
-                    log.error(f"Skipping track {track.name} by {track.artist.name} due to missing stream.")
+                    self.logger.error(f"Skipping track {track.name} by {track.artist.name} due to missing stream.")
                     continue
 
                 # Update track and album replay gain and peak amplitude
@@ -555,39 +542,40 @@ class TidalManager(Manager):
                 track.replay_gain = track_stream.track_replay_gain
                 track.peak_amplitude = track_stream.track_peak_amplitude
 
-                print("Downloading track:", track.name)
-                audio_bytes = download_all_ordered(track_stream_manifest.urls)
+                self.logger.info(f"Downloading track {track.track_number}. {track.name} by {track.artist.name}")
+                audio_bytes = download_all_ordered(track_stream_manifest.urls, logger=self.logger)
 
                 # Check audio format and convert if necessary
                 if track_stream_manifest.file_extension not in [AudioExtensions.M4A, AudioExtensions.FLAC]:
-                    log.error(
+                    self.logger.error(
                         f"Unsupported file extension {track_stream_manifest.file_extension} for track {track.name} by {track.artist.name}")
                     return None
 
                 if track_stream_manifest.file_extension == AudioExtensions.M4A:
-                    audio_bytes = convert_m4a_bytes_to_flac(audio_bytes, timeout=15, re_encode_flac=False)
+                    logging.debug(f"Converting M4A to FLAC for track {track.name} by {track.artist.name}")
+                    audio_bytes = convert_m4a_bytes_to_flac(audio_bytes, timeout=15, re_encode_flac=False,
+                                                            logger=self.logger)
                     track_stream_manifest.file_extension = AudioExtensions.FLAC
 
                 # Save to file
                 bytes_response = bytes(audio_bytes)
-                file_path = generate_path(track, base_path=destination,
-                                          extension=track_stream_manifest.file_extension.value)
+                file_path = file_path.with_suffix(f".{track_stream_manifest.file_extension.value.lower().lstrip('.')}")
                 file_path.parent.mkdir(parents=True, exist_ok=True)
                 with open(file_path, "wb") as f:
                     f.write(bytes_response)
 
+                logging.info(f"Saved track, writing metadata... to {file_path}")
                 write_metadata(
                     file=file_path,
                     track=track,
                     manager=self,
-                    fetch_lyrics=True
+                    fetch_lyrics=True,
+                    logger=self.logger
                 )
-
-                print("Downloaded bytes:", len(audio_bytes))
         except TooManyRequests as e:
             raise e
         except Exception as e:
-            log.exception(f"Failed to download album {album.name} by {album.artist.name}: {e}")
+            self.logger.error(f"Failed to download album {album.name} by {album.artist.name}: {e}")
             fail = True
 
         return str(destination)

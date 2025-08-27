@@ -5,10 +5,10 @@ from typing import Optional
 import requests
 
 from syncphony.types import Track, Album
-from syncphony.types.compare import compare_tracks, compare_albums
+from syncphony.utils.compare import compare_tracks, compare_albums
 from syncphony.types.enums import MatchType
 from syncphony.types.manager import Manager
-from syncphony.utils.logger import log
+from syncphony.utils.logger import syncphony_logger
 
 
 def get_track_on_another_platform(track: Track, manager: Manager) -> Optional[Track]:
@@ -61,7 +61,7 @@ def get_albums_on_another_platform(albums: list[Album], manager: Manager) -> lis
     return [get_album_on_another_platform(album, manager) for album in albums if album.platform != manager.PLATFORM]
 
 
-def open_image_url(url: str) -> Optional[bytes]:
+def open_image_url(url: str, logger=syncphony_logger) -> Optional[bytes]:
     # TODO: is this needed or can get_as_base64 be used? possible to stay in-memory?
     """Open an image URL and return the image data."""
     try:
@@ -74,14 +74,14 @@ def open_image_url(url: str) -> Optional[bytes]:
             f.seek(0)
             return f.read()
     except requests.RequestException:
-        log.warning(f"Failed to open image URL {url}")
+        logger.error(f"Failed to open image URL {url}")
         return None
 
 
-def get_as_base64(url: str) -> bytes:
+def get_as_base64(url: str, logger=syncphony_logger) -> bytes:
     """Get a URL content as base64. Useful for images."""
     try:
         return base64.b64encode(requests.get(url).content)
     except requests.RequestException:
-        log.warning(f"Failed to get base64 from {url}")
+        logger.error(f"Failed to get base64 from {url}")
         return b""
