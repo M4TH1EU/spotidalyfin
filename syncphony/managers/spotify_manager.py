@@ -95,9 +95,6 @@ def _parse_artist(spotipy_artist: dict) -> SpotifyArtist:
 
 
 def _parse_album(spotipy_album: dict) -> SpotifyAlbum:
-    if not len(spotipy_album.get('artists')) > 0:  # TODO: investigate why this happens
-        self.logger.error(f"Album {spotipy_album.get('name', 'Unknown')} has no artists, skipping.")
-
     artists = [_parse_artist(artist) for artist in spotipy_album.get("artists", [])]
 
     return SpotifyAlbum(
@@ -172,9 +169,11 @@ class SpotifyManager(Manager):
         try:
             spotipy_track = self.client.track(track_id)
             return _parse_track(spotipy_track)
-
         except SpotifyException as e:
-            self.logger.exception(f"Failed to fetch Spotify track with ID {track_id}")
+            self.logger.error(f"Failed to fetch Spotify track with ID {track_id}")
+            return None
+        except Exception as e:
+            self.logger.exception(f"Unexpected error fetching Spotify track with ID {track_id}: {e}")
             return None
 
     def get_album(self, album_id: str) -> Optional[SpotifyAlbum]:
@@ -184,27 +183,33 @@ class SpotifyManager(Manager):
                 spotipy_album['id'])  # TODO: check if pagination is needed
 
             return _parse_album(spotipy_album)
-
         except SpotifyException as e:
-            self.logger.exception(f"Failed to fetch Spotify album with ID {album_id}")
+            self.logger.error(f"Failed to fetch Spotify album with ID {album_id}")
+            return None
+        except Exception as e:
+            self.logger.exception(f"Unexpected error fetching Spotify album with ID {album_id}: {e}")
             return None
 
     def get_artist(self, artist_id: str) -> Optional[SpotifyArtist]:
         try:
             spotipy_artist = self.client.artist(artist_id)
             return _parse_artist(spotipy_artist)
-
         except SpotifyException as e:
-            self.logger.exception(f"Failed to fetch Spotify artist with ID {artist_id}")
+            self.logger.error(f"Failed to fetch Spotify artist with ID {artist_id}")
+            return None
+        except Exception as e:
+            self.logger.exception(f"Unexpected error fetching Spotify artist with ID {artist_id}: {e}")
             return None
 
     def get_artist_tracks(self, artist_id: str) -> list[SpotifyTrack]:
         try:
             results = self.client.artist_top_tracks(artist_id)  # TODO: retrieve all tracks instead of just top tracks
             return [_parse_track(track) for track in results['tracks']]
-
         except SpotifyException as e:
-            self.logger.exception(f"Failed to fetch top tracks for artist with ID {artist_id}")
+            self.logger.error(f"Failed to fetch top tracks for artist with ID {artist_id}")
+            return []
+        except Exception as e:
+            self.logger.exception(f"Unexpected error fetching top tracks for artist with ID {artist_id}: {e}")
             return []
 
     def get_playlist(self, playlist_id: str, fetch_tracks: bool = True, fetch_albums: bool = False,
@@ -228,8 +233,11 @@ class SpotifyManager(Manager):
                     # A workaround is to use the anonymous client to fetch the playlist, but this might be patched in the future
                     playlist = self.anonymous_client.playlist(playlist_id)
                     used_anonymous_client = True
+                except SpotifyException as e:
+                    self.logger.error(f"Failed to fetch playlist with ID {playlist_id}: {e}")
+                    return None
                 except Exception as e:
-                    self.logger.exception(f"Failed to fetch playlist with ID {playlist_id} using anonymous client")
+                    self.logger.exception(f"Unexpected error fetching playlist with ID {playlist_id}: {e}")
                     return None
             else:
                 self.logger.exception(
@@ -246,8 +254,12 @@ class SpotifyManager(Manager):
                     results = current_client.playlist_items(playlist_id, offset=offset, limit=100,
                                                             additional_types="track")
                 except SpotifyException as e:
-                    self.logger.exception(
+                    self.logger.error(
                         f"Failed to fetch playlist items for playlist ID {playlist_id} at offset {offset}")
+                    return None
+                except Exception as e:
+                    self.logger.exception(
+                        f"Unexpected error fetching playlist items for playlist ID {playlist_id} at offset {offset}: {e}")
                     return None
 
                 if used_anonymous_client:  # TODO: check if needed
@@ -286,7 +298,10 @@ class SpotifyManager(Manager):
             return [_parse_playlist(playlist) for playlist in playlists['items']]
 
         except SpotifyException as e:
-            self.logger.exception(f"Failed to fetch playlists for user {user_id or self.username}")
+            self.logger.error(f"Failed to fetch playlists for user {user_id or self.username}")
+            return []
+        except Exception as e:
+            self.logger.exception(f"Unexpected error fetching playlists for user {user_id or self.username}: {e}")
             return []
 
     def get_favorite_tracks(self, user_id: str = None) -> Optional[SpotifyFavoriteTracksPlaylist]:
@@ -309,7 +324,10 @@ class SpotifyManager(Manager):
             return _parse_favorite_tracks(liked_songs)
 
         except SpotifyException as e:
-            self.logger.exception("Failed to fetch favorite tracks")
+            self.logger.error("Failed to fetch favorite tracks")
+            return None
+        except Exception as e:
+            self.logger.exception(f"Unexpected error fetching favorite tracks: {e}")
             return None
 
     def search_tracks_by_query(self, query: str) -> list[SpotifyTrack]:
@@ -318,7 +336,10 @@ class SpotifyManager(Manager):
             return [_parse_track(item) for item in results['tracks']['items']]
 
         except SpotifyException as e:
-            self.logger.exception(f"Failed to search tracks with query '{query}'")
+            self.logger.error(f"Failed to search tracks with query '{query}'")
+            return []
+        except Exception as e:
+            self.logger.exception(f"Unexpected error searching tracks with query '{query}': {e}")
             return []
 
     def search_tracks_by_isrc(self, isrc: str) -> list[SpotifyTrack]:
@@ -327,7 +348,10 @@ class SpotifyManager(Manager):
             return [_parse_track(item) for item in results['tracks']['items']]
 
         except SpotifyException as e:
-            self.logger.exception(f"Failed to search tracks with ISRC '{isrc}'")
+            self.logger.error(f"Failed to search tracks with ISRC '{isrc}'")
+            return []
+        except Exception as e:
+            self.logger.exception(f"Unexpected error searching tracks with ISRC '{isrc}': {e}")
             return []
 
     def search_albums_by_query(self, query: str) -> list[SpotifyAlbum]:
@@ -336,7 +360,10 @@ class SpotifyManager(Manager):
             return [_parse_album(item) for item in results['albums']['items']]
 
         except SpotifyException as e:
-            self.logger.exception(f"Failed to search albums with query '{query}'")
+            self.logger.error(f"Failed to search albums with query '{query}'")
+            return []
+        except Exception as e:
+            self.logger.exception(f"Unexpected error searching albums with query '{query}': {e}")
             return []
 
     def search_albums_by_upc(self, upc: str) -> list[SpotifyAlbum]:
@@ -345,7 +372,10 @@ class SpotifyManager(Manager):
             return [_parse_album(item) for item in results['albums']['items']]
 
         except SpotifyException as e:
-            self.logger.exception(f"Failed to search albums with UPC '{upc}'")
+            self.logger.error(f"Failed to search albums with UPC '{upc}'")
+            return []
+        except Exception as e:
+            self.logger.exception(f"Unexpected error searching albums with UPC '{upc}': {e}")
             return []
 
     def search_artists_by_query(self, query: str) -> list[SpotifyArtist]:
@@ -354,7 +384,10 @@ class SpotifyManager(Manager):
             return [_parse_artist(item) for item in results['artists']['items']]
 
         except SpotifyException as e:
-            self.logger.exception(f"Failed to search artists with query '{query}'")
+            self.logger.error(f"Failed to search artists with query '{query}'")
+            return []
+        except Exception as e:
+            self.logger.exception(f"Unexpected error searching artists with query '{query}': {e}")
             return []
 
     def get_cover(self, item: Album | Artist | Track) -> Optional[bytes]:
@@ -380,8 +413,11 @@ class SpotifyManager(Manager):
                 self.client.playlist_upload_cover_image(playlist['id'], cover)
 
             return _parse_playlist(playlist)
+        except SpotifyException as e:
+            self.logger.error(f"Failed to create TIDAL playlist '{name}': {e}")
+            return None
         except Exception as e:
-            self.logger.exception(f"Failed to create TIDAL playlist '{name}': {e}")
+            self.logger.exception(f"Unexpected error creating TIDAL playlist '{name}': {e}")
             return None
 
     def add_tracks_to_playlist(self, playlist: Playlist, tracks: List[SpotifyTrack], user_id: str = None) -> bool:
@@ -393,7 +429,10 @@ class SpotifyManager(Manager):
             self.client.playlist_add_items(playlist.id, track_ids)
             return True
         except SpotifyException as e:
-            self.logger.exception(f"Failed to add tracks to playlist {playlist.id}: {e}")
+            self.logger.error(f"Failed to add tracks to playlist {playlist.id}: {e}")
+            return False
+        except Exception as e:
+            self.logger.exception(f"Unexpected error adding tracks to playlist {playlist.id}: {e}")
             return False
 
     def remove_playlist_by_id(self, playlist_id: str) -> bool:
@@ -401,7 +440,10 @@ class SpotifyManager(Manager):
             self.client.current_user_unfollow_playlist(playlist_id=playlist_id)
             return True
         except SpotifyException as e:
-            self.logger.exception(f"Failed to remove playlist with ID {playlist_id}: {e}")
+            self.logger.error(f"Failed to remove playlist with ID {playlist_id}: {e}")
+            return False
+        except Exception as e:
+            self.logger.exception(f"Unexpected error removing playlist with ID {playlist_id}: {e}")
             return False
 
     def supports_downloading(self) -> bool:

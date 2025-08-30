@@ -4,13 +4,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional, Tuple
 
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from syncphony.db.models import Match
 from syncphony.types import Track, Album, Artist
-from syncphony.utils.compare import normalize_track_name, compare_strings_set_ratio, normalize_artist_name
 from syncphony.types.enums import Platform, MatchType, TrackQuality
 from syncphony.types.playlist import Playlist, FavoriteTracksPlaylist
+from syncphony.utils.compare import normalize_track_name, compare_strings_set_ratio, normalize_artist_name
 from syncphony.utils.logger import syncphony_logger
 
 
@@ -248,30 +249,41 @@ class Manager(ABC):
 
         return result if result else None
 
-    def save_match_to_db(self, src_id: str, type: MatchType, src_platform: Platform, dest_id: str) -> None:
-        """Save a match between two platforms in the database."""
+    def save_match_to_db(self, src_id: str, matchtype: MatchType, src_platform: Platform, dest_id: str) -> None:
+        """Save a match between two platforms in the database, avoiding duplicate rows."""
 
         src_col = f"{src_platform.value.lower()}_id"
         dest_col = f"{self.PLATFORM.value.lower()}_id"
 
-        # Check if a row already exists for this src_id
-        stmt = select(Match).where(getattr(Match, "type") == type.value).where(getattr(Match, src_col) == src_id)
+        # Check if there's already a row for either side
+        stmt = (
+            select(Match)
+            .where(Match.type == matchtype.value)
+            .where((getattr(Match, src_col) == src_id) | (getattr(Match, dest_col) == dest_id))
+        )
         match = self.db_session.exec(stmt).first()
 
         if match:
-            # Update existing row
-            setattr(match, dest_col, dest_id)
-            setattr(match, "type", type.value)
+            # Update existing row with whichever ID is missing
+            if not getattr(match, src_col):
+                setattr(match, src_col, src_id)
+            if not getattr(match, dest_col):
+                setattr(match, dest_col, dest_id)
+            setattr(match, "type", matchtype.value)
         else:
-            # Create a new row with all platform IDs set to None initially
+            # Create a new row
             data = {f"{p.value.lower()}_id": None for p in Platform}
             data[src_col] = src_id
             data[dest_col] = dest_id
-            data["type"] = type.value
+            data["type"] = matchtype.value
             match = Match(**data)
             self.db_session.add(match)
 
-        self.db_session.commit()
+        try:
+            self.db_session.commit()
+        except IntegrityError as e:
+            self.db_session.rollback()
+            self.logger.error(f"Integrity error saving match: {e}")
 
     @abstractmethod
     def supports_downloading(self) -> bool:

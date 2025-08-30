@@ -5,9 +5,9 @@ from typing import Optional
 import requests
 
 from syncphony.types import Track, Album
-from syncphony.utils.compare import compare_tracks, compare_albums
 from syncphony.types.enums import MatchType
 from syncphony.types.manager import Manager
+from syncphony.utils.compare import compare_tracks, compare_albums
 from syncphony.utils.logger import syncphony_logger
 
 
@@ -24,8 +24,8 @@ def get_track_on_another_platform(track: Track, manager: Manager) -> Optional[Tr
     best_match, best_score = max(scored_results, key=lambda x: x[1], default=(None, 0))
 
     if best_match and best_score >= 75.0:
-        manager.save_match_to_db(src_id=track.id, src_platform=track.platform,
-                                 dest_id=best_match.id, type=MatchType.TRACK)
+        manager.save_match_to_db(src_id=track.id, src_platform=track.platform, dest_id=best_match.id,
+                                 matchtype=MatchType.TRACK)
         return best_match
 
     return None
@@ -50,7 +50,7 @@ def get_album_on_another_platform(album: Album, manager: Manager) -> Optional[Al
 
     if best_match and best_score >= 75.0:
         manager.save_match_to_db(src_id=album.id, src_platform=album.platform,
-                                 dest_id=best_match.id, type=MatchType.ALBUM)
+                                 dest_id=best_match.id, matchtype=MatchType.ALBUM)
         return best_match
 
     return None

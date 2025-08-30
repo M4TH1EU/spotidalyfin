@@ -74,9 +74,15 @@ def task_download(db: Session, task: Tasks) -> bool:
 
             if download_entire_album:
                 all_albums = []
+                all_albums_ids = set()
                 for track in playlist.tracks:
                     if track.album and track.album not in all_albums:
+                        if track.album.id in all_albums_ids:
+                            continue
+
+                        logger.info("Queued album %s by %s for download", track.album.name, track.album.artist)
                         all_albums.append(track.album)
+                        all_albums_ids.add(track.album.id)
 
                 for album in all_albums:
                     download = dl_manager.download_album(album, destination, from_user, quality)

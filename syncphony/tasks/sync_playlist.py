@@ -44,14 +44,12 @@ def task_sync(db: Session, task: Tasks) -> bool:
         logger.error("Invalid task details: missing manager for platform or account.")
         return False
 
+    overall_success = True
+
     try:
         for playlist_id in details.get("ids", []):
             playlist = from_manager.get_playlist(playlist_id)
-            if not playlist:
-                continue
-
-            total_tracks = len(playlist.tracks)
-            if total_tracks == 0:
+            if not playlist or not playlist.tracks:
                 continue
 
             to_tracks: list[Track] = []
@@ -66,28 +64,27 @@ def task_sync(db: Session, task: Tasks) -> bool:
             if not to_tracks:
                 continue
 
-            to_playlist = to_manager.create_playlist(playlist.name, to_tracks, playlist.description, to_user)
+            to_playlist = to_manager.create_playlist(
+                playlist.name, to_tracks, playlist.description, to_user
+            )
 
             if not to_playlist:
-                task.status = TaskStatus.FAILED
-                db.add(task)
-                db.commit()
                 logger.error("Failed to create playlist %s on %s", playlist.name, to_platform)
-                return False
+                overall_success = False
             else:
-                task.status = TaskStatus.COMPLETED
-                db.add(task)
-                db.commit()
                 logger.info(
                     "Successfully created playlist %s on %s with %d tracks",
                     to_playlist.name, to_platform, len(to_tracks)
                 )
-                return True
+
+        task.status = TaskStatus.COMPLETED if overall_success else TaskStatus.FAILED
+        db.add(task)
+        db.commit()
+        return overall_success
+
     except Exception as e:
         task.status = TaskStatus.FAILED
         db.add(task)
         db.commit()
         logger.exception("Task failed with exception: %s", e)
         return False
-
-    return False

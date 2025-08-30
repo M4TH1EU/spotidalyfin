@@ -1,5 +1,6 @@
 import re
 from pathlib import Path
+from typing import Union
 
 from mutagen.flac import FLAC, Picture
 from unidecode import unidecode
@@ -28,14 +29,6 @@ def name_builder_album_artist(media: Track | Album, first_only: bool = False) ->
     return " & ".join(artists_tmp)
 
 
-def generate_album_path(album: Album, base_path: Path) -> Path:
-    """Generate a sanitized directory path based on album metadata."""
-    sanitized_albumartist = unidecode(album.artist.name or "Unknown Artist")
-    sanitized_album = unidecode(album.name or "Unknown Album")
-
-    return base_path / sanitized_albumartist / sanitized_album
-
-
 def sanitize_filename(name: str) -> str:
     """Sanitize a string to be safe for filenames."""
     if not name:
@@ -43,25 +36,52 @@ def sanitize_filename(name: str) -> str:
     name = unidecode(name)  # remove accents
     # Replace illegal filesystem characters with hyphen
     name = re.sub(r'[\\/:"*?<>|]', '-', name)
-    # Collapse multiple spaces or hyphens
-    name = re.sub(r'[\s\-]+', ' ', name).strip()
+    # Collapse multiple spaces
+    name = re.sub(r'\s+', ' ', name).strip()
     # Truncate if too long
     if len(name) > MAX_FILENAME_LENGTH:
         name = name[:MAX_FILENAME_LENGTH].rstrip()
     return name
 
 
-def generate_track_path(track: Track, base_path: Path) -> Path:
-    """Generate a MusicBrainzPicard-style file path based on track metadata."""
+def generate_music_path(
+        item: Union[Track, Album],
+        base_path: Path,
+        as_album: bool = False
+) -> Path:
+    """
+    Generate a MusicBrainzPicard-style file path based on metadata.
+    Supports Track-level paths and Album-level paths.
+    - If `as_album=True`, always generate the album folder path (without tracks).
+    """
 
-    # Choose album artist, fallback to track artist
-    album_artist_name = track.album.artist.name if track.album and track.album.artist else track.artist.name
+    # Choose album artist, fallback to track artist (for track mode)
+    if isinstance(item, Track):
+        album = item.album
+        artist = album.artist if album and album.artist else item.artist
+    elif isinstance(item, Album):
+        album = item
+        artist = album.artist
+    else:
+        raise TypeError("Expected a Track or Album")
+
+    album_artist_name = artist.name if artist else "Unknown Artist"
     sanitized_albumartist = sanitize_filename(album_artist_name or "Unknown Artist")
 
-    # Album folder if album artist exists
+    # Album folder name
     sanitized_album = ""
-    if track.album and track.album.artist:
-        sanitized_album = sanitize_filename(track.album.name or "Unknown Album")
+    if album:
+        sanitized_album = sanitize_filename(album.name or "Unknown Album")
+
+    # If generating an album path (requested OR Album object passed in)
+    if as_album or isinstance(item, Album):
+        path_parts = [base_path, sanitized_albumartist]
+        if sanitized_album:
+            path_parts.append(sanitized_album)
+        return Path(*path_parts)
+
+    # --- Otherwise: track path ---
+    track = item  # already validated as Track
 
     # Disc number formatting
     disc_number_str = ""

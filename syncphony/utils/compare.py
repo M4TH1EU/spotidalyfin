@@ -31,6 +31,7 @@ def normalize_track_name(name: str, remove_words_with_apostrophes: bool = False)
 
     return name
 
+
 def normalize_album_name(name: str, remove_words_with_apostrophes: bool = False) -> str:
     """
     Normalizes album name by:
@@ -47,7 +48,6 @@ def normalize_album_name(name: str, remove_words_with_apostrophes: bool = False)
     name = re.sub(r'[^\w\s]', '', name)
     name = re.sub(r'\s+', ' ', name).strip()
     return name
-
 
 
 def normalize_artist_name(name: str, remove_words_with_double_quote: bool = False) -> str:
@@ -306,17 +306,20 @@ def compare_musicbrainz_release_album(release: dict, album: Album):
     # 3 Artists
     if album.artists and 'artist-credit' in release:
         for artist in album.artists:
-            if any(compare_strings(artist.name, ac.get('artist', {}).get('name', '')) > 80 for ac in release['artist-credit'] if isinstance(ac, dict)):
+            if any(compare_strings(artist.name, ac.get('artist', {}).get('name', '')) > 80 for ac in
+                   release['artist-credit'] if isinstance(ac, dict)):
                 score += 100 * 0.25
                 weight_total += 0.25
                 break
 
     # 3. Release date (if available)
     if album.release_date and 'date' in release:
-        release_date = release.get('date', '')
-        if release_date:
-            if album.release_date.year == release_date[:4]:
+        release_date = release.get('date')
+        if release_date and re.match(r'^\d{4}(-\d{2}(-\d{2})?)?$', release_date):
+            if int(album.release_date.year) == int(release_date[:4]):
                 score += 100 * 0.15
+                weight_total += 0.15
+
             if album.release_date.month and len(release_date) >= 7 and album.release_date.month == int(
                     release_date[5:7]):
                 score += 75 * 0.15
@@ -325,23 +328,22 @@ def compare_musicbrainz_release_album(release: dict, album: Album):
                 score += 50 * 0.15
                 weight_total += 0.15
 
-            weight_total += 0.15
-
     # 4. Barcode (if available)
-    if album.barcode and 'barcode' in release:
+    if album.barcode and 'barcode' in release and release.get('barcode') != '':
         # Compare barcode if available
-        if album.barcode == release.get('barcode', ''):
+        if int(album.barcode or -1) == int(release.get('barcode') or 0):
             score += 100 * 0.3
-        elif album.barcode.lstrip("00") == release.get('barcode', '').lstrip(
-                "00"):  # sometimes barcodes have 00 in front
-            score += 100 * 0.3
-
-        weight_total += 0.3
+            weight_total += 0.3
 
     # 5. Track count (if available)
     if album.num_tracks and release.get('medium-track-count') > 0:
         if album.num_tracks == release.get('medium-track-count'):
             score += 100 * 0.2
-        weight_total += 0.2
+            weight_total += 0.2
+
+    # 6. MusicBrainz score
+    if 'ext:score' in release:
+        score += int(release.get('ext:score') or 0) * 0.1
+        weight_total += 0.1
 
     return round(score / weight_total, 2)

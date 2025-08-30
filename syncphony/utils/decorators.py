@@ -1,4 +1,5 @@
 import random
+import threading
 import time
 from typing import Callable
 
@@ -9,13 +10,36 @@ from tidalapi.exceptions import TooManyRequests
 from syncphony.utils.logger import syncphony_logger
 
 
-def rate_limit(func: Callable = None, *, returns=None, raise_on_failure=False):
+def rate_limit(func: Callable = None, *, returns=None, raise_on_failure=False, timeout: int = 30):
     """
     Decorator that retries a function if TooManyRequests, ReadTimeout, or SpotifyException occur.
+    Also enforces a hard timeout (default: 30s) to prevent silent hangs.
     Works both with and without parentheses:
         @rate_limit
         @rate_limit(returns=[])
     """
+
+    def run_with_timeout(inner_func, *args, **kwargs):
+        """Run inner_func with a timeout using threading."""
+        result = {}
+        exc = {}
+
+        def target():
+            try:
+                result["value"] = inner_func(*args, **kwargs)
+            except Exception as e:
+                exc["error"] = e
+
+        thread = threading.Thread(target=target, daemon=True)
+        thread.start()
+        thread.join(timeout)
+
+        if thread.is_alive():
+            raise TimeoutError(f"Function '{inner_func.__name__}' timed out after {timeout}s")
+
+        if "error" in exc:
+            raise exc["error"]
+        return result.get("value")
 
     def decorator(inner_func):
         def wrapper(*args, **kwargs):
@@ -26,27 +50,30 @@ def rate_limit(func: Callable = None, *, returns=None, raise_on_failure=False):
             retry_count = 0
             while True:
                 try:
-                    return inner_func(*args, **kwargs)
+                    return run_with_timeout(inner_func, *args, **kwargs)
                 except (TooManyRequests, ReadTimeout, SpotifyException) as e:
-                    logger.warning("Rate limit exceeded, retrying in a few seconds")
+                    logger.warning("Rate limit or transient error, retrying...")
                     if retry_count < 7:
                         retry_count += 1
                         time.sleep(2 ** retry_count + random.uniform(0.2, 0.6))
                     else:
-                        logger.warning("Rate limit exceeded, max retries reached")
+                        logger.warning("Max retries reached for rate-limited call")
                         if raise_on_failure:
                             raise e
                         return returns
+                except TimeoutError as e:
+                    logger.error(str(e))
+                    if raise_on_failure:
+                        raise e
+                    return returns
                 except Exception as e:
                     raise e
 
         return wrapper
 
-    # If called as @rate_limit without parentheses → func is the function
     if func is not None and callable(func):
         return decorator(func)
 
-    # If called as @rate_limit(...) → return the real decorator
     return decorator
 
 

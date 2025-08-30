@@ -83,7 +83,7 @@ def match_album_to_musicbrainz(album: Album, logger=syncphony_logger, tries=0) -
                 barcode=album.barcode if album.barcode else None,
                 date=album.release_date.year if album.release_date else None,
                 status="official",
-                limit=5
+                limit=3
             )
         elif tries == 1:
             result = musicbrainzngs.search_releases(
@@ -92,12 +92,12 @@ def match_album_to_musicbrainz(album: Album, logger=syncphony_logger, tries=0) -
                 barcode=album.barcode if album.barcode else None,
                 date=album.release_date.year if album.release_date else None,
                 status="official",
-                limit=10
+                limit=7
             )
         elif tries == 2:
             result = musicbrainzngs.search_releases(
                 query=album.name,
-                limit=15,
+                limit=10,
             )
         else:
             return None
@@ -110,7 +110,6 @@ def match_album_to_musicbrainz(album: Album, logger=syncphony_logger, tries=0) -
         elif tries < 3:
             return match_album_to_musicbrainz(album, tries=tries + 1, logger=logger)
         else:
-            logger.warning(f"No suitable MusicBrainz match found for album: {album.name} by {album.artist.name}")
             return None
 
     except Exception as e:

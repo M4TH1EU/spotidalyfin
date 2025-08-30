@@ -38,12 +38,13 @@ class SubsonicAccount(SQLModel, table=True):
 
 
 class Match(SQLModel, table=True):
-    id: int = Field(default=None, primary_key=True)  # surrogate PK
+    id: int = Field(default=None, primary_key=True)
     type: MatchType = Field(sa_column=Column(Enum(MatchType)))
-    spotify_id: Optional[str] = Field(default=None, unique=True, index=True)
-    tidal_id: Optional[str] = Field(default=None, unique=True, index=True)
-    jellyfin_id: Optional[str] = Field(default=None, unique=True, index=True)
-    subsonic_id: Optional[str] = Field(default=None, unique=True, index=True)
+
+    spotify_id: Optional[str] = Field(default=None, index=True)
+    tidal_id: Optional[str] = Field(default=None, index=True)
+    jellyfin_id: Optional[str] = Field(default=None, index=True)
+    subsonic_id: Optional[str] = Field(default=None, index=True)
 
 
 class Tasks(SQLModel, table=True):
