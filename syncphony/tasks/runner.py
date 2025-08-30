@@ -116,9 +116,11 @@ class TaskRunner:
                     # stdout/stderr
                     out, err = stdout_buf.getvalue(), stderr_buf.getvalue()
                     if out:
-                        self.log_queue.put({"task_id": task.id, "level": logging.INFO, "message": out})
+                        self.log_queue.put(
+                            {"task_id": task.id, "level": logging.INFO, "message": out, "timestamp": time.time()})
                     if err:
-                        self.log_queue.put({"task_id": task.id, "level": logging.ERROR, "message": err})
+                        self.log_queue.put(
+                            {"task_id": task.id, "level": logging.ERROR, "message": err, "timestamp": time.time()})
 
                     db.add(task)
                     db.commit()
