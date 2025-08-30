@@ -219,7 +219,7 @@ class TidalManager(Manager):
     def get_artist_tracks(self, artist_id: str) -> list[TidalTrack]:
         return []  # TODO: implement fetching artist tracks
 
-    @rate_limit(timeout=600)
+    @rate_limit
     def get_playlist(self, playlist_id: str, fetch_tracks: bool = True, fetch_albums: bool = False,
                      fetch_albums_tracks: bool = False) -> Optional[
         TidalPlaylist]:
@@ -244,7 +244,7 @@ class TidalManager(Manager):
             self.logger.exception(f"An error occurred while fetching TIDAL playlist with ID {playlist_id}: {e}")
             return None
 
-    @rate_limit(returns=[], timeout=120)
+    @rate_limit(returns=[])
     def get_user_playlists(self, user_id: str = None) -> list[TidalPlaylist]:
         """Retrieve all playlists for a user."""
         try:
@@ -260,7 +260,7 @@ class TidalManager(Manager):
             self.logger.exception(f"Failed to fetch TIDAL playlists for user {user_id}: {e}")
             return []
 
-    @rate_limit(timeout=120)
+    @rate_limit
     def get_favorite_tracks(self, user_id: str = None) -> Optional[TidalFavoriteTracksPlaylist]:
         try:
             liked_songs = self.client.user.favorites(limit=100, offset=0)
