@@ -117,10 +117,10 @@ class TaskRunner:
                     out, err = stdout_buf.getvalue(), stderr_buf.getvalue()
                     if out:
                         self.log_queue.put(
-                            {"task_id": task.id, "level": logging.INFO, "message": out, "timestamp": time.time()})
+                            {"task_id": task.id, "level": logging.INFO, "message": out})
                     if err:
                         self.log_queue.put(
-                            {"task_id": task.id, "level": logging.ERROR, "message": err, "timestamp": time.time()})
+                            {"task_id": task.id, "level": logging.ERROR, "message": err})
 
                     db.add(task)
                     db.commit()
@@ -142,7 +142,7 @@ class TaskRunner:
                 task = db.get(Tasks, entry["task_id"])
                 if not task:
                     continue
-                msg = f"{entry['timestamp']:.0f}: {entry['message']}\n"
+                msg = f"{entry['message']}\n"
                 if entry["level"] >= logging.ERROR:
                     task.errors += msg
                 elif entry["level"] >= logging.WARNING:
